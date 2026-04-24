@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 280px;
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: #1a1d27;
+      color: #e4e6eb;
+      padding: 16px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #2d3040;
+    }
+    .header-icon { font-size: 20px; }
+    .header h1 {
+      font-size: 14px;
+      font-weight: 600;
+      background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #252830;
+    }
+    .status-row:last-child { border-bottom: none; }
+
+    .status-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      flex-shrink: 0;
+    }
+    .status-dot.ok {
+      background: #22c55e;
+      box-shadow: 0 0 6px #22c55e;
+    }
+    .status-label {
+      font-size: 13px;
+    }
+    .status-value {
+      font-size: 12px;
+      color: #8b8fa3;
+    }
+
+    /* Toggle Switch */
+    .toggle {
+      position: relative;
+      width: 42px;
+      height: 24px;
+      cursor: pointer;
+    }
+    .toggle input { display: none; }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: #2d3040;
+      border-radius: 24px;
+      transition: background 0.3s;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      top: 3px;
+      background: #5c6070;
+      border-radius: 50%;
+      transition: all 0.3s;
+    }
+    .toggle input:checked + .toggle-slider {
+      background: #0ea5e9;
+    }
+    .toggle input:checked + .toggle-slider::before {
+      transform: translateX(18px);
+      background: white;
+    }
+
+    .info-box {
+      margin-top: 12px;
+      padding: 10px;
+      background: #252830;
+      border-radius: 8px;
+      font-size: 11px;
+      color: #8b8fa3;
+      line-height: 1.5;
+    }
+    .info-box a {
+      color: #0ea5e9;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="header-icon">🛒</span>
+    <h1>Shopee Affiliate Bot</h1>
+  </div>
+
+  <div class="status-row">
+    <div class="status-left">
+      <div class="status-dot" id="serverDot"></div>
+      <span class="status-label">Server</span>
+    </div>
+    <span class="status-value" id="serverStatus">Checking...</span>
+  </div>
+
+  <div class="status-row">
+    <div class="status-left">
+      <div class="status-dot" id="tabDot"></div>
+      <span class="status-label">Shopee Tab</span>
+    </div>
+    <span class="status-value" id="tabStatus">Checking...</span>
+  </div>
+
+  <div class="status-row">
+    <div class="status-left">
+      <span class="status-label">🔌 Automation</span>
+    </div>
+    <label class="toggle">
+      <input type="checkbox" id="toggleActive">
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+
+  <div class="info-box" id="infoBox">
+    Đang kiểm tra trạng thái...
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
