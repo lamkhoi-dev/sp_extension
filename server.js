@@ -1,9 +1,11 @@
 const express = require('express');
 const http = require('http');
+const fs = require('fs');
 const { WebSocketServer } = require('ws');
 const path = require('path');
 const logger = require('./src/logger');
 const { handleCommand, getWelcome } = require('./src/commands');
+const ZaloBot = require('./src/zalo/zalo-bot');
 
 const app = express();
 const server = http.createServer(app);
@@ -42,14 +44,41 @@ function sendToExtension(reqId, payload) {
   });
 }
 
+// Zalo Bot instance
+const zaloBot = new ZaloBot();
+
 // REST API
 app.get('/api/status', (req, res) => {
-  res.json({ extension: extensionStatus });
+  res.json({ extension: extensionStatus, zalo: zaloBot.getStatus() });
 });
 
 app.get('/api/logs', (req, res) => {
   const count = parseInt(req.query.count) || 50;
   res.json(logger.getRecent(count));
+});
+
+// Zalo Bot API
+app.get('/api/zalo-status', (req, res) => {
+  res.json(zaloBot.getStatus());
+});
+
+app.get('/api/zalo-qr', (req, res) => {
+  const qrPath = path.join(__dirname, 'public/zalo-qr.png');
+  if (fs.existsSync(qrPath)) {
+    res.sendFile(qrPath);
+  } else {
+    res.status(404).json({ error: 'QR not available yet' });
+  }
+});
+
+app.post('/api/zalo-restart', async (req, res) => {
+  try {
+    await zaloBot.stop();
+    zaloBot.start().catch((err) => logger.error('Server', `Zalo restart failed: ${err.message}`));
+    res.json({ success: true, message: 'Restarting Zalo bot...' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Expose extension router globally for shopee-api
@@ -65,6 +94,9 @@ wss.on('connection', (ws) => {
 
   // Send extension status
   ws.send(JSON.stringify({ type: 'extension_status', data: extensionStatus }));
+
+  // Send Zalo bot status
+  ws.send(JSON.stringify({ type: 'zalo_status', data: zaloBot.getStatus() }));
 
   // Send recent logs
   ws.send(JSON.stringify({ type: 'logs_batch', data: logger.getRecent(30) }));
@@ -154,9 +186,25 @@ function broadcastExtensionStatus() {
   });
 }
 
+// Broadcast Zalo status to all dashboard clients
+zaloBot.onStatusChange((data) => {
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) {
+      client.send(JSON.stringify({ type: 'zalo_status', data }));
+    }
+  });
+});
+
 // Start
 server.listen(PORT, () => {
   logger.info('Server', `Running at http://localhost:${PORT}`);
   console.log(`\n🚀 Shopee Affiliate Bot running at \x1b[36mhttp://localhost:${PORT}\x1b[0m`);
-  console.log(`⏳ Đang chờ Chrome Extension kết nối...\n`);
+  console.log(`⏳ Đang chờ Chrome Extension kết nối...`);
+
+  // Auto-start Zalo bot
+  console.log(`🤖 Đang khởi tạo Zalo Bot...\n`);
+  zaloBot.start().catch((err) => {
+    logger.error('Server', `Zalo Bot startup failed: ${err.message}`);
+    console.log(`\n⚠️ Zalo Bot chưa khởi động. Truy cập Dashboard để xem mã QR hoặc gõ /api/zalo-restart.\n`);
+  });
 });

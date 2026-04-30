@@ -67,6 +67,28 @@
           </div>
         </div>
 
+        <!-- Zalo Bot Status Card -->
+        <div class="card card-zalo">
+          <h2 class="card-title">🤖 Zalo Bot</h2>
+          <div class="status-grid">
+            <div class="status-item">
+              <span class="status-label">Trạng thái</span>
+              <span class="status-value" id="zaloStatus">Đang khởi tạo...</span>
+            </div>
+            <div class="status-item">
+              <span class="status-label">Tài khoản</span>
+              <span class="status-value" id="zaloAccount">--</span>
+            </div>
+          </div>
+          <div class="zalo-qr-section" id="zaloQrSection" style="display:none">
+            <div class="zalo-qr-label">📱 Quét mã QR bằng Zalo để đăng nhập</div>
+            <img id="zaloQrImage" class="zalo-qr-image" src="" alt="Zalo QR Code">
+          </div>
+          <div class="zalo-actions">
+            <button class="action-btn zalo-restart-btn" id="zaloRestart">🔄 Khởi động lại</button>
+          </div>
+        </div>
+
         <!-- Quick Actions -->
         <div class="card">
           <h2 class="card-title">⚡ Thao tác nhanh</h2>

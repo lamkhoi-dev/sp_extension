@@ -19,6 +19,12 @@ class App {
       quickSearch: document.getElementById('quickSearch'),
       quickLink: document.getElementById('quickLink'),
       quickStatus: document.getElementById('quickStatus'),
+      // Zalo Bot elements
+      zaloStatus: document.getElementById('zaloStatus'),
+      zaloAccount: document.getElementById('zaloAccount'),
+      zaloQrSection: document.getElementById('zaloQrSection'),
+      zaloQrImage: document.getElementById('zaloQrImage'),
+      zaloRestart: document.getElementById('zaloRestart'),
     };
     this.init();
   }
@@ -89,6 +95,23 @@ class App {
       this.elements.chatInput.value = '/status';
       this.sendMessage();
     });
+
+    // Zalo restart button
+    this.elements.zaloRestart.addEventListener('click', async () => {
+      this.elements.zaloRestart.disabled = true;
+      this.elements.zaloRestart.textContent = '⏳ Đang khởi động...';
+      try {
+        const res = await fetch('/api/zalo-restart', { method: 'POST' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+      } catch (err) {
+        alert('Lỗi: ' + err.message);
+      }
+      setTimeout(() => {
+        this.elements.zaloRestart.disabled = false;
+        this.elements.zaloRestart.textContent = '🔄 Khởi động lại';
+      }, 3000);
+    });
   }
 
   sendMessage() {
@@ -117,6 +140,9 @@ class App {
         break;
       case 'logs_batch':
         msg.data.forEach(entry => this.addLogEntry(entry));
+        break;
+      case 'zalo_status':
+        this.updateZaloStatus(msg.data);
         break;
     }
   }
@@ -262,6 +288,49 @@ class App {
 
     if (data.lastSeen) {
       lastSeenEl.textContent = new Date(data.lastSeen).toLocaleTimeString('vi-VN');
+    }
+  }
+
+  updateZaloStatus(data) {
+    const statusEl = this.elements.zaloStatus;
+    const accountEl = this.elements.zaloAccount;
+    const qrSection = this.elements.zaloQrSection;
+    const qrImage = this.elements.zaloQrImage;
+
+    switch (data.status) {
+      case 'online':
+        statusEl.textContent = '🟢 Online';
+        statusEl.className = 'status-value ok';
+        accountEl.textContent = data.accountName || `ID:${data.ownId}`;
+        qrSection.style.display = 'none';
+        break;
+      case 'qr_pending':
+        statusEl.textContent = '📱 Đang chờ quét QR';
+        statusEl.className = 'status-value warn';
+        accountEl.textContent = '--';
+        qrSection.style.display = 'block';
+        qrImage.src = `/api/zalo-qr?t=${Date.now()}`;
+        // Auto-refresh QR every 5s
+        if (this._qrRefreshTimer) clearInterval(this._qrRefreshTimer);
+        this._qrRefreshTimer = setInterval(() => {
+          qrImage.src = `/api/zalo-qr?t=${Date.now()}`;
+        }, 5000);
+        break;
+      case 'error':
+        statusEl.textContent = '🔴 Lỗi';
+        statusEl.className = 'status-value err';
+        qrSection.style.display = 'none';
+        break;
+      default:
+        statusEl.textContent = '⚫ Offline';
+        statusEl.className = 'status-value';
+        accountEl.textContent = '--';
+        qrSection.style.display = 'none';
+    }
+
+    if (data.status !== 'qr_pending' && this._qrRefreshTimer) {
+      clearInterval(this._qrRefreshTimer);
+      this._qrRefreshTimer = null;
     }
   }
 

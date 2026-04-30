@@ -4,3 +4,7 @@ chrome_profile/
 .DS_Store
 logs/
 curl_request.txt
+
+# Zalo Bot
+zalo-session.json
+public/zalo-qr.png

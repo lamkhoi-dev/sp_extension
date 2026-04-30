@@ -569,3 +569,55 @@ body {
 .log-level { font-weight: 600; }
 .log-status-ok { color: var(--success); }
 .log-status-err { color: var(--danger); }
+
+/* Zalo Bot Card */
+.card-zalo {
+  border-color: #0068ff40;
+  background: linear-gradient(180deg, rgba(0, 104, 255, 0.05), var(--bg-secondary));
+}
+
+.zalo-qr-section {
+  margin-top: 12px;
+  text-align: center;
+  padding: 16px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  border: 1px dashed rgba(0, 104, 255, 0.3);
+}
+
+.zalo-qr-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  animation: pulse 2s infinite;
+}
+
+.zalo-qr-image {
+  max-width: 200px;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  background: white;
+  padding: 8px;
+}
+
+.zalo-actions {
+  margin-top: 10px;
+}
+
+.zalo-restart-btn {
+  width: 100%;
+  background: rgba(0, 104, 255, 0.1) !important;
+  color: #4da3ff !important;
+  border-color: rgba(0, 104, 255, 0.25) !important;
+}
+
+.zalo-restart-btn:hover {
+  background: rgba(0, 104, 255, 0.2) !important;
+  border-color: rgba(0, 104, 255, 0.5) !important;
+}
+
+.zalo-restart-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
