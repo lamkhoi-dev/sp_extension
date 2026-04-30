@@ -105,6 +105,12 @@ app.get('/api/zalo-stats', (req, res) => {
   res.json(stats);
 });
 
+app.get('/api/zalo-user/:userId', (req, res) => {
+  const user = userCache.getUser(req.params.userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json(user);
+});
+
 // Expose extension router globally for shopee-api
 const ShopeeAPI = require('./src/shopee-api');
 ShopeeAPI.sendToExtension = sendToExtension;

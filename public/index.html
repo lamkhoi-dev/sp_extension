@@ -167,6 +167,63 @@
     </div>
   </div>
 
+  <!-- User Detail Modal -->
+  <div class="modal-overlay" id="userModal" style="display:none">
+    <div class="modal-card">
+      <button class="modal-close" id="modalClose">&times;</button>
+      <div class="modal-header">
+        <div class="modal-avatar" id="modalAvatar">👤</div>
+        <div class="modal-title">
+          <h3 id="modalName">--</h3>
+          <span class="modal-subtitle" id="modalZaloName">--</span>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="modal-field">
+          <span class="modal-label">Zalo ID</span>
+          <span class="modal-value" id="modalUserId">--</span>
+        </div>
+        <div class="modal-field">
+          <span class="modal-label">Giới tính</span>
+          <span class="modal-value" id="modalGender">--</span>
+        </div>
+        <div class="modal-field">
+          <span class="modal-label">Số điện thoại</span>
+          <span class="modal-value" id="modalPhone">--</span>
+        </div>
+        <div class="modal-field">
+          <span class="modal-label">Ngày sinh</span>
+          <span class="modal-value" id="modalDob">--</span>
+        </div>
+        <div class="modal-field">
+          <span class="modal-label">Bio / Status</span>
+          <span class="modal-value" id="modalBio">--</span>
+        </div>
+        <div class="modal-field">
+          <span class="modal-label">Bạn bè</span>
+          <span class="modal-value" id="modalFriend">--</span>
+        </div>
+        <div class="modal-field">
+          <span class="modal-label">Online</span>
+          <span class="modal-value" id="modalOnline">--</span>
+        </div>
+        <div class="modal-divider"></div>
+        <div class="modal-field">
+          <span class="modal-label">Tổng tin nhắn</span>
+          <span class="modal-value modal-highlight" id="modalMsgCount">0</span>
+        </div>
+        <div class="modal-field">
+          <span class="modal-label">Lần đầu liên hệ</span>
+          <span class="modal-value" id="modalFirstContact">--</span>
+        </div>
+        <div class="modal-field">
+          <span class="modal-label">Hoạt động cuối</span>
+          <span class="modal-value" id="modalLastSeen">--</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

@@ -35,6 +35,22 @@ class App {
       msgLogEmpty: document.getElementById('msgLogEmpty'),
       userList: document.getElementById('userList'),
       userCount: document.getElementById('userCount'),
+      // Modal elements
+      userModal: document.getElementById('userModal'),
+      modalClose: document.getElementById('modalClose'),
+      modalAvatar: document.getElementById('modalAvatar'),
+      modalName: document.getElementById('modalName'),
+      modalZaloName: document.getElementById('modalZaloName'),
+      modalUserId: document.getElementById('modalUserId'),
+      modalGender: document.getElementById('modalGender'),
+      modalPhone: document.getElementById('modalPhone'),
+      modalDob: document.getElementById('modalDob'),
+      modalBio: document.getElementById('modalBio'),
+      modalFriend: document.getElementById('modalFriend'),
+      modalOnline: document.getElementById('modalOnline'),
+      modalMsgCount: document.getElementById('modalMsgCount'),
+      modalFirstContact: document.getElementById('modalFirstContact'),
+      modalLastSeen: document.getElementById('modalLastSeen'),
     };
     this.msgFilter = 'all';
     this.init();
@@ -397,6 +413,27 @@ class App {
         this.fetchFilteredMessages();
       });
     });
+
+    // Modal close
+    this.elements.modalClose.addEventListener('click', () => this.closeUserModal());
+    this.elements.userModal.addEventListener('click', (e) => {
+      if (e.target === this.elements.userModal) this.closeUserModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') this.closeUserModal();
+    });
+
+    // User list clicks (delegated)
+    this.elements.userList.addEventListener('click', (e) => {
+      const item = e.target.closest('.user-item');
+      if (item?.dataset.uid) this.showUserModal(item.dataset.uid);
+    });
+
+    // Message table sender clicks (delegated)
+    this.elements.msgLogBody.addEventListener('click', (e) => {
+      const sender = e.target.closest('.msg-sender[data-uid]');
+      if (sender) this.showUserModal(sender.dataset.uid);
+    });
   }
 
   async fetchFilteredMessages() {
@@ -454,11 +491,12 @@ class App {
       : `<div class="msg-sender-avatar">👤</div>`;
     const senderName = msg.user_display_name || msg.sender_name || msg.sender_id?.slice(-6) || '?';
     const groupIcon = msg.is_group ? '👥 ' : '';
+    const senderUid = msg.sender_id || '';
 
     tr.innerHTML = `
       <td class="msg-time">${time}</td>
       <td>
-        <div class="msg-sender">
+        <div class="msg-sender" data-uid="${senderUid}" style="cursor:pointer" title="Click để xem thông tin">
           ${avatarHtml}
           <span class="msg-sender-name">${groupIcon}${this.escapeHtml(senderName)}</span>
         </div>
@@ -505,7 +543,7 @@ class App {
       const lastSeen = u.lastSeen ? new Date(u.lastSeen + 'Z').toLocaleString('vi-VN') : '--';
 
       return `
-        <div class="user-item">
+        <div class="user-item" data-uid="${u.userId}">
           ${avatarHtml}
           <div class="user-info">
             <div class="user-name">${this.escapeHtml(u.displayName)} ${genderIcon}</div>
@@ -518,6 +556,64 @@ class App {
         </div>
       `;
     }).join('');
+  }
+
+  // ─── User Detail Modal ──────────────────────────────
+
+  async showUserModal(userId) {
+    if (!userId) return;
+    try {
+      const res = await fetch(`/api/zalo-user/${userId}`);
+      if (!res.ok) throw new Error('User not found');
+      const user = await res.json();
+      this._fillModal(user);
+      this.elements.userModal.style.display = 'flex';
+    } catch (err) {
+      console.error('showUserModal:', err);
+    }
+  }
+
+  closeUserModal() {
+    this.elements.userModal.style.display = 'none';
+  }
+
+  _fillModal(u) {
+    const el = this.elements;
+    // Avatar
+    if (u.avatar) {
+      el.modalAvatar.innerHTML = `<img src="${u.avatar}" alt="">`;
+    } else {
+      el.modalAvatar.innerHTML = '👤';
+    }
+    // Names
+    el.modalName.textContent = u.displayName || u.zaloName || 'Không tên';
+    el.modalZaloName.textContent = u.zaloName ? `Zalo: ${u.zaloName}` : '';
+    el.modalUserId.textContent = u.userId || '--';
+    // Gender
+    const genderMap = { 0: '♂️ Nam', 1: '♀️ Nữ' };
+    el.modalGender.textContent = genderMap[u.gender] || 'Không rõ';
+    // Phone
+    el.modalPhone.textContent = u.phoneNumber || 'Không có';
+    // DOB
+    el.modalDob.textContent = u.dob || 'Không có';
+    // Bio
+    el.modalBio.textContent = u.statusText || 'Không có';
+    // Friend
+    el.modalFriend.textContent = u.isFriend ? '✅ Bạn bè' : '❌ Chưa kết bạn';
+    // Online
+    const onlineParts = [];
+    if (u.isActive) onlineParts.push('📱 Mobile');
+    if (u.isActivePc) onlineParts.push('💻 PC');
+    if (u.isActiveWeb) onlineParts.push('🌐 Web');
+    el.modalOnline.textContent = onlineParts.length ? onlineParts.join(', ') : 'Offline';
+    // Stats
+    el.modalMsgCount.textContent = u.messageCount || 0;
+    el.modalFirstContact.textContent = u.firstContact
+      ? new Date(u.firstContact + 'Z').toLocaleString('vi-VN')
+      : '--';
+    el.modalLastSeen.textContent = u.lastSeen
+      ? new Date(u.lastSeen + 'Z').toLocaleString('vi-VN')
+      : '--';
   }
 }
 
