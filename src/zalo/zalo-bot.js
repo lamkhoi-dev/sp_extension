@@ -3,6 +3,7 @@ const path = require('path');
 const logger = require('../logger');
 const ZaloActions = require('./zalo-actions');
 const ZaloCommands = require('./zalo-commands');
+const ConcurrentHandler = require('./concurrent-handler');
 const messageStore = require('./message-store');
 const userCache = require('./user-cache');
 
@@ -15,6 +16,7 @@ class ZaloBot {
     this.listener = null;
     this.actions = null;
     this.commands = null;
+    this.concurrentHandler = new ConcurrentHandler();
     this.ownId = null;
     this.status = 'offline'; // offline | qr_pending | online | error
     this.accountName = '';
@@ -157,12 +159,17 @@ class ZaloBot {
       const entry = messageStore.getById(msgId);
       if (entry) this._emitMessage(entry);
 
-      // Process command
-      try {
-        await this.commands.handleMessage(message, { isGroup, msgId });
-      } catch (err) {
-        logger.error('ZaloBot', `Message handler error: ${err.message}`);
-      }
+      // Process via concurrent handler — parallel across threads, sequential within same thread
+      this.concurrentHandler.process(message.threadId, async () => {
+        try {
+          await this.commands.handleMessage(message, { isGroup, msgId });
+          // Re-emit updated status after processing
+          const updated = messageStore.getById(msgId);
+          if (updated) this._emitMessage(updated);
+        } catch (err) {
+          logger.error('ZaloBot', `Message handler error: ${err.message}`);
+        }
+      });
     });
 
     // ─── Friend event listener ──────────────────────

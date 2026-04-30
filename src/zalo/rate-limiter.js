@@ -1,15 +1,17 @@
 const logger = require('../logger');
 
-// Anti-ban rate limiter with priority levels
 // Priority: HIGH = send messages (must go through), LOW = reactions/seen (can skip if busy)
+const PRIORITY = { HIGH: 0, LOW: 1 };
+
 class RateLimiter {
-  constructor({ maxPerMinute = 12, minDelayMs = 600, maxDelayMs = 1500 } = {}) {
+  constructor({ maxPerMinute = 15, minDelayMs = 400, maxDelayMs = 1200 } = {}) {
     this.maxPerMinute = maxPerMinute;
     this.minDelayMs = minDelayMs;
     this.maxDelayMs = maxDelayMs;
     this.queue = [];
     this.processing = false;
     this.timestamps = [];
+    this.lastActionTime = 0;
   }
 
   _randomDelay() {
@@ -22,20 +24,24 @@ class RateLimiter {
     return this.timestamps.length >= this.maxPerMinute;
   }
 
+  // HIGH priority — blocks until complete
   enqueue(fn) {
     return new Promise((resolve, reject) => {
-      this.queue.push({ fn, resolve, reject });
+      this.queue.push({ fn, resolve, reject, priority: PRIORITY.HIGH });
+      this.queue.sort((a, b) => a.priority - b.priority);
       this._processQueue();
     });
   }
 
-  // Fire-and-forget: enqueue but don't block caller
+  // LOW priority — fire-and-forget, no blocking
   enqueueAsync(fn) {
     this.queue.push({
       fn,
       resolve: () => {},
       reject: (err) => logger.warn('RateLimiter', `Async action failed: ${err.message}`),
+      priority: PRIORITY.LOW,
     });
+    this.queue.sort((a, b) => a.priority - b.priority);
     this._processQueue();
   }
 
@@ -45,23 +51,38 @@ class RateLimiter {
 
     while (this.queue.length > 0) {
       if (this._isRateLimited()) {
-        const waitTime = 5000;
+        // When rate limited, drop LOW priority items
+        const lowIdx = this.queue.findIndex((q) => q.priority === PRIORITY.LOW);
+        if (lowIdx !== -1) {
+          const dropped = this.queue.splice(lowIdx, 1)[0];
+          dropped.resolve();
+          logger.warn('RateLimiter', 'Dropped LOW priority action (rate limited)');
+          continue;
+        }
+        const waitTime = 4000;
         logger.warn('RateLimiter', `Rate limit (${this.maxPerMinute}/min). Wait ${waitTime / 1000}s...`);
         await this._sleep(waitTime);
         continue;
       }
 
-      const { fn, resolve, reject } = this.queue.shift();
-      const delay = this._randomDelay();
+      const item = this.queue.shift();
 
-      await this._sleep(delay);
+      // Smart delay: skip delay if first action in recent window
+      const timeSinceLastAction = Date.now() - this.lastActionTime;
+      if (timeSinceLastAction < this.minDelayMs) {
+        const delay = item.priority === PRIORITY.HIGH
+          ? Math.max(200, this.minDelayMs - timeSinceLastAction)
+          : this._randomDelay();
+        await this._sleep(delay);
+      }
 
       try {
-        const result = await fn();
+        const result = await item.fn();
         this.timestamps.push(Date.now());
-        resolve(result);
+        this.lastActionTime = Date.now();
+        item.resolve(result);
       } catch (err) {
-        reject(err);
+        item.reject(err);
       }
     }
 
