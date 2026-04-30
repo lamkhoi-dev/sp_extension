@@ -67,13 +67,19 @@ class RateLimiter {
 
       const item = this.queue.shift();
 
-      // Smart delay: skip delay if first action in recent window
+      // Smart delay: HIGH priority skips delay when queue is empty
       const timeSinceLastAction = Date.now() - this.lastActionTime;
       if (timeSinceLastAction < this.minDelayMs) {
-        const delay = item.priority === PRIORITY.HIGH
-          ? Math.max(200, this.minDelayMs - timeSinceLastAction)
-          : this._randomDelay();
-        await this._sleep(delay);
+        if (item.priority === PRIORITY.HIGH && this.queue.length === 0) {
+          // Single HIGH priority — minimal delay only
+          const gap = this.minDelayMs - timeSinceLastAction;
+          if (gap > 50) await this._sleep(Math.min(gap, 100));
+        } else {
+          const delay = item.priority === PRIORITY.HIGH
+            ? Math.max(100, this.minDelayMs - timeSinceLastAction)
+            : this._randomDelay();
+          await this._sleep(delay);
+        }
       }
 
       try {

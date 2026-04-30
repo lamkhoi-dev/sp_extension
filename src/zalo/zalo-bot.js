@@ -100,6 +100,7 @@ class ZaloBot {
 
       // Setup actions & commands with stores
       this.actions = new ZaloActions(this.api, ThreadType, Reactions);
+      this.actions.userCache = userCache; // inject for getDisplayName cache-first
       this.commands = new ZaloCommands(this.actions, { messageStore, userCache });
 
       // Wire user cache API

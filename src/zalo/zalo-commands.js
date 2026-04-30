@@ -168,7 +168,7 @@ class ZaloCommands {
     this.actions.reactLike(message);
 
     const [, result] = await Promise.all([
-      this.actions.showTyping(message.threadId, message.type, 1000),
+      this.actions.showTyping(message.threadId, message.type, 300),
       shopee.searchProduct(keyword),
     ]);
 
@@ -214,7 +214,7 @@ class ZaloCommands {
     this.actions.reactHeart(message);
 
     const [, result] = await Promise.all([
-      this.actions.showTyping(message.threadId, message.type, 1500),
+      this.actions.showTyping(message.threadId, message.type, 400),
       shopee.convertLink(url, subIds),
     ]);
 

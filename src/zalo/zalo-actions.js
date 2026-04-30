@@ -7,8 +7,9 @@ class ZaloActions {
     this.api = api;
     this.ThreadType = ThreadType;
     this.Reactions = Reactions;
-    this.limiter = new RateLimiter({ maxPerMinute: 12, minDelayMs: 600, maxDelayMs: 1500 });
+    this.limiter = new RateLimiter({ maxPerMinute: 15, minDelayMs: 200, maxDelayMs: 600 });
     this.userNameCache = new Map();
+    this.userCache = null; // injected by ZaloBot after init
   }
 
   // ─── Seen (fire-and-forget, no rate limit) ──────────
@@ -26,22 +27,30 @@ class ZaloActions {
     }
   }
 
-  // ─── React to a message (fire-and-forget via async queue) ──
+  // ─── React to a message (DIRECT fire-and-forget, no rate limiter) ──
   reactHeart(message) {
-    this.limiter.enqueueAsync(() =>
-      this.api.addReaction(this.Reactions.HEART, message)
-    );
+    this.api.addReaction(this.Reactions.HEART, message).catch(() => {});
   }
 
   reactLike(message) {
-    this.limiter.enqueueAsync(() =>
-      this.api.addReaction(this.Reactions.LIKE, message)
-    );
+    this.api.addReaction(this.Reactions.LIKE, message).catch(() => {});
   }
 
-  // ─── Get display name ────────────────────────────────
+  // ─── Get display name (cache-first, no extra API call) ──
   async getDisplayName(userId) {
+    // 1. In-memory cache (fastest)
     if (this.userNameCache.has(userId)) return this.userNameCache.get(userId);
+
+    // 2. SQLite userCache (already fetched by bot listener)
+    if (this.userCache) {
+      const cached = this.userCache.getUser(userId);
+      if (cached?.displayName) {
+        this.userNameCache.set(userId, cached.displayName);
+        return cached.displayName;
+      }
+    }
+
+    // 3. Fallback: API call (rare — only if never seen before)
     try {
       const info = await this.api.getUserInfo(userId);
       let name = 'bạn';
@@ -114,8 +123,8 @@ class ZaloActions {
       this.reactLike(message);
     }
 
-    // Step 3: Show typing — SHORT duration based on text length
-    const typingDuration = Math.min(500 + replyText.length * 8, 2000);
+    // Step 3: Show typing — FAST duration
+    const typingDuration = Math.min(200 + replyText.length * 3, 800);
     await this.showTyping(threadId, type, typingDuration);
 
     // Step 4: Send reply (rate-limited, blocks until sent)
