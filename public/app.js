@@ -25,13 +25,25 @@ class App {
       zaloQrSection: document.getElementById('zaloQrSection'),
       zaloQrImage: document.getElementById('zaloQrImage'),
       zaloRestart: document.getElementById('zaloRestart'),
+      // Zalo Monitor elements
+      statTotal: document.getElementById('statTotal'),
+      statReplied: document.getElementById('statReplied'),
+      statFailed: document.getElementById('statFailed'),
+      statAvgTime: document.getElementById('statAvgTime'),
+      statUsers: document.getElementById('statUsers'),
+      msgLogBody: document.getElementById('msgLogBody'),
+      msgLogEmpty: document.getElementById('msgLogEmpty'),
+      userList: document.getElementById('userList'),
+      userCount: document.getElementById('userCount'),
     };
+    this.msgFilter = 'all';
     this.init();
   }
 
   init() {
     this.connectWebSocket();
     this.bindEvents();
+    this.bindMonitorEvents();
   }
 
   connectWebSocket() {
@@ -143,6 +155,19 @@ class App {
         break;
       case 'zalo_status':
         this.updateZaloStatus(msg.data);
+        break;
+      // Zalo Monitor events
+      case 'zalo_stats':
+        this.updateZaloStats(msg.data);
+        break;
+      case 'zalo_messages_batch':
+        this.renderMessageLog(msg.data);
+        break;
+      case 'zalo_message':
+        this.addMessageRow(msg.data, true);
+        break;
+      case 'zalo_users':
+        this.renderUserList(msg.data);
         break;
     }
   }
@@ -359,6 +384,140 @@ class App {
     requestAnimationFrame(() => {
       this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
     });
+  }
+
+  // ─── Zalo Monitor ──────────────────────────────────
+
+  bindMonitorEvents() {
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.msgFilter = btn.dataset.filter;
+        this.fetchFilteredMessages();
+      });
+    });
+  }
+
+  async fetchFilteredMessages() {
+    try {
+      const res = await fetch(`/api/zalo-messages?count=50&filter=${this.msgFilter}`);
+      const data = await res.json();
+      this.renderMessageLog(data);
+    } catch (err) {
+      console.error('fetchFilteredMessages:', err);
+    }
+  }
+
+  updateZaloStats(data) {
+    if (!data) return;
+    const allTime = data.allTime || {};
+    this.elements.statTotal.textContent = allTime.total || 0;
+    this.elements.statReplied.textContent = allTime.replied || 0;
+    this.elements.statFailed.textContent = allTime.failed || 0;
+    this.elements.statAvgTime.textContent = allTime.avg_response_ms || '--';
+    this.elements.statUsers.textContent = data.userCount || 0;
+  }
+
+  renderMessageLog(messages) {
+    const body = this.elements.msgLogBody;
+    body.innerHTML = '';
+    if (!messages || messages.length === 0) {
+      this.elements.msgLogEmpty.style.display = 'block';
+      return;
+    }
+    this.elements.msgLogEmpty.style.display = 'none';
+    messages.forEach(msg => this.addMessageRow(msg, false));
+  }
+
+  addMessageRow(msg, isNew = false) {
+    const body = this.elements.msgLogBody;
+    this.elements.msgLogEmpty.style.display = 'none';
+
+    // Check if row already exists (status update)
+    const existing = body.querySelector(`tr[data-id="${msg.id}"]`);
+    if (existing) {
+      existing.querySelector('.status-badge').className = `status-badge ${msg.status}`;
+      existing.querySelector('.status-badge').textContent = this._statusLabel(msg.status);
+      const timeCell = existing.querySelector('.msg-response-time');
+      if (timeCell) timeCell.textContent = msg.processing_time_ms || '--';
+      return;
+    }
+
+    const tr = document.createElement('tr');
+    tr.dataset.id = msg.id;
+    if (isNew) tr.className = 'new-row';
+
+    const time = msg.received_at ? new Date(msg.received_at).toLocaleTimeString('vi-VN') : '--';
+    const avatarHtml = msg.avatar
+      ? `<img class="msg-sender-avatar" src="${msg.avatar}" alt="">`
+      : `<div class="msg-sender-avatar">👤</div>`;
+    const senderName = msg.user_display_name || msg.sender_name || msg.sender_id?.slice(-6) || '?';
+    const groupIcon = msg.is_group ? '👥 ' : '';
+
+    tr.innerHTML = `
+      <td class="msg-time">${time}</td>
+      <td>
+        <div class="msg-sender">
+          ${avatarHtml}
+          <span class="msg-sender-name">${groupIcon}${this.escapeHtml(senderName)}</span>
+        </div>
+      </td>
+      <td class="msg-content-cell" title="${this.escapeHtml(msg.content || '')}">${this.escapeHtml((msg.content || '').slice(0, 40))}</td>
+      <td><span class="status-badge ${msg.status}">${this._statusLabel(msg.status)}</span></td>
+      <td class="msg-response-time">${msg.processing_time_ms || '--'}</td>
+    `;
+
+    // Insert at top for new messages, at bottom for batch
+    if (isNew) {
+      body.insertBefore(tr, body.firstChild);
+      // Keep max 50 rows
+      while (body.children.length > 50) body.removeChild(body.lastChild);
+    } else {
+      body.appendChild(tr);
+    }
+  }
+
+  _statusLabel(status) {
+    const labels = {
+      received: '⏳ Nhận',
+      processing: '⚙️ Xử lý',
+      replied: '✅ Xong',
+      failed: '❌ Lỗi',
+      skipped: '⏭️ Bỏ qua',
+    };
+    return labels[status] || status;
+  }
+
+  renderUserList(users) {
+    const container = this.elements.userList;
+    this.elements.userCount.textContent = users.length;
+    if (!users || users.length === 0) {
+      container.innerHTML = '<div class="user-list-empty">Chưa có dữ liệu</div>';
+      return;
+    }
+
+    container.innerHTML = users.map(u => {
+      const avatarHtml = u.avatar
+        ? `<img class="user-avatar" src="${u.avatar}" alt="">`
+        : `<div class="user-avatar">👤</div>`;
+      const genderIcon = u.gender === 0 ? '♂️' : u.gender === 1 ? '♀️' : '';
+      const lastSeen = u.lastSeen ? new Date(u.lastSeen + 'Z').toLocaleString('vi-VN') : '--';
+
+      return `
+        <div class="user-item">
+          ${avatarHtml}
+          <div class="user-info">
+            <div class="user-name">${this.escapeHtml(u.displayName)} ${genderIcon}</div>
+            <div class="user-meta">
+              <span>Cuối: ${lastSeen}</span>
+              ${u.phoneNumber ? `<span>📞 ${u.phoneNumber}</span>` : ''}
+            </div>
+          </div>
+          <div class="user-msg-count">${u.messageCount} tin</div>
+        </div>
+      `;
+    }).join('');
   }
 }
 

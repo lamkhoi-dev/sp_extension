@@ -89,6 +89,65 @@
           </div>
         </div>
 
+        <!-- Zalo Message Monitor -->
+        <div class="card card-monitor">
+          <h2 class="card-title">📨 Zalo Messages</h2>
+          <!-- Stats Bar -->
+          <div class="stats-bar">
+            <div class="stat-item">
+              <span class="stat-value" id="statTotal">0</span>
+              <span class="stat-label">Tổng</span>
+            </div>
+            <div class="stat-item stat-success">
+              <span class="stat-value" id="statReplied">0</span>
+              <span class="stat-label">Đã xử lý</span>
+            </div>
+            <div class="stat-item stat-danger">
+              <span class="stat-value" id="statFailed">0</span>
+              <span class="stat-label">Thất bại</span>
+            </div>
+            <div class="stat-item stat-info">
+              <span class="stat-value" id="statAvgTime">--</span>
+              <span class="stat-label">TB (ms)</span>
+            </div>
+            <div class="stat-item stat-users">
+              <span class="stat-value" id="statUsers">0</span>
+              <span class="stat-label">Users</span>
+            </div>
+          </div>
+          <!-- Filter -->
+          <div class="msg-filter">
+            <button class="filter-btn active" data-filter="all">Tất cả</button>
+            <button class="filter-btn" data-filter="dm">DM</button>
+            <button class="filter-btn" data-filter="group">Nhóm</button>
+            <button class="filter-btn" data-filter="failed">❌ Lỗi</button>
+          </div>
+          <!-- Message Log Table -->
+          <div class="msg-log-container" id="msgLogContainer">
+            <table class="msg-log-table">
+              <thead>
+                <tr>
+                  <th>Thời gian</th>
+                  <th>Người gửi</th>
+                  <th>Nội dung</th>
+                  <th>Trạng thái</th>
+                  <th>Phản hồi (ms)</th>
+                </tr>
+              </thead>
+              <tbody id="msgLogBody"></tbody>
+            </table>
+            <div class="msg-log-empty" id="msgLogEmpty">Chưa có tin nhắn nào</div>
+          </div>
+        </div>
+
+        <!-- Top Users -->
+        <div class="card card-users">
+          <h2 class="card-title">👤 Người dùng (<span id="userCount">0</span>)</h2>
+          <div class="user-list" id="userList">
+            <div class="user-list-empty">Chưa có dữ liệu</div>
+          </div>
+        </div>
+
         <!-- Quick Actions -->
         <div class="card">
           <h2 class="card-title">⚡ Thao tác nhanh</h2>
