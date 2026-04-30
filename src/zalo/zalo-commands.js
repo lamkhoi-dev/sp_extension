@@ -166,11 +166,9 @@ class ZaloCommands {
 
     this.actions.markSeen(message.threadId, message.type);
     this.actions.reactLike(message);
+    this.actions.fireTyping(message.threadId, message.type);
 
-    const [, result] = await Promise.all([
-      this.actions.showTyping(message.threadId, message.type, 300),
-      shopee.searchProduct(keyword),
-    ]);
+    const result = await shopee.searchProduct(keyword);
 
     if (!result.success) {
       const errText = `❌ Lỗi tìm kiếm: ${result.error}\n\n💡 Kiểm tra tab Shopee Affiliate và Extension đã kết nối.`;
@@ -212,11 +210,9 @@ class ZaloCommands {
 
     this.actions.markSeen(message.threadId, message.type);
     this.actions.reactHeart(message);
+    this.actions.fireTyping(message.threadId, message.type);
 
-    const [, result] = await Promise.all([
-      this.actions.showTyping(message.threadId, message.type, 400),
-      shopee.convertLink(url, subIds),
-    ]);
+    const result = await shopee.convertLink(url, subIds);
 
     if (!result.success) {
       const errText = `❌ Lỗi tạo affiliate link: ${result.error}`;

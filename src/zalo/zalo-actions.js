@@ -17,7 +17,7 @@ class ZaloActions {
     this.api.sendSeenEvent(threadId, type).catch(() => {});
   }
 
-  // ─── Typing indicator (no rate limit) ───────────────
+  // ─── Typing indicator (with sleep) ───────────────
   async showTyping(threadId, type, durationMs = 1000) {
     try {
       await this.api.sendTypingEvent(threadId, type);
@@ -25,6 +25,11 @@ class ZaloActions {
     } catch (err) {
       logger.warn('ZaloActions', `sendTypingEvent failed: ${err.message}`);
     }
+  }
+
+  // ─── Typing indicator (fire-and-forget, no sleep) ──
+  fireTyping(threadId, type) {
+    this.api.sendTypingEvent(threadId, type).catch(() => {});
   }
 
   // ─── React to a message (DIRECT fire-and-forget, no rate limiter) ──

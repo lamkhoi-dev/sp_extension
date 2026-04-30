@@ -19,58 +19,55 @@ function setReactValue(element, value) {
   }
 }
 
-async function findElementWithTimeout(selector, timeout = 3000) {
-  return new Promise((resolve) => {
-    if (document.querySelector(selector)) {
-      return resolve(document.querySelector(selector));
-    }
-    const observer = new MutationObserver(() => {
-      if (document.querySelector(selector)) {
-        observer.disconnect();
-        resolve(document.querySelector(selector));
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    setTimeout(() => {
-      observer.disconnect();
-      resolve(null);
-    }, timeout);
-  });
-}
-
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Function to close the modal if it's currently open
-async function closeAnyModal() {
-  const closeBtn = document.querySelector('.icon-close, svg[viewBox="0 0 16 16"]'); // Heuristic for X button
-  if (closeBtn) {
-    // Try to click the closest button wrapping the SVG
+// Close modal — wait for it to disappear via observer instead of fixed delay
+function closeAnyModal() {
+  return new Promise((resolve) => {
+    const dialog = document.querySelector('[role="dialog"]');
+    if (!dialog) return resolve();
+
+    const closeBtn = dialog.querySelector('.icon-close, svg[viewBox="0 0 16 16"]');
+    if (!closeBtn) return resolve();
+
     const btn = closeBtn.closest('button') || closeBtn;
+
+    // Watch for dialog removal
+    const observer = new MutationObserver(() => {
+      if (!document.querySelector('[role="dialog"]')) {
+        observer.disconnect();
+        resolve();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
     btn.click();
-    await delay(300);
-  }
+
+    // Safety timeout — don't hang forever
+    setTimeout(() => {
+      observer.disconnect();
+      resolve();
+    }, 1000);
+  });
 }
 
 async function executeConvertLink(payload) {
   try {
     const { url, subId1 = '', subId2 = '' } = payload;
 
-    // Close any existing modal (only if one is open)
-    const existingDialog = document.querySelector('[role="dialog"]');
-    if (existingDialog) {
+    // Close existing modal only if one is open
+    if (document.querySelector('[role="dialog"]')) {
       await closeAnyModal();
-      await delay(100);
     }
 
-    // 1. Find and fill the main URL textarea
+    // 1. Fill URL textarea — no delay needed, React setState is sync after event dispatch
     const urlTextarea = document.querySelector('textarea[placeholder*="liên kết"]');
     if (!urlTextarea) return { success: false, error: 'Cannot find URL Input' };
     setReactValue(urlTextarea, url);
-    await delay(50);
 
-    // 2. Fill SubId inputs if provided
+    // 2. Fill SubId inputs if provided (no delay between fills)
     if (subId1) {
       const sub1Input = document.querySelector('input[placeholder*="SportShoes"]');
       if (sub1Input) setReactValue(sub1Input, subId1);
@@ -79,21 +76,20 @@ async function executeConvertLink(payload) {
       const sub2Input = document.querySelector('input[placeholder*="InstagramFeed"]');
       if (sub2Input) setReactValue(sub2Input, subId2);
     }
-    await delay(50);
 
-    // 3. Click "Lấy link" button
-    const buttons = Array.from(document.querySelectorAll('button'));
-    const submitBtn = buttons.find(b => b.innerText && b.innerText.toLowerCase().includes('lấy link'));
+    // 3. Click "Lấy link" button — immediate after filling
+    const submitBtn = Array.from(document.querySelectorAll('button'))
+      .find(b => b.innerText && b.innerText.toLowerCase().includes('lấy link'));
     if (!submitBtn) return { success: false, error: 'Cannot find submit button' };
     submitBtn.click();
 
-    // 4. Wait for modal with short link — use MutationObserver (instant detection)
+    // 4. Wait for short link via MutationObserver (instant detection)
     const shortLink = await waitForShortLink(8000);
     if (!shortLink) {
       return { success: false, error: 'Timeout waiting for Short Link modal' };
     }
 
-    // 5. Cleanup: Close modal + clear inputs (non-blocking)
+    // 5. Cleanup (non-blocking)
     closeAnyModal();
     setReactValue(urlTextarea, '');
 
@@ -106,7 +102,7 @@ async function executeConvertLink(payload) {
 
 function waitForShortLink(timeout = 8000) {
   return new Promise((resolve) => {
-    // Check if already visible
+    // Check immediately
     const existing = findShortLinkTextarea();
     if (existing) return resolve(existing);
 
@@ -117,11 +113,16 @@ function waitForShortLink(timeout = 8000) {
         resolve(link);
       }
     });
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    // Watch for new nodes + attribute + characterData changes
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true,
+    });
 
     setTimeout(() => {
       observer.disconnect();
-      // Final fallback check
       resolve(findShortLinkTextarea());
     }, timeout);
   });
@@ -135,16 +136,12 @@ function findShortLinkTextarea() {
   return match ? match.value : null;
 }
 
-// Ensure connection backwards to the background script
+// Message handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('[Shopee Ext] Received message:', request);
   if (request.action === 'convert_link') {
-    executeConvertLink(request.payload).then(response => {
-      sendResponse(response);
-    });
-    return true; // Indicate asynchronous response
+    executeConvertLink(request.payload).then(sendResponse);
+    return true;
   }
-  
   if (request.action === 'ping') {
     sendResponse({ status: 'ok' });
   }
