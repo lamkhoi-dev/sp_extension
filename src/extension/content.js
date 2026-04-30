@@ -57,7 +57,7 @@ async function executeConvertLink(payload) {
   try {
     const { url, subId1 = '', subId2 = '' } = payload;
 
-    // Close existing modal only if one is open
+    // Close existing modal — MUST await to prevent stale result
     if (document.querySelector('[role="dialog"]')) {
       await closeAnyModal();
     }
@@ -89,8 +89,8 @@ async function executeConvertLink(payload) {
       return { success: false, error: 'Timeout waiting for Short Link modal' };
     }
 
-    // 5. Cleanup (non-blocking)
-    closeAnyModal();
+    // 5. Cleanup — MUST await to prevent next request from seeing stale link
+    await closeAnyModal();
     setReactValue(urlTextarea, '');
 
     return { success: true, originalLink: url, shortLink };
