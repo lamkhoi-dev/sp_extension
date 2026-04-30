@@ -6,6 +6,8 @@ const path = require('path');
 const logger = require('./src/logger');
 const { handleCommand, getWelcome } = require('./src/commands');
 const ZaloBot = require('./src/zalo/zalo-bot');
+const messageStore = require('./src/zalo/message-store');
+const userCache = require('./src/zalo/user-cache');
 
 const app = express();
 const server = http.createServer(app);
@@ -81,6 +83,28 @@ app.post('/api/zalo-restart', async (req, res) => {
   }
 });
 
+// ─── Zalo Monitoring API ────────────────────────────────
+app.get('/api/zalo-messages', (req, res) => {
+  const count = parseInt(req.query.count) || 50;
+  const filter = req.query.filter || 'all';
+  res.json(messageStore.getRecent(count, filter));
+});
+
+app.get('/api/zalo-users', (req, res) => {
+  const top = parseInt(req.query.top);
+  if (top) {
+    res.json(userCache.getTopUsers(top));
+  } else {
+    res.json(userCache.getAll());
+  }
+});
+
+app.get('/api/zalo-stats', (req, res) => {
+  const stats = messageStore.getStats();
+  stats.userCount = userCache.getUserCount();
+  res.json(stats);
+});
+
 // Expose extension router globally for shopee-api
 const ShopeeAPI = require('./src/shopee-api');
 ShopeeAPI.sendToExtension = sendToExtension;
@@ -100,6 +124,11 @@ wss.on('connection', (ws) => {
 
   // Send recent logs
   ws.send(JSON.stringify({ type: 'logs_batch', data: logger.getRecent(30) }));
+
+  // Send Zalo message stats + recent messages
+  ws.send(JSON.stringify({ type: 'zalo_stats', data: { ...messageStore.getStats(), userCount: userCache.getUserCount() } }));
+  ws.send(JSON.stringify({ type: 'zalo_messages_batch', data: messageStore.getRecent(30) }));
+  ws.send(JSON.stringify({ type: 'zalo_users', data: userCache.getTopUsers(10) }));
 
   // Subscribe to log updates
   const unsubLog = logger.subscribe((entry) => {
@@ -191,6 +220,17 @@ zaloBot.onStatusChange((data) => {
   wss.clients.forEach((client) => {
     if (client.readyState === 1) {
       client.send(JSON.stringify({ type: 'zalo_status', data }));
+    }
+  });
+});
+
+// Broadcast real-time message events to dashboard
+zaloBot.onMessageEvent((entry) => {
+  const stats = { ...messageStore.getStats(), userCount: userCache.getUserCount() };
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1 && !client.isExtension) {
+      client.send(JSON.stringify({ type: 'zalo_message', data: entry }));
+      client.send(JSON.stringify({ type: 'zalo_stats', data: stats }));
     }
   });
 });
