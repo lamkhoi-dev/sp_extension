@@ -199,8 +199,8 @@ function navigateAndWait(tabId, url) {
       function listener(updatedTabId, changeInfo) {
         if (updatedTabId === tabId && changeInfo.status === 'complete') {
           chrome.tabs.onUpdated.removeListener(listener);
-          // Extra delay for React to render DOM
-          setTimeout(resolve, 2000);
+          // Short delay for React to hydrate
+          setTimeout(resolve, 500);
         }
       }
       chrome.tabs.onUpdated.addListener(listener);
