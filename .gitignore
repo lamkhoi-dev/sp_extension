@@ -8,3 +8,4 @@ curl_request.txt
 # Zalo Bot
 zalo-session.json
 public/zalo-qr.png
+data/
