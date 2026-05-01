@@ -308,25 +308,42 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
           console.log('[BG] Temp tab loaded, injecting script...');
         }
 
-        // Inject script to fetch item API (same-origin on shopee.vn)
+        // Inject script to fetch item API, fallback to page title
         const nameResults = await chrome.scripting.executeScript({
           target: { tabId: tempTabId },
           world: 'MAIN',
           func: async (itemId, shopId) => {
+            // Attempt 1: API call (fastest if it works)
             try {
-              console.log('[SHOPEE-TAB] Fetching item API:', itemId, shopId);
+              console.log('[SHOPEE-TAB] Trying item API:', itemId, shopId);
               const resp = await fetch(`/api/v4/item/get?itemid=${itemId}&shopid=${shopId}`, {
                 method: 'GET',
                 headers: { 'accept': 'application/json' },
                 credentials: 'include',
               });
               const data = await resp.json();
-              console.log('[SHOPEE-TAB] API response code:', data?.error, 'name:', data?.data?.name?.slice(0, 40));
-              return { name: data?.data?.name || null, error: data?.error_msg };
+              if (data?.data?.name) {
+                console.log('[SHOPEE-TAB] ✅ API got name:', data.data.name.slice(0, 40));
+                return { name: data.data.name, source: 'api' };
+              }
+              console.warn('[SHOPEE-TAB] API no name, error:', data?.error, data?.error_msg);
             } catch (e) {
-              console.error('[SHOPEE-TAB] Fetch failed:', e.message);
-              return { name: null, error: e.message };
+              console.warn('[SHOPEE-TAB] API fetch failed:', e.message);
             }
+
+            // Attempt 2: Read page title (SPA sets it after render)
+            // Wait a bit for SPA to render
+            await new Promise(r => setTimeout(r, 1500));
+            const title = document.title || '';
+            // Shopee title format: "Product Name | Shopee Việt Nam" or just "Shopee Việt Nam"
+            const cleaned = title.replace(/\s*[\|–-]\s*Shopee.*$/i, '').trim();
+            if (cleaned && cleaned.length > 3 && !cleaned.toLowerCase().includes('shopee')) {
+              console.log('[SHOPEE-TAB] ✅ Got name from title:', cleaned.slice(0, 40));
+              return { name: cleaned, source: 'title' };
+            }
+
+            console.warn('[SHOPEE-TAB] ❌ All methods failed. Title was:', title.slice(0, 60));
+            return { name: null, error: 'All methods failed' };
           },
           args: [productInfo.itemId, productInfo.shopId],
         });
