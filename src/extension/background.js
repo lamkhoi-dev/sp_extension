@@ -260,26 +260,8 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
     let productInfo = parseProductInfo(url);
     console.log('[BG] Parsed product info:', JSON.stringify(productInfo));
 
-    // If we have itemId+shopId but no product name, use Shopee item API
-    // (Shopee SPA doesn't do HTTP redirects, so fetch-redirect won't work)
-    if (!productInfo.searchKeyword && productInfo.itemId && productInfo.shopId) {
-      console.log('[BG] No product name, fetching from Shopee item API...');
-      try {
-        const apiUrl = `https://shopee.vn/api/v4/item/get?itemid=${productInfo.itemId}&shopid=${productInfo.shopId}`;
-        const resp = await fetch(apiUrl, {
-          method: 'GET',
-          headers: { 'accept': 'application/json' },
-        });
-        const data = await resp.json();
-        const itemName = data?.data?.name;
-        if (itemName) {
-          productInfo.searchKeyword = itemName;
-          console.log('[BG] Got product name from API:', itemName.slice(0, 50));
-        }
-      } catch (err) {
-        console.warn('[BG] Item API failed:', err.message);
-      }
-    }
+    // Note: Shopee item API requires session cookies → must call from MAIN world
+    // Service worker can't access shopee.vn APIs (error 90309999)
 
     if (!productInfo.searchKeyword && !productInfo.itemId) {
       sendResult(reqId, { success: false, error: 'Không thể phân tích link Shopee.' });
@@ -290,8 +272,60 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: 'MAIN',
-      func: async (searchKeyword, targetItemId, originalUrl, subId1, subId2, subId3) => {
+      func: async (searchKeyword, targetItemId, targetShopId, originalUrl, subId1, subId2, subId3) => {
         try {
+          // ─── Step 2b: If no search keyword, resolve product name via Shopee API ───
+          // (Must be done here in MAIN world because API requires session cookies)
+          if (!searchKeyword && targetItemId && targetShopId) {
+            console.log('[MAIN] Resolving product name for itemId:', targetItemId);
+            try {
+              const itemResp = await fetch(`https://shopee.vn/api/v4/item/get?itemid=${targetItemId}&shopid=${targetShopId}`, {
+                method: 'GET',
+                headers: { 'accept': 'application/json' },
+                credentials: 'include',
+              });
+              const itemData = await itemResp.json();
+              const itemName = itemData?.data?.name;
+              if (itemName) {
+                searchKeyword = itemName;
+                console.log('[MAIN] Got product name:', itemName.slice(0, 50));
+              }
+            } catch (e) {
+              console.warn('[MAIN] Item API failed (CORS?):', e.message);
+            }
+          }
+
+          // Fallback: try affiliate product offer API directly with item_id
+          if (!searchKeyword && targetItemId) {
+            console.log('[MAIN] Trying affiliate offer API with item_id:', targetItemId);
+            try {
+              const offerResp = await fetch(`/api/v3/offer/product_offer/${targetItemId}`, {
+                method: 'GET',
+                headers: {
+                  'accept': 'application/json, text/plain, */*',
+                  'affiliate-program-type': '1',
+                },
+                credentials: 'include',
+              });
+              const offerData = await offerResp.json();
+              if (offerData.code === 0 && offerData.data) {
+                const card = offerData.data.batch_item_for_item_card_full || {};
+                if (card.name) {
+                  searchKeyword = card.name;
+                  console.log('[MAIN] Got product name from offer API:', card.name.slice(0, 50));
+                }
+              }
+            } catch (e) {
+              console.warn('[MAIN] Offer API failed:', e.message);
+            }
+          }
+
+          // If still no keyword, use itemId as last resort
+          if (!searchKeyword) {
+            searchKeyword = targetItemId;
+            console.log('[MAIN] Using itemId as search keyword:', searchKeyword);
+          }
+
           // ─── Step 3: Search in commission products ───
           const searchUrl = `/api/v3/offer/product/list?list_type=0&keyword=${encodeURIComponent(searchKeyword)}&sort_type=1&page_offset=0&page_limit=20&client_type=1`;
           const searchResp = await fetch(searchUrl, {
@@ -424,8 +458,9 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
         }
       },
       args: [
-        productInfo.searchKeyword || productInfo.itemId || '',
+        productInfo.searchKeyword || '',
         productInfo.itemId || '',
+        productInfo.shopId || '',
         url,
         subIds.sub1 || 'sub1',
         subIds.sub2 || 'sub2',
