@@ -260,8 +260,55 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
     let productInfo = parseProductInfo(url);
     console.log('[BG] Parsed product info:', JSON.stringify(productInfo));
 
-    // Note: Shopee item API requires session cookies → must call from MAIN world
-    // Service worker can't access shopee.vn APIs (error 90309999)
+    // Step 2b: If no product name but have itemId+shopId, resolve via shopee.vn tab
+    // We inject a script into a shopee.vn page context to call /api/v4/item/get
+    // (same-origin request with cookies → bypasses anti-bot for logged-in users)
+    if (!productInfo.searchKeyword && productInfo.itemId && productInfo.shopId) {
+      console.log('[BG] No product name, resolving via shopee.vn tab injection...');
+      try {
+        // Create a hidden tab to shopee.vn (we need same-origin context)
+        const tempTab = await chrome.tabs.create({
+          url: `https://shopee.vn/product/${productInfo.shopId}/${productInfo.itemId}`,
+          active: false,
+        });
+
+        // Wait for tab to load enough (just need DOM ready, not full SPA render)
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Inject script to fetch item API (same-origin on shopee.vn)
+        const nameResults = await chrome.scripting.executeScript({
+          target: { tabId: tempTab.id },
+          world: 'MAIN',
+          func: async (itemId, shopId) => {
+            try {
+              const resp = await fetch(`/api/v4/item/get?itemid=${itemId}&shopid=${shopId}`, {
+                method: 'GET',
+                headers: { 'accept': 'application/json' },
+                credentials: 'include',
+              });
+              const data = await resp.json();
+              return { name: data?.data?.name || null };
+            } catch (e) {
+              return { name: null, error: e.message };
+            }
+          },
+          args: [productInfo.itemId, productInfo.shopId],
+        });
+
+        // Close temp tab
+        chrome.tabs.remove(tempTab.id).catch(() => {});
+
+        const nameResult = nameResults?.[0]?.result;
+        if (nameResult?.name) {
+          productInfo.searchKeyword = nameResult.name;
+          console.log('[BG] Got product name from shopee.vn:', nameResult.name.slice(0, 50));
+        } else {
+          console.warn('[BG] shopee.vn item API returned no name:', nameResult?.error);
+        }
+      } catch (err) {
+        console.warn('[BG] shopee.vn tab injection failed:', err.message);
+      }
+    }
 
     if (!productInfo.searchKeyword && !productInfo.itemId) {
       sendResult(reqId, { success: false, error: 'Không thể phân tích link Shopee.' });
