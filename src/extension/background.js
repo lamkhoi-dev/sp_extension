@@ -241,22 +241,18 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
     let url = payload.url;
     const subIds = payload.subIds || { sub1: 'sub1', sub2: 'sub2', sub3: 'sub3' };
 
-    // Step 1: Resolve short link or product/id URL to named URL
-    // Short links and product/shopId/itemId URLs don't have product name
-    // Shopee redirects these to /product-name-i.shopId.itemId format
-    const needsResolve = url.includes('s.shopee.vn/') || url.match(/shopee\.vn\/product\/\d+\/\d+/);
-    if (needsResolve) {
-      console.log('[BG] Resolving URL:', url);
+    // Step 1: Resolve short links via HTTP redirect (s.shopee.vn does 302)
+    if (url.includes('s.shopee.vn/')) {
+      console.log('[BG] Resolving short link:', url);
       try {
         const resp = await fetch(url, { method: 'GET', redirect: 'follow' });
         const finalUrl = resp.url;
         console.log('[BG] Resolved to:', finalUrl);
-        // Only use resolved URL if it's a valid shopee URL with product name
         if (finalUrl.includes('shopee.vn')) {
           url = finalUrl;
         }
       } catch (err) {
-        console.warn('[BG] URL resolve failed:', err.message);
+        console.warn('[BG] Short link resolve failed:', err.message);
       }
     }
 
@@ -264,19 +260,24 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
     let productInfo = parseProductInfo(url);
     console.log('[BG] Parsed product info:', JSON.stringify(productInfo));
 
-    // If we have itemId but no search keyword, try to resolve via shopee.vn
+    // If we have itemId+shopId but no product name, use Shopee item API
+    // (Shopee SPA doesn't do HTTP redirects, so fetch-redirect won't work)
     if (!productInfo.searchKeyword && productInfo.itemId && productInfo.shopId) {
-      console.log('[BG] No product name, resolving via shopee.vn...');
+      console.log('[BG] No product name, fetching from Shopee item API...');
       try {
-        const productUrl = `https://shopee.vn/product/${productInfo.shopId}/${productInfo.itemId}`;
-        const resp = await fetch(productUrl, { method: 'GET', redirect: 'follow' });
-        const finalUrl = resp.url;
-        if (finalUrl.includes('-i.')) {
-          productInfo = parseProductInfo(finalUrl);
-          console.log('[BG] Resolved product info:', JSON.stringify(productInfo));
+        const apiUrl = `https://shopee.vn/api/v4/item/get?itemid=${productInfo.itemId}&shopid=${productInfo.shopId}`;
+        const resp = await fetch(apiUrl, {
+          method: 'GET',
+          headers: { 'accept': 'application/json' },
+        });
+        const data = await resp.json();
+        const itemName = data?.data?.name;
+        if (itemName) {
+          productInfo.searchKeyword = itemName;
+          console.log('[BG] Got product name from API:', itemName.slice(0, 50));
         }
       } catch (err) {
-        console.warn('[BG] Product resolve failed:', err.message);
+        console.warn('[BG] Item API failed:', err.message);
       }
     }
 
@@ -338,8 +339,17 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
             name: card.name?.slice(0, 40),
           }));
 
-          // max_commission_rate is what users see on the UI
-          const commission = matched.max_commission_rate || matched.seller_commission_rate || matched.default_commission_rate || 0;
+          // Parse commission rates (can be strings like "4%" or numbers)
+          const parseRate = (v) => {
+            if (!v) return 0;
+            if (typeof v === 'number') return v;
+            return parseFloat(v) || 0;
+          };
+          const commission = Math.max(
+            parseRate(matched.max_commission_rate),
+            parseRate(matched.seller_commission_rate),
+            parseRate(matched.default_commission_rate)
+          );
           const productName = card.name || 'Sản phẩm';
           const productLink = matched.product_link || originalUrl;
 
