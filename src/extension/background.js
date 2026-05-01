@@ -306,7 +306,18 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
 
           const card = matched.batch_item_for_item_card_full || {};
           const rawPrice = card.price ? parseInt(card.price) / 100000 : 0;
-          const commission = matched.seller_commission_rate || matched.default_commission_rate || 0;
+
+          // Debug: log all commission fields
+          console.log('[CHECK] Commission fields:', JSON.stringify({
+            seller: matched.seller_commission_rate,
+            default: matched.default_commission_rate,
+            max: matched.max_commission_rate,
+            item_id: matched.item_id,
+            name: card.name?.slice(0, 40),
+          }));
+
+          // max_commission_rate is what users see on the UI
+          const commission = matched.max_commission_rate || matched.seller_commission_rate || matched.default_commission_rate || 0;
           const productName = card.name || 'Sản phẩm';
           const productLink = matched.product_link || originalUrl;
 

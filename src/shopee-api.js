@@ -147,6 +147,12 @@ class ShopeeAPI {
       return { shopId: universalMatch[1], itemId: universalMatch[2], type: 'universal' };
     }
 
+    // Format 5: https://affiliate.shopee.vn/offer/product_offer/{itemId}
+    const affiliateMatch = url.match(/affiliate\.shopee\.vn\/offer\/product_offer\/(\d+)/);
+    if (affiliateMatch) {
+      return { itemId: affiliateMatch[1], type: 'affiliate' };
+    }
+
     // Generic: any shopee.vn link (for Custom Link support)
     if (url.includes('shopee.vn')) {
       return { type: 'generic' };
