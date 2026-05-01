@@ -198,7 +198,8 @@ class ZaloCommands {
   }
 
   async _handleLink(message, url, subIds) {
-    const senderName = await this.actions.getDisplayName(message.data?.uidFrom || message.threadId);
+    const senderUid = message.data?.uidFrom || message.threadId;
+    const senderName = await this.actions.getDisplayName(senderUid);
     const parsed = shopee.parseShopeeLink(url);
     if (!parsed) {
       const errText = '⚠️ URL không phải link Shopee hợp lệ.\nHỗ trợ: shopee.vn/product/..., s.shopee.vn/..., shopee.vn/ten-sp-i.xxx.xxx';
@@ -206,23 +207,43 @@ class ZaloCommands {
       return errText;
     }
 
-    logger.info('ZaloCommands', `[${senderName}] Convert link: ${url.slice(0, 60)}...`);
+    logger.info('ZaloCommands', `[${senderName}] Check & Convert: ${url.slice(0, 60)}...`);
 
     this.actions.markSeen(message.threadId, message.type);
     this.actions.reactHeart(message);
     this.actions.fireTyping(message.threadId, message.type);
 
-    const result = await shopee.convertLink(url, subIds);
+    const result = await shopee.checkAndConvert(url, subIds);
 
+    // No commission
+    if (result.noCommission) {
+      const noCommText = '❌ Sản phẩm không có hoàn tiền.';
+      await this.actions.sendText(noCommText, message.threadId, message.type);
+      return noCommText;
+    }
+
+    // Error
     if (!result.success) {
-      const errText = `❌ Lỗi tạo affiliate link: ${result.error}`;
+      const errText = `❌ Lỗi: ${result.error}`;
       await this.actions.sendText(errText, message.threadId, message.type);
       return errText;
     }
 
-    const replyText = `✅ Affiliate link:\n🔗 ${result.shortLink}`;
-    await this.actions.sendText(replyText, message.threadId, message.type);
-    return replyText;
+    // Build reply with @mention
+    const mentionTag = `@${senderName}`;
+    const msg = `✅ ${mentionTag}\n🔗 ${result.shortLink}\n🏷️ Hoa hồng: ${result.commission}%`;
+
+    const msgContent = {
+      msg,
+      mentions: [{
+        pos: 2, // after "✅ "
+        uid: senderUid,
+        len: mentionTag.length,
+      }],
+    };
+
+    await this.actions.sendStyled(msgContent, message.threadId, message.type);
+    return msg;
   }
 }
 

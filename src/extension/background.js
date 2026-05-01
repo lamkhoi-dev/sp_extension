@@ -87,6 +87,10 @@ async function handleAutomation(action, payload, reqId) {
     // Direct API — no page navigation needed, any affiliate.shopee.vn page works
     executeConvertInMainWorld(targetTab.id, payload, reqId);
 
+  } else if (action === 'check_and_convert') {
+    // New flow: resolve link → search commission → generate affiliate link
+    executeCheckAndConvert(targetTab.id, payload, reqId);
+
   } else if (action === 'search_product') {
     // Search uses Main World scripting — inject directly
     const targetUrl = 'https://affiliate.shopee.vn/offer/product_offer';
@@ -225,6 +229,217 @@ async function executeConvertInMainWorld(tabId, payload, reqId) {
     }
     forwardToContentScript(tabId, 'convert_link', payload, reqId);
   }
+}
+
+// ─── Check Commission + Convert (All-API Pipeline) ──────
+// Step 1: Resolve short link (if needed) — in service worker (no CORS)
+// Step 2: Parse product name + itemId from URL
+// Step 3: Search in commission products (MAIN world API)
+// Step 4: If found → generate affiliate link with SubIDs (MAIN world API)
+async function executeCheckAndConvert(tabId, payload, reqId) {
+  try {
+    let url = payload.url;
+    const subIds = payload.subIds || { sub1: 'sub1', sub2: 'sub2', sub3: 'sub3' };
+
+    // Step 1: Resolve short link
+    if (url.includes('s.shopee.vn/')) {
+      console.log('[BG] Resolving short link:', url);
+      try {
+        const resp = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+        url = resp.url;
+        console.log('[BG] Resolved to:', url);
+      } catch (err) {
+        console.warn('[BG] Short link resolve failed:', err.message);
+        // Continue with original URL
+      }
+    }
+
+    // Step 2: Parse product info from URL
+    const productInfo = parseProductInfo(url);
+    console.log('[BG] Parsed product info:', JSON.stringify(productInfo));
+
+    if (!productInfo.searchKeyword && !productInfo.itemId) {
+      sendResult(reqId, { success: false, error: 'Không thể phân tích link Shopee.' });
+      return;
+    }
+
+    // Step 3 + 4: Search commission + generate link (combined in one MAIN world call)
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (searchKeyword, targetItemId, originalUrl, subId1, subId2, subId3) => {
+        try {
+          // ─── Step 3: Search in commission products ───
+          const searchUrl = `/api/v3/offer/product/list?list_type=0&keyword=${encodeURIComponent(searchKeyword)}&sort_type=1&page_offset=0&page_limit=20&client_type=1`;
+          const searchResp = await fetch(searchUrl, {
+            method: 'GET',
+            headers: {
+              'accept': 'application/json, text/plain, */*',
+              'affiliate-program-type': '1',
+            },
+            credentials: 'include',
+          });
+          const searchData = await searchResp.json();
+
+          if (searchData.code !== 0) {
+            return { success: false, error: searchData.msg || `Search API error: ${searchData.code}` };
+          }
+
+          const list = searchData.data?.list || [];
+          if (list.length === 0) {
+            return { success: false, noCommission: true };
+          }
+
+          // Match by itemId if available, otherwise take first result
+          let matched = null;
+          if (targetItemId) {
+            matched = list.find(item => String(item.item_id) === String(targetItemId));
+          }
+          // If no exact match, take the first result (best match by keyword)
+          if (!matched) {
+            // If we had a specific itemId but no match → no commission
+            if (targetItemId) {
+              return { success: false, noCommission: true };
+            }
+            matched = list[0];
+          }
+
+          const card = matched.batch_item_for_item_card_full || {};
+          const rawPrice = card.price ? parseInt(card.price) / 100000 : 0;
+          const commission = matched.seller_commission_rate || matched.default_commission_rate || 0;
+          const productName = card.name || 'Sản phẩm';
+          const productLink = matched.product_link || originalUrl;
+
+          // ─── Step 4: Generate affiliate link with SubIDs ───
+          const csrfMatch = document.cookie.match(/csrftoken=([^;]+)/);
+          const csrfToken = csrfMatch ? csrfMatch[1] : '';
+
+          const gqlBody = {
+            operationName: 'batchGetCustomLink',
+            query: `
+              query batchGetCustomLink($linkParams: [CustomLinkParam!], $sourceCaller: SourceCaller){
+                batchCustomLink(linkParams: $linkParams, sourceCaller: $sourceCaller){
+                  shortLink
+                  longLink
+                  failCode
+                }
+              }
+            `,
+            variables: {
+              linkParams: [{
+                originalLink: productLink,
+                advancedLinkParams: {
+                  subId1: subId1,
+                  subId2: subId2,
+                  subId3: subId3,
+                  subId4: '',
+                  subId5: '',
+                },
+              }],
+              sourceCaller: 'CUSTOM_LINK_CALLER',
+            },
+          };
+
+          const linkResp = await fetch('/api/v3/gql?q=batchCustomLink', {
+            method: 'POST',
+            headers: {
+              'accept': 'application/json, text/plain, */*',
+              'content-type': 'application/json; charset=UTF-8',
+              'affiliate-program-type': '1',
+              'csrf-token': csrfToken,
+            },
+            credentials: 'include',
+            body: JSON.stringify(gqlBody),
+          });
+
+          const linkData = await linkResp.json();
+          const linkResult = linkData.data?.batchCustomLink?.[0];
+
+          if (!linkResult || (linkResult.failCode && linkResult.failCode !== 0)) {
+            // Search found commission but link gen failed → still return commission info
+            return {
+              success: true,
+              hasCommission: true,
+              productName,
+              commission,
+              price: new Intl.NumberFormat('vi-VN').format(rawPrice) + '₫',
+              shortLink: null,
+              error: 'Link generation failed',
+            };
+          }
+
+          return {
+            success: true,
+            hasCommission: true,
+            productName,
+            commission,
+            price: new Intl.NumberFormat('vi-VN').format(rawPrice) + '₫',
+            shortLink: linkResult.shortLink || linkResult.longLink,
+          };
+        } catch (err) {
+          return { success: false, error: err.message };
+        }
+      },
+      args: [
+        productInfo.searchKeyword || productInfo.itemId || '',
+        productInfo.itemId || '',
+        url,
+        subIds.sub1 || 'sub1',
+        subIds.sub2 || 'sub2',
+        subIds.sub3 || 'sub3',
+      ],
+    });
+
+    const result = results?.[0]?.result;
+    if (result) {
+      sendResult(reqId, result);
+    } else {
+      sendResult(reqId, { success: false, error: 'Script execution returned no result' });
+    }
+  } catch (err) {
+    console.error('[BG] check_and_convert error:', err);
+    sendResult(reqId, { success: false, error: err.message });
+  }
+}
+
+// Parse product info from any Shopee URL format
+function parseProductInfo(url) {
+  // Format 1: shopee.vn/{name}-i.{shopId}.{itemId}
+  const namedMatch = url.match(/shopee\.vn\/(.+)-i\.(\d+)\.(\d+)/);
+  if (namedMatch) {
+    const slug = namedMatch[1];
+    const name = decodeURIComponent(slug).replace(/[-_.]+/g, ' ').trim();
+    return { searchKeyword: name, shopId: namedMatch[2], itemId: namedMatch[3] };
+  }
+
+  // Format 2: shopee.vn/product/{shopId}/{itemId}
+  const productMatch = url.match(/shopee\.vn\/product\/(\d+)\/(\d+)/);
+  if (productMatch) {
+    return { searchKeyword: null, shopId: productMatch[1], itemId: productMatch[2] };
+  }
+
+  // Format 3: shopee.vn/universal-link/product/{shopId}/{itemId}
+  const universalMatch = url.match(/universal-link\/product\/(\d+)\/(\d+)/);
+  if (universalMatch) {
+    return { searchKeyword: null, shopId: universalMatch[1], itemId: universalMatch[2] };
+  }
+
+  // Format 4: affiliate.shopee.vn/offer/product_offer/{itemId}
+  const affiliateMatch = url.match(/affiliate\.shopee\.vn\/offer\/product_offer\/(\d+)/);
+  if (affiliateMatch) {
+    return { searchKeyword: null, shopId: null, itemId: affiliateMatch[1] };
+  }
+
+  // Fallback: try to extract any product-like slug from shopee.vn
+  const fallbackSlug = url.match(/shopee\.vn\/([^/?#]+)/);
+  if (fallbackSlug && !fallbackSlug[1].startsWith('product')) {
+    const name = decodeURIComponent(fallbackSlug[1]).replace(/[-_.]+/g, ' ').trim();
+    if (name.length > 3) {
+      return { searchKeyword: name, shopId: null, itemId: null };
+    }
+  }
+
+  return { searchKeyword: null, shopId: null, itemId: null };
 }
 
 async function executeSearchInMainWorld(tabId, keyword, reqId) {

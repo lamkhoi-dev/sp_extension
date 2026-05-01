@@ -73,6 +73,55 @@ class ShopeeAPI {
     }
   }
 
+  async checkAndConvert(originalLink, subIds = {}) {
+    if (!ShopeeAPI.sendToExtension) {
+      throw new Error('Extension chưa kết nối.');
+    }
+
+    const startTime = Date.now();
+    logger.info('ShopeeAPI', `Check & Convert: ${originalLink.slice(0, 60)}...`);
+
+    try {
+      const reqId = ShopeeAPI.genReqId();
+      const result = await ShopeeAPI.sendToExtension(reqId, {
+        action: 'check_and_convert',
+        payload: {
+          url: originalLink,
+          subIds: {
+            sub1: subIds.sub1 || 'sub1',
+            sub2: subIds.sub2 || 'sub2',
+            sub3: subIds.sub3 || 'sub3',
+          },
+        },
+      });
+
+      const duration = Date.now() - startTime;
+
+      if (result.noCommission) {
+        logger.info('ShopeeAPI', `No commission for link (${duration}ms)`);
+        return { success: false, noCommission: true };
+      }
+
+      if (!result.success) {
+        logger.warn('ShopeeAPI', `Check failed (${duration}ms): ${result.error}`);
+        return { success: false, error: result.error };
+      }
+
+      logger.info('ShopeeAPI', `✅ Commission found: ${result.commission}% → ${result.shortLink} (${duration}ms)`);
+      return {
+        success: true,
+        shortLink: result.shortLink,
+        productName: result.productName,
+        commission: result.commission,
+        price: result.price,
+        originalLink,
+      };
+    } catch (err) {
+      logger.error('ShopeeAPI', `Check & Convert error: ${err.message}`);
+      return { success: false, error: err.message };
+    }
+  }
+
   parseShopeeLink(url) {
     // Format 1: https://shopee.vn/product/{shopId}/{itemId}?...
     const productMatch = url.match(/shopee\.vn\/product\/(\d+)\/(\d+)/);
