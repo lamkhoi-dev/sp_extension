@@ -53,6 +53,22 @@ class ZaloCommands {
     return null;
   }
 
+  // Extract product name hint from Zalo link preview description
+  // Zalo sends: {"description":"Mua {PRODUCT NAME} giá tốt..."}
+  _extractProductHint(content) {
+    if (!content || typeof content !== 'object') return null;
+    const desc = content.description || content.desc;
+    if (!desc || typeof desc !== 'string') return null;
+    // Format: "Mua {product name} giá t..." → extract product name
+    const match = desc.match(/^Mua\s+(.+?)\s+giá/i);
+    if (match) {
+      logger.info('ZaloCommands', `Product hint from Zalo preview: "${match[1].slice(0, 50)}"`);
+      return match[1].trim();
+    }
+    // Fallback: use full description as hint (trim common prefixes)
+    return desc.replace(/^Mua\s+/i, '').slice(0, 100).trim() || null;
+  }
+
   _extractShopeeUrl(text) {
     const match = text.match(/(https?:\/\/[^\s]*shopee[^\s]*)/i);
     return match ? match[1] : null;
@@ -102,7 +118,9 @@ class ZaloCommands {
         // Auto-detect Shopee link
         const detectedUrl = this._extractShopeeUrl(text);
         if (detectedUrl) {
-          replyText = await this._handleLink(message, detectedUrl, {});
+          // Extract product name hint from Zalo link preview
+          const productHint = this._extractProductHint(rawContent);
+          replyText = await this._handleLink(message, detectedUrl, {}, productHint);
         } else if (text.startsWith('/')) {
           replyText = `❓ Lệnh không hợp lệ: ${text.split(' ')[0]}\nGõ /help để xem danh sách lệnh.`;
           await this.actions.humanReply(message, replyText, { react: false });
@@ -197,7 +215,7 @@ class ZaloCommands {
     return reply;
   }
 
-  async _handleLink(message, url, subIds) {
+  async _handleLink(message, url, subIds, productHint = null) {
     const senderUid = message.data?.uidFrom || message.threadId;
     const senderName = await this.actions.getDisplayName(senderUid);
     const parsed = shopee.parseShopeeLink(url);
@@ -213,7 +231,7 @@ class ZaloCommands {
     this.actions.reactHeart(message);
     this.actions.fireTyping(message.threadId, message.type);
 
-    const result = await shopee.checkAndConvert(url, subIds);
+    const result = await shopee.checkAndConvert(url, subIds, productHint);
 
     // No commission
     if (result.noCommission) {

@@ -73,7 +73,7 @@ class ShopeeAPI {
     }
   }
 
-  async checkAndConvert(originalLink, subIds = {}) {
+  async checkAndConvert(originalLink, subIds = {}, productHint = null) {
     if (!ShopeeAPI.sendToExtension) {
       throw new Error('Extension chưa kết nối.');
     }
@@ -87,6 +87,7 @@ class ShopeeAPI {
         action: 'check_and_convert',
         payload: {
           url: originalLink,
+          productHint: productHint || null,
           subIds: {
             sub1: subIds.sub1 || 'sub1',
             sub2: subIds.sub2 || 'sub2',

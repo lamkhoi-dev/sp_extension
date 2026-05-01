@@ -260,6 +260,12 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
     let productInfo = parseProductInfo(url);
     console.log('[BG] Parsed product info:', JSON.stringify(productInfo));
 
+    // Step 2a: Use product hint from Zalo message preview (fastest, no API needed)
+    if (!productInfo.searchKeyword && payload.productHint) {
+      productInfo.searchKeyword = payload.productHint;
+      console.log('[BG] Using product hint from Zalo:', payload.productHint.slice(0, 50));
+    }
+
     // Step 2b: If no product name but have itemId+shopId, resolve via shopee.vn tab
     // We inject a script into a shopee.vn page context to call /api/v4/item/get
     // (same-origin request with cookies → bypasses anti-bot for logged-in users)
