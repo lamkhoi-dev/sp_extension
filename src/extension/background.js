@@ -84,13 +84,8 @@ async function handleAutomation(action, payload, reqId) {
 
   // TAB ROUTING: Navigate to the correct page based on action
   if (action === 'convert_link') {
-    const targetUrl = 'https://affiliate.shopee.vn/offer/custom_link';
-    if (!targetTab.url.includes('/offer/custom_link')) {
-      console.log('[BG] Routing tab to Custom Link page...');
-      await navigateAndWait(targetTab.id, targetUrl);
-    }
-    // Forward to content script
-    forwardToContentScript(targetTab.id, action, payload, reqId);
+    // Direct API — no page navigation needed, any affiliate.shopee.vn page works
+    executeConvertInMainWorld(targetTab.id, payload, reqId);
 
   } else if (action === 'search_product') {
     // Search uses Main World scripting — inject directly
@@ -120,6 +115,116 @@ function forwardToContentScript(tabId, action, payload, reqId) {
     }
     sendResult(reqId, response);
   });
+}
+
+// ─── Direct API Convert Link (MAIN World) ────────────────
+// Calls Shopee GraphQL endpoint directly inside the tab's context
+// Same cookies/session as the real UI — no DOM manipulation needed
+async function executeConvertInMainWorld(tabId, payload, reqId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (url, subId1, subId2) => {
+        try {
+          // Get CSRF token from cookie
+          const csrfMatch = document.cookie.match(/csrftoken=([^;]+)/);
+          const csrfToken = csrfMatch ? csrfMatch[1] : '';
+
+          const gqlBody = {
+            operationName: 'batchGetCustomLink',
+            query: `
+              query batchGetCustomLink($linkParams: [CustomLinkParam!], $sourceCaller: SourceCaller){
+                batchCustomLink(linkParams: $linkParams, sourceCaller: $sourceCaller){
+                  shortLink
+                  longLink
+                  failCode
+                }
+              }
+            `,
+            variables: {
+              linkParams: [{
+                originalLink: url,
+                advancedLinkParams: {
+                  subId1: subId1 || '',
+                  subId2: subId2 || '',
+                  subId3: '',
+                  subId4: '',
+                  subId5: '',
+                },
+              }],
+              sourceCaller: 'CUSTOM_LINK_CALLER',
+            },
+          };
+
+          const response = await fetch('/api/v3/gql?q=batchCustomLink', {
+            method: 'POST',
+            headers: {
+              'accept': 'application/json, text/plain, */*',
+              'content-type': 'application/json; charset=UTF-8',
+              'affiliate-program-type': '1',
+              'csrf-token': csrfToken,
+            },
+            credentials: 'include',
+            body: JSON.stringify(gqlBody),
+          });
+
+          const data = await response.json();
+
+          // Check for errors
+          if (data.errors && data.errors.length > 0) {
+            return { success: false, error: data.errors[0].message || 'GraphQL error' };
+          }
+
+          const result = data.data?.batchCustomLink?.[0];
+          if (!result) {
+            return { success: false, error: 'No result from API' };
+          }
+
+          if (result.failCode && result.failCode !== 0) {
+            return { success: false, error: `API fail code: ${result.failCode}` };
+          }
+
+          return {
+            success: true,
+            originalLink: url,
+            shortLink: result.shortLink || result.longLink,
+          };
+        } catch (err) {
+          return { success: false, error: err.message };
+        }
+      },
+      args: [payload.url, payload.subId1 || '', payload.subId2 || ''],
+    });
+
+    const result = results?.[0]?.result;
+    if (result) {
+      // If direct API failed, fallback to DOM content script
+      if (!result.success) {
+        console.warn('[BG] Direct API failed, falling back to content script:', result.error);
+        const targetUrl = 'https://affiliate.shopee.vn/offer/custom_link';
+        const currentTab = await chrome.tabs.get(tabId);
+        if (!currentTab.url.includes('/offer/custom_link')) {
+          await navigateAndWait(tabId, targetUrl);
+        }
+        forwardToContentScript(tabId, 'convert_link', payload, reqId);
+        return;
+      }
+      sendResult(reqId, result);
+    } else {
+      sendResult(reqId, { success: false, error: 'Script execution returned no result' });
+    }
+  } catch (err) {
+    console.error('[BG] Main World convert error:', err);
+    // Fallback to content script
+    console.warn('[BG] Falling back to content script...');
+    const targetUrl = 'https://affiliate.shopee.vn/offer/custom_link';
+    const currentTab = await chrome.tabs.get(tabId);
+    if (!currentTab.url.includes('/offer/custom_link')) {
+      await navigateAndWait(tabId, targetUrl);
+    }
+    forwardToContentScript(tabId, 'convert_link', payload, reqId);
+  }
 }
 
 async function executeSearchInMainWorld(tabId, keyword, reqId) {
