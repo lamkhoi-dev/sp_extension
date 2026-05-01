@@ -264,49 +264,83 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
     // We inject a script into a shopee.vn page context to call /api/v4/item/get
     // (same-origin request with cookies → bypasses anti-bot for logged-in users)
     if (!productInfo.searchKeyword && productInfo.itemId && productInfo.shopId) {
-      console.log('[BG] No product name, resolving via shopee.vn tab injection...');
+      console.log('[BG] Step 2b: resolving product name via shopee.vn tab...');
+      let tempTabId = null;
       try {
-        // Create a hidden tab to shopee.vn (we need same-origin context)
-        const tempTab = await chrome.tabs.create({
-          url: `https://shopee.vn/product/${productInfo.shopId}/${productInfo.itemId}`,
-          active: false,
-        });
+        // Try to find an existing shopee.vn tab first (avoid creating new ones)
+        const existingTabs = await chrome.tabs.query({ url: 'https://shopee.vn/*' });
+        
+        if (existingTabs.length > 0) {
+          // Use existing shopee.vn tab — no need to create
+          tempTabId = existingTabs[0].id;
+          console.log('[BG] Found existing shopee.vn tab:', tempTabId);
+        } else {
+          // Create a hidden tab
+          const tempTab = await chrome.tabs.create({
+            url: `https://shopee.vn/product/${productInfo.shopId}/${productInfo.itemId}`,
+            active: false,
+          });
+          tempTabId = tempTab.id;
+          console.log('[BG] Created temp shopee.vn tab:', tempTabId);
 
-        // Wait for tab to load enough (just need DOM ready, not full SPA render)
-        await new Promise(resolve => setTimeout(resolve, 2000));
+          // Wait for tab to finish loading
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve(); // resolve anyway, try injection
+            }, 5000);
+
+            const listener = (tabId, changeInfo) => {
+              if (tabId === tempTabId && changeInfo.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(listener);
+                clearTimeout(timeout);
+                resolve();
+              }
+            };
+            chrome.tabs.onUpdated.addListener(listener);
+          });
+          console.log('[BG] Temp tab loaded, injecting script...');
+        }
 
         // Inject script to fetch item API (same-origin on shopee.vn)
         const nameResults = await chrome.scripting.executeScript({
-          target: { tabId: tempTab.id },
+          target: { tabId: tempTabId },
           world: 'MAIN',
           func: async (itemId, shopId) => {
             try {
+              console.log('[SHOPEE-TAB] Fetching item API:', itemId, shopId);
               const resp = await fetch(`/api/v4/item/get?itemid=${itemId}&shopid=${shopId}`, {
                 method: 'GET',
                 headers: { 'accept': 'application/json' },
                 credentials: 'include',
               });
               const data = await resp.json();
-              return { name: data?.data?.name || null };
+              console.log('[SHOPEE-TAB] API response code:', data?.error, 'name:', data?.data?.name?.slice(0, 40));
+              return { name: data?.data?.name || null, error: data?.error_msg };
             } catch (e) {
+              console.error('[SHOPEE-TAB] Fetch failed:', e.message);
               return { name: null, error: e.message };
             }
           },
           args: [productInfo.itemId, productInfo.shopId],
         });
 
-        // Close temp tab
-        chrome.tabs.remove(tempTab.id).catch(() => {});
+        // Close temp tab only if we created it
+        if (!existingTabs || existingTabs.length === 0) {
+          chrome.tabs.remove(tempTabId).catch(() => {});
+        }
 
         const nameResult = nameResults?.[0]?.result;
         if (nameResult?.name) {
           productInfo.searchKeyword = nameResult.name;
-          console.log('[BG] Got product name from shopee.vn:', nameResult.name.slice(0, 50));
+          console.log('[BG] ✅ Got product name:', nameResult.name.slice(0, 60));
         } else {
-          console.warn('[BG] shopee.vn item API returned no name:', nameResult?.error);
+          console.warn('[BG] ❌ item API returned no name:', JSON.stringify(nameResult));
         }
       } catch (err) {
-        console.warn('[BG] shopee.vn tab injection failed:', err.message);
+        console.warn('[BG] ❌ Tab injection failed:', err.message);
+        // Clean up temp tab on error
+        if (tempTabId) chrome.tabs.remove(tempTabId).catch(() => {});
       }
     }
 
