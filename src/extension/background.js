@@ -274,30 +274,11 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
       world: 'MAIN',
       func: async (searchKeyword, targetItemId, targetShopId, originalUrl, subId1, subId2, subId3) => {
         try {
-          // ─── Step 2b: If no search keyword, resolve product name via Shopee API ───
-          // (Must be done here in MAIN world because API requires session cookies)
-          if (!searchKeyword && targetItemId && targetShopId) {
-            console.log('[MAIN] Resolving product name for itemId:', targetItemId);
-            try {
-              const itemResp = await fetch(`https://shopee.vn/api/v4/item/get?itemid=${targetItemId}&shopid=${targetShopId}`, {
-                method: 'GET',
-                headers: { 'accept': 'application/json' },
-                credentials: 'include',
-              });
-              const itemData = await itemResp.json();
-              const itemName = itemData?.data?.name;
-              if (itemName) {
-                searchKeyword = itemName;
-                console.log('[MAIN] Got product name:', itemName.slice(0, 50));
-              }
-            } catch (e) {
-              console.warn('[MAIN] Item API failed (CORS?):', e.message);
-            }
-          }
-
-          // Fallback: try affiliate product offer API directly with item_id
+          // ─── Step 2b: If no search keyword, resolve via affiliate offer API ───
+          // (shopee.vn API is CORS-blocked from affiliate.shopee.vn)
+          // The offer API runs on same origin and returns product details
           if (!searchKeyword && targetItemId) {
-            console.log('[MAIN] Trying affiliate offer API with item_id:', targetItemId);
+            console.log('[MAIN] No keyword, trying affiliate offer API for itemId:', targetItemId);
             try {
               const offerResp = await fetch(`/api/v3/offer/product_offer/${targetItemId}`, {
                 method: 'GET',
@@ -308,8 +289,10 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
                 credentials: 'include',
               });
               const offerData = await offerResp.json();
+              console.log('[MAIN] Offer API response code:', offerData.code);
               if (offerData.code === 0 && offerData.data) {
-                const card = offerData.data.batch_item_for_item_card_full || {};
+                const offer = offerData.data;
+                const card = offer.batch_item_for_item_card_full || {};
                 if (card.name) {
                   searchKeyword = card.name;
                   console.log('[MAIN] Got product name from offer API:', card.name.slice(0, 50));
@@ -320,7 +303,7 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
             }
           }
 
-          // If still no keyword, use itemId as last resort
+          // If still no keyword, use itemId as last resort (unlikely to work)
           if (!searchKeyword) {
             searchKeyword = targetItemId;
             console.log('[MAIN] Using itemId as search keyword:', searchKeyword);
@@ -506,6 +489,12 @@ function parseProductInfo(url) {
   const affiliateMatch = url.match(/affiliate\.shopee\.vn\/offer\/product_offer\/(\d+)/);
   if (affiliateMatch) {
     return { searchKeyword: null, shopId: null, itemId: affiliateMatch[1] };
+  }
+
+  // Format 5: shopee.vn/{word}/{shopId}/{itemId} (resolved short links → e.g. /opaanlp/123/456)
+  const resolvedMatch = url.match(/shopee\.vn\/([a-zA-Z]+)\/(\d+)\/(\d+)/);
+  if (resolvedMatch && resolvedMatch[1] !== 'product') {
+    return { searchKeyword: null, shopId: resolvedMatch[2], itemId: resolvedMatch[3] };
   }
 
   // Fallback: try to extract any product-like slug from shopee.vn
