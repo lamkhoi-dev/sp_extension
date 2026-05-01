@@ -241,22 +241,44 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
     let url = payload.url;
     const subIds = payload.subIds || { sub1: 'sub1', sub2: 'sub2', sub3: 'sub3' };
 
-    // Step 1: Resolve short link
-    if (url.includes('s.shopee.vn/')) {
-      console.log('[BG] Resolving short link:', url);
+    // Step 1: Resolve short link or product/id URL to named URL
+    // Short links and product/shopId/itemId URLs don't have product name
+    // Shopee redirects these to /product-name-i.shopId.itemId format
+    const needsResolve = url.includes('s.shopee.vn/') || url.match(/shopee\.vn\/product\/\d+\/\d+/);
+    if (needsResolve) {
+      console.log('[BG] Resolving URL:', url);
       try {
-        const resp = await fetch(url, { method: 'HEAD', redirect: 'follow' });
-        url = resp.url;
-        console.log('[BG] Resolved to:', url);
+        const resp = await fetch(url, { method: 'GET', redirect: 'follow' });
+        const finalUrl = resp.url;
+        console.log('[BG] Resolved to:', finalUrl);
+        // Only use resolved URL if it's a valid shopee URL with product name
+        if (finalUrl.includes('shopee.vn')) {
+          url = finalUrl;
+        }
       } catch (err) {
-        console.warn('[BG] Short link resolve failed:', err.message);
-        // Continue with original URL
+        console.warn('[BG] URL resolve failed:', err.message);
       }
     }
 
     // Step 2: Parse product info from URL
-    const productInfo = parseProductInfo(url);
+    let productInfo = parseProductInfo(url);
     console.log('[BG] Parsed product info:', JSON.stringify(productInfo));
+
+    // If we have itemId but no search keyword, try to resolve via shopee.vn
+    if (!productInfo.searchKeyword && productInfo.itemId && productInfo.shopId) {
+      console.log('[BG] No product name, resolving via shopee.vn...');
+      try {
+        const productUrl = `https://shopee.vn/product/${productInfo.shopId}/${productInfo.itemId}`;
+        const resp = await fetch(productUrl, { method: 'GET', redirect: 'follow' });
+        const finalUrl = resp.url;
+        if (finalUrl.includes('-i.')) {
+          productInfo = parseProductInfo(finalUrl);
+          console.log('[BG] Resolved product info:', JSON.stringify(productInfo));
+        }
+      } catch (err) {
+        console.warn('[BG] Product resolve failed:', err.message);
+      }
+    }
 
     if (!productInfo.searchKeyword && !productInfo.itemId) {
       sendResult(reqId, { success: false, error: 'Không thể phân tích link Shopee.' });

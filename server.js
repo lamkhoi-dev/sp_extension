@@ -171,7 +171,8 @@ wss.on('connection', (ws) => {
         const reqId = result.reqId;
         if (pendingRequests[reqId]) {
           clearTimeout(pendingRequests[reqId].timeout);
-          if (result.success) {
+          if (result.success || result.noCommission) {
+            // noCommission is a valid business result, not an error
             pendingRequests[reqId].resolve(result);
           } else {
             pendingRequests[reqId].reject(new Error(result.error || 'Automation failed'));
