@@ -1,0 +1,608 @@
+import { useState, useRef, useMemo } from 'react';
+import {
+  RefreshCw, ShoppingCart, CheckCircle, DollarSign, Percent,
+  Download, Upload, AlertCircle, ChevronDown, ChevronRight,
+  Search, X, CalendarDays,
+} from 'lucide-react';
+import Badge from '../components/ui/Badge';
+import Button from '../components/ui/Button';
+import { useOrders, formatVND, formatShortVND, useProductImages } from '../hooks/useApi';
+
+// ─── Status Config ──────────────────────────────────────
+const STATUS_OPTIONS = ['Tất cả', 'Đang chờ xử lý', 'Đang giao hàng', 'Hoàn thành'];
+
+const statusStyle = {
+  'Hoàn thành':      { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-400', dot: 'bg-emerald-500' },
+  'Đang giao hàng':  { bg: 'bg-blue-100 dark:bg-blue-900/30',      text: 'text-blue-700 dark:text-blue-400',      dot: 'bg-blue-500' },
+  'Đang chờ xử lý':  { bg: 'bg-amber-100 dark:bg-amber-900/30',    text: 'text-amber-700 dark:text-amber-400',    dot: 'bg-amber-500' },
+};
+
+function StatusBadge({ status }) {
+  const s = statusStyle[status] || { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400' };
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${s.bg} ${s.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+      {status || '--'}
+    </span>
+  );
+}
+
+// ─── Helpers ────────────────────────────────────────────
+function fmtTime(dt) {
+  if (!dt) return '--';
+  const d = new Date(dt);
+  if (isNaN(d)) return dt;
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  return `${hh}:${mm} ${dd}-${mo}-${d.getFullYear()}`;
+}
+
+function fmtPrice(v) {
+  if (!v && v !== 0) return '₫0';
+  return '₫' + new Intl.NumberFormat('vi-VN').format(Math.round(v));
+}
+
+function fmtRate(v) {
+  if (!v && v !== 0) return '0%';
+  const n = parseFloat(v);
+  if (isNaN(n)) return String(v);
+  return n.toFixed(n % 1 === 0 ? 0 : 1) + '%';
+}
+
+function imgUrl(imgCode) {
+  if (!imgCode) return null;
+  return `https://down-vn.img.susercontent.com/file/${imgCode}`;
+}
+
+// ─── Group rows by order_id ─────────────────────────────
+function groupByOrder(rows) {
+  const map = new Map();
+  for (const row of rows) {
+    const key = row.order_id;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(row);
+  }
+  return [...map.entries()]; // [[orderId, [items]], ...]
+}
+
+// ─── Filter Field Components ────────────────────────────
+const TIME_FIELD_OPTIONS = [
+  { value: 'order_time', label: 'Thời Gian Đặt Hàng' },
+  { value: 'complete_time', label: 'Thời gian hoàn thành' },
+  { value: 'click_time', label: 'Thời gian Click' },
+];
+
+const inputCls = 'w-full px-2.5 py-1.5 text-[13px] rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-400/50 focus:border-orange-400 transition-colors';
+const selectCls = `${inputCls} appearance-none cursor-pointer pr-7`;
+const labelCls = 'text-[12px] font-medium text-slate-500 dark:text-slate-400 mb-1 block whitespace-nowrap';
+
+function FilterSelect({ label, value, onChange, options }) {
+  return (
+    <div>
+      <label className={labelCls}>{label}</label>
+      <div className="relative">
+        <select value={value} onChange={e => onChange(e.target.value)} className={selectCls}>
+          {options.map(o => typeof o === 'string'
+            ? <option key={o} value={o}>{o}</option>
+            : <option key={o.value} value={o.value}>{o.label}</option>
+          )}
+        </select>
+        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+      </div>
+    </div>
+  );
+}
+
+function FilterInput({ label, value, onChange, placeholder }) {
+  return (
+    <div>
+      <label className={labelCls}>{label}</label>
+      <input
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={inputCls}
+      />
+    </div>
+  );
+}
+
+// ─── Main Component ─────────────────────────────────────
+export default function OrdersPage() {
+  const {
+    orders, stats, loading, filters, setFilters, filterOptions,
+    syncing, syncResult, syncOrders, importCSV,
+    applyFilters, resetFilters, refresh,
+  } = useOrders();
+
+  const [expandedRows, setExpandedRows] = useState(new Set());
+  const fileInputRef = useRef(null);
+
+  const updateFilter = (key, value) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  const toggleExpand = (key) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const filteredOrders = orders || [];
+  const grouped = useMemo(() => groupByOrder(filteredOrders), [filteredOrders]);
+
+  // Collect all item_ids for batch image lookup
+  const allItemIds = useMemo(() => filteredOrders.map(o => o.item_id).filter(Boolean), [filteredOrders]);
+  const imgMap = useProductImages(allItemIds);
+
+  const handleCSVUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => importCSV(ev.target.result);
+    reader.readAsText(file, 'utf-8');
+    e.target.value = '';
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') applyFilters();
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Báo cáo chuyển đổi</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Dữ liệu đơn hàng từ Shopee Affiliate</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input ref={fileInputRef} type="file" accept=".csv" onChange={handleCSVUpload} className="hidden" />
+          <Button variant="outline" icon={Upload} onClick={() => fileInputRef.current?.click()} disabled={syncing}>
+            Import CSV
+          </Button>
+          <Button
+            variant="primary"
+            icon={syncing ? RefreshCw : Download}
+            onClick={syncOrders}
+            disabled={syncing}
+            className={syncing ? 'animate-pulse' : ''}
+          >
+            {syncing ? 'Đang sync...' : 'Sync Shopee'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Sync Result */}
+      {syncResult && (
+        <div className={`rounded-xl p-3 flex items-start gap-3 text-sm ${
+          syncResult.success
+            ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800'
+            : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+        }`}>
+          {syncResult.success
+            ? <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+            : <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+          }
+          <span className={syncResult.success ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}>
+            {syncResult.success
+              ? `Sync thành công! ${syncResult.inserted}/${syncResult.total} đơn đã import.`
+              : syncResult.error}
+          </span>
+        </div>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard icon={ShoppingCart} label="Tổng đơn" value={stats?.uniqueOrders || 0} />
+        <StatCard icon={DollarSign} label="Hoa hồng" value={formatShortVND(stats?.totalCommission || 0)} color="text-emerald-500" />
+        <StatCard icon={Percent} label="GMV" value={formatShortVND(stats?.totalOrderValue || 0)} color="text-blue-500" />
+        <StatCard icon={CheckCircle} label="Shops" value={stats?.uniqueShops || 0} />
+      </div>
+
+      {/* ═══ Shopee-style Filter Panel ═══ */}
+      <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4" onKeyDown={handleKeyDown}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-3">
+          {/* Row 1 */}
+          <FilterSelect
+            label="Loại thời gian"
+            value={filters.timeField}
+            onChange={v => updateFilter('timeField', v)}
+            options={TIME_FIELD_OPTIONS}
+          />
+          <div>
+            <label className={labelCls}>Khoảng thời gian</label>
+            <div className="flex items-center gap-1.5">
+              <div className="relative flex-1">
+                <input
+                  type="date"
+                  value={filters.dateFrom}
+                  onChange={e => updateFilter('dateFrom', e.target.value)}
+                  className={`${inputCls} pr-2`}
+                  placeholder="Ngày bắt đầu"
+                />
+              </div>
+              <span className="text-slate-400 text-xs">~</span>
+              <div className="relative flex-1">
+                <input
+                  type="date"
+                  value={filters.dateTo}
+                  onChange={e => updateFilter('dateTo', e.target.value)}
+                  className={`${inputCls} pr-2`}
+                  placeholder="Ngày kết thúc"
+                />
+              </div>
+            </div>
+          </div>
+          <FilterSelect
+            label="Trạng thái đơn hàng"
+            value={filters.status}
+            onChange={v => updateFilter('status', v)}
+            options={['Tất cả', ...STATUS_OPTIONS.slice(1)]}
+          />
+
+          {/* Row 2 */}
+          <FilterInput
+            label="Order ID"
+            value={filters.orderId}
+            onChange={v => updateFilter('orderId', v)}
+            placeholder="Tìm kiếm ID đơn hàng"
+          />
+          <FilterInput
+            label="Tên Shop"
+            value={filters.shopName}
+            onChange={v => updateFilter('shopName', v)}
+            placeholder="Tìm kiếm theo tên shop"
+          />
+          <FilterSelect
+            label="Loại Shop"
+            value={filters.shopType}
+            onChange={v => updateFilter('shopType', v)}
+            options={['Tất cả', ...(filterOptions.shopTypes || [])]}
+          />
+
+          {/* Row 3 */}
+          <FilterInput
+            label="Tên sản phẩm"
+            value={filters.productName}
+            onChange={v => updateFilter('productName', v)}
+            placeholder="Tìm kiếm theo tên SP"
+          />
+          <FilterSelect
+            label="Loại Hoa hồng"
+            value={filters.commissionType}
+            onChange={v => updateFilter('commissionType', v)}
+            options={['Tất cả', ...(filterOptions.commissionTypes || [])]}
+          />
+          <FilterSelect
+            label="Kênh"
+            value={filters.channel}
+            onChange={v => updateFilter('channel', v)}
+            options={['Tất cả', ...(filterOptions.channels || [])]}
+          />
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/50">
+          <button
+            onClick={resetFilters}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-md border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+            Xóa bộ lọc
+          </button>
+          <button
+            onClick={applyFilters}
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 text-[13px] font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-md shadow-sm transition-colors"
+          >
+            <Search className="w-3.5 h-3.5" />
+            Tìm kiếm
+          </button>
+        </div>
+      </div>
+
+      {/* Shopee-style Table */}
+      <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <RefreshCw className="w-6 h-6 text-blue-500 animate-spin" />
+          </div>
+        ) : grouped.length === 0 ? (
+          <div className="text-center py-16 text-slate-400">
+            <ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-40" />
+            <p>Chưa có đơn hàng nào</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse min-w-[1100px]">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-700">
+                  {['Chi tiết đơn hàng','Thông tin cửa hàng','Thông tin sản phẩm','Thông tin ưu đãi','Giá trị đơn hàng','Hoa hồng sản phẩm','Hoa hồng đơn hàng'].map(h => (
+                    <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-200 dark:border-slate-700 last:border-r-0">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {grouped.map(([orderId, items]) => (
+                  <OrderGroup
+                    key={orderId}
+                    orderId={orderId}
+                    items={items}
+                    expanded={expandedRows.has(orderId)}
+                    onToggle={() => toggleExpand(orderId)}
+                    imgMap={imgMap}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Total count */}
+      {!loading && grouped.length > 0 && (
+        <p className="text-xs text-slate-400 text-right">
+          Hiển thị {filteredOrders.length} dòng • {grouped.length} đơn hàng
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Order Group (rowspan logic) ────────────────────────
+function OrderGroup({ orderId, items, expanded, onToggle, imgMap }) {
+  const count = items.length;
+  const first = items[0];
+
+  return (
+    <>
+      {items.map((item, idx) => {
+        const isFirst = idx === 0;
+        const rowKey = `${orderId}_${item.item_id}`;
+
+        return (
+          <tr
+            key={rowKey}
+            className={`border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50/50 dark:hover:bg-slate-700/20 align-top ${
+              isFirst ? 'border-t-2 border-t-slate-200 dark:border-t-slate-600' : ''
+            }`}
+          >
+            {/* ① Chi tiết đơn hàng — rowspan */}
+            {isFirst && (
+              <td rowSpan={count} className="px-3 py-2.5 border-r border-slate-100 dark:border-slate-700/50 align-top min-w-[200px]">
+                <div className="space-y-1">
+                  <p className="text-[11px] text-slate-400">Order id:</p>
+                  <p className="font-mono text-xs font-semibold text-slate-800 dark:text-white">{orderId}</p>
+                  <div className="mt-1">
+                    <StatusBadge status={first.order_status} />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1.5">Checkout id:&nbsp;
+                    <span className="text-slate-600 dark:text-slate-300">{first.checkout_id || '--'}</span>
+                  </p>
+                  <p className="text-[11px] text-slate-400">Thời Gian Đặt Hàng:&nbsp;
+                    <span className="text-slate-600 dark:text-slate-300">{fmtTime(first.order_time)}</span>
+                  </p>
+                  <p className="text-[11px] text-slate-400">Thời gian hoàn thành:&nbsp;
+                    <span className="text-slate-600 dark:text-slate-300">{fmtTime(first.complete_time)}</span>
+                  </p>
+                  <p className="text-[11px] text-slate-400">Thời gian Click:&nbsp;
+                    <span className="text-slate-600 dark:text-slate-300">{fmtTime(first.click_time)}</span>
+                  </p>
+                  {/* Expand toggle */}
+                  <button
+                    onClick={onToggle}
+                    className="mt-1.5 flex items-center gap-1 text-[11px] text-blue-500 hover:text-blue-600 transition-colors"
+                  >
+                    {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    Chi tiết
+                  </button>
+                </div>
+              </td>
+            )}
+
+            {/* ② Thông tin cửa hàng — rowspan */}
+            {isFirst && (
+              <td rowSpan={count} className="px-3 py-2.5 border-r border-slate-100 dark:border-slate-700/50 align-top min-w-[140px]">
+                <p className="text-xs font-medium text-slate-800 dark:text-white leading-snug">{first.shop_name || '--'}</p>
+                <p className="text-[11px] text-slate-400 mt-1">Shop id:&nbsp;
+                  <span className="text-slate-500">{first.shop_id || '--'}</span>
+                </p>
+                <p className="text-[11px] text-slate-400">Loại Shop:&nbsp;
+                  <span className="text-slate-500">{first.shop_type || '--'}</span>
+                </p>
+              </td>
+            )}
+
+            {/* ③ Thông tin sản phẩm — per item */}
+            <td className="px-3 py-2.5 border-r border-slate-100 dark:border-slate-700/50 min-w-[260px]">
+              <div className="flex gap-2">
+                <ProductThumb imgCode={imgMap?.[item.item_id]} />
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="text-xs font-medium text-slate-800 dark:text-white leading-snug line-clamp-2">{item.item_name || '--'}</p>
+                  <p className="text-[11px] text-slate-400">Item id: <span className="text-slate-500">{item.item_id || '--'}</span></p>
+                  <p className="text-[11px] text-slate-400">ID Model:&nbsp;<span className="text-slate-500">{item.model_id || '--'}</span></p>
+                  <p className="text-[11px] text-slate-400">Loại sản phẩm:&nbsp;<span className="text-slate-500">{item.product_type || '--'}</span></p>
+                  {item.promotion_id && (
+                    <p className="text-[11px] text-slate-400">Promotion id:&nbsp;<span className="text-slate-500">{item.promotion_id}</span></p>
+                  )}
+                  <p className="text-[11px] text-slate-400">Ngành hàng:&nbsp;
+                    <span className="text-slate-500">
+                      {[item.category_l1, item.category_l2, item.category_l3].filter(Boolean).join(' > ') || '--'}
+                    </span>
+                  </p>
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-200 mt-1">
+                    {fmtPrice(item.price)} <span className="text-slate-400">x{item.quantity || 1}</span>
+                  </p>
+                </div>
+              </div>
+            </td>
+
+            {/* ④ Thông tin ưu đãi — per item */}
+            <td className="px-3 py-2.5 border-r border-slate-100 dark:border-slate-700/50 align-top min-w-[90px]">
+              <p className="text-xs text-slate-700 dark:text-slate-300">{item.commission_type || '--'}</p>
+              {item.campaign_partner && (
+                <p className="text-[11px] text-slate-400 mt-0.5">{item.campaign_partner}</p>
+              )}
+            </td>
+
+            {/* ⑤ Giá trị đơn hàng — per item */}
+            <td className="px-3 py-2.5 border-r border-slate-100 dark:border-slate-700/50 align-top text-right min-w-[100px]">
+              <p className="text-xs font-medium text-slate-800 dark:text-white">{fmtPrice(item.order_value)}</p>
+              {item.refund_amount > 0 && (
+                <p className="text-[11px] text-red-500 mt-0.5">Hoàn: {fmtPrice(item.refund_amount)}</p>
+              )}
+            </td>
+
+            {/* ⑥ Hoa hồng sản phẩm — per item */}
+            <td className="px-3 py-2.5 border-r border-slate-100 dark:border-slate-700/50 align-top text-right min-w-[130px]">
+              <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{fmtPrice(item.total_product_commission)}</p>
+              {(item.xtra_product_commission > 0 || item.seller_product_commission_rate) && (
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Hoa hồng Xtra({fmtRate(item.seller_product_commission_rate)}):&nbsp;
+                  <span className="text-slate-600 dark:text-slate-300">{fmtPrice(item.xtra_product_commission)}</span>
+                </p>
+              )}
+              {(item.shopee_product_commission > 0 || item.shopee_product_commission_rate) && (
+                <p className="text-[11px] text-slate-400">
+                  Hoa hồng từ Shopee({fmtRate(item.shopee_product_commission_rate)}):&nbsp;
+                  <span className="text-slate-600 dark:text-slate-300">{fmtPrice(item.shopee_product_commission)}</span>
+                </p>
+              )}
+            </td>
+
+            {/* ⑦ Hoa hồng đơn hàng — rowspan */}
+            {isFirst && (
+              <td rowSpan={count} className="px-3 py-2.5 align-top text-right min-w-[130px]">
+                <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                  {fmtPrice(first.total_order_commission || first.order_commission)}
+                </p>
+                {first.order_bonus > 0 && (
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Hoa hồng Xtra:&nbsp;
+                    <span className="text-slate-600 dark:text-slate-300">{fmtPrice(first.order_bonus)}</span>
+                  </p>
+                )}
+                {first.order_commission > 0 && (
+                  <p className="text-[11px] text-slate-400">
+                    Hoa hồng từ Shopee:&nbsp;
+                    <span className="text-slate-600 dark:text-slate-300">{fmtPrice(first.order_commission)}</span>
+                  </p>
+                )}
+              </td>
+            )}
+          </tr>
+        );
+      })}
+
+      {/* Expandable Detail Row */}
+      {expanded && (
+        <tr className="border-b-2 border-slate-200 dark:border-slate-600">
+          <td colSpan={7} className="px-4 py-3 bg-slate-50/80 dark:bg-slate-800/80">
+            <ExpandedDetail items={items} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+// ─── Product Thumbnail ──────────────────────────────────
+function ProductThumb({ imgCode }) {
+  const [err, setErr] = useState(false);
+  const url = imgUrl(imgCode);
+
+  if (!url || err) {
+    return (
+      <div className="w-12 h-12 rounded-md bg-slate-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
+        <ShoppingCart className="w-4 h-4 text-slate-400" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={url}
+      alt=""
+      loading="lazy"
+      onError={() => setErr(true)}
+      className="w-12 h-12 rounded-md object-cover flex-shrink-0 border border-slate-200 dark:border-slate-600"
+    />
+  );
+}
+
+// ─── Expanded Detail (16 cột phụ) ───────────────────────
+function ExpandedDetail({ items }) {
+  const first = items[0];
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-2 text-[12px]">
+      <DetailSection title="MCN">
+        <DField label="Tên MNC" value={first.mcn_name} />
+        <DField label="Mã HĐ MCN" value={first.mcn_contract} />
+        <DField label="Phí QL MCN" value={first.mcn_fee_rate ? `${fmtRate(first.mcn_fee_rate)} / ${fmtPrice(first.mcn_fee_amount)}` : null} />
+      </DetailSection>
+      <DetailSection title="Affiliate">
+        <DField label="Mức HH liên kết" value={first.agreed_commission_rate ? fmtRate(first.agreed_commission_rate) : null} />
+        <DField label="HH ròng" value={first.net_commission ? fmtPrice(first.net_commission) : null} />
+      </DetailSection>
+      <DetailSection title="Trạng thái">
+        <DField label="TT SP liên kết" value={first.product_status} />
+        <DField label="Ghi chú SP" value={first.product_note} />
+        <DField label="Loại thuộc tính" value={first.attribute_type} />
+        <DField label="TT người mua" value={first.buyer_status} />
+      </DetailSection>
+      <DetailSection title="Tracking (SubIDs)">
+        {items.map((item, i) => (
+          <div key={i} className="flex flex-wrap gap-x-3 gap-y-0.5">
+            {[item.sub_id1, item.sub_id2, item.sub_id3, item.sub_id4, item.sub_id5].map((v, j) => (
+              v ? <span key={j} className="text-slate-500">sub{j+1}: <span className="text-slate-700 dark:text-slate-300 font-mono">{v}</span></span> : null
+            ))}
+          </div>
+        ))}
+      </DetailSection>
+      <DetailSection title="Kênh">
+        <DField label="Kênh" value={first.channel} />
+      </DetailSection>
+    </div>
+  );
+}
+
+function DetailSection({ title, children }) {
+  return (
+    <div>
+      <p className="font-semibold text-slate-600 dark:text-slate-300 mb-0.5">{title}</p>
+      <div className="space-y-0.5 text-slate-500">{children}</div>
+    </div>
+  );
+}
+
+function DField({ label, value }) {
+  if (!value) return null;
+  return (
+    <p>
+      <span className="text-slate-400">{label}: </span>
+      <span className="text-slate-700 dark:text-slate-300">{value}</span>
+    </p>
+  );
+}
+
+// ─── Stat Card ──────────────────────────────────────────
+function StatCard({ icon: Icon, label, value, color = '' }) {
+  return (
+    <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-3 sm:p-4">
+      <div className="flex items-center gap-1.5 mb-1">
+        <Icon className="w-3.5 h-3.5 text-slate-400" />
+        <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">{label}</p>
+      </div>
+      <p className={`text-lg sm:text-2xl font-bold ${color || 'text-slate-900 dark:text-white'}`}>
+        {typeof value === 'number' ? value.toLocaleString('vi-VN') : value}
+      </p>
+    </div>
+  );
+}
