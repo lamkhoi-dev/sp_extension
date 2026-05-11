@@ -51,6 +51,24 @@ const stmts = {
       message_count = message_count + 1,
       last_seen = datetime('now')
   `),
+
+  setReferrer: db.prepare(`
+    UPDATE users SET referrer_id = ?, referrer_name = ? WHERE user_id = ?
+  `),
+
+  getReferrer: db.prepare(`
+    SELECT referrer_id, referrer_name FROM users WHERE user_id = ?
+  `),
+
+  getAllPaginated: db.prepare(`
+    SELECT * FROM users ORDER BY last_seen DESC LIMIT ? OFFSET ?
+  `),
+
+  searchUsers: db.prepare(`
+    SELECT * FROM users
+    WHERE display_name LIKE ? OR zalo_name LIKE ? OR user_id LIKE ?
+    ORDER BY last_seen DESC LIMIT ?
+  `),
 };
 
 class UserCache {
@@ -184,12 +202,45 @@ class UserCache {
       firstContact: row.first_contact || null,
       lastSeen: row.last_seen || null,
       cachedAt: row.cached_at || null,
+      referrerId: row.referrer_id || '',
+      referrerName: row.referrer_name || '',
+      bankName: row.bank_name || null,
+      bankAccount: row.bank_account || null,
+      qrCode: row.qr_code || null,
+      totalCommission: row.total_commission || null,
+      totalRefunded: row.total_refunded || null,
+      cashbackBuyerRate: row.cashback_buyer_rate ?? 40,
+      cashbackReferrerRate: row.cashback_referrer_rate ?? 30,
     };
+  }
+
+  // Referrer tracking
+  setReferrer(userId, referrerId, referrerName = '') {
+    try {
+      stmts.setReferrer.run(referrerId, referrerName, userId);
+      logger.info('UserCache', `Set referrer: ${userId} → invited by ${referrerId} (${referrerName})`);
+    } catch (err) {
+      logger.warn('UserCache', `setReferrer failed: ${err.message}`);
+    }
+  }
+
+  getReferrer(userId) {
+    const row = stmts.getReferrer.get(userId);
+    return row ? { referrerId: row.referrer_id, referrerName: row.referrer_name } : null;
   }
 
   // Dashboard queries
   getAll() {
     return stmts.getAll.all().map((r) => this._formatUser(r));
+  }
+
+  getAllPaginated(limit = 50, offset = 0) {
+    return stmts.getAllPaginated.all(limit, offset).map((r) => this._formatUser(r));
+  }
+
+  search(query, limit = 20) {
+    const q = `%${query}%`;
+    return stmts.searchUsers.all(q, q, q, limit).map((r) => this._formatUser(r));
   }
 
   getTopUsers(count = 10) {

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="93px" height="85px" viewBox="0 0 93 85" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <!-- Generator: Sketch 57.1 (83088) - https://sketch.com -->
+    <title>没有图片</title>
+    <desc>Created with Sketch.</desc>
+    <g id="页面-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="FB-DefaultPage" transform="translate(-791.000000, -954.000000)">
+            <g id="编组-16" transform="translate(90.000000, 435.000000)">
+                <g id="没有商品备份-6" transform="translate(610.000000, 403.000000)">
+                    <g id="没有图片" transform="translate(88.000000, 112.000000)">
+                        <rect id="Rectangle-7" fill="#D8D8D8" opacity="0" x="0" y="0" width="96" height="96"></rect>
+                        <ellipse id="Oval-3" fill="#F2F2F2" cx="48" cy="84" rx="45" ry="5"></ellipse>
+                        <path d="M11.5,60.6122648 L11.5,72 C11.5,72.8284271 12.1715729,73.5 13,73.5 L81,73.5 C81.8284271,73.5 82.5,72.8284271 82.5,72 L82.5,50.7392714 L67.1057312,33.9461986 C67.0763657,33.9141636 67.045622,33.8834198 67.0135869,33.8540544 C66.4029085,33.2942657 65.4540574,33.3355201 64.8792831,33.9618517 L42.4796531,56.3663008 L42.1265198,56.0379339 L29.0677976,43.8949704 L29.0174202,43.8464292 C28.408689,43.2845235 27.4597005,43.3224831 26.8977959,43.931213 L11.5,60.6122648 Z" id="路径" stroke="#D8D8D8" fill="#FAFAFA"></path>
+                        <circle id="椭圆形" stroke="#D8D8D8" cx="25" cy="31" r="4.5"></circle>
+                        <rect id="矩形" stroke="#D8D8D8" x="11.5" y="18.5" width="71" height="55" rx="2"></rect>
+                        <rect id="矩形" stroke="#D8D8D8" x="11.5" y="18.5" width="71" height="55" rx="2"></rect>
+                        <g id="编组-9备份" transform="translate(82.000000, 4.000000)" fill="#D8D8D8">
+                            <g id="装饰备份" transform="translate(0.160000, 0.040000)">
+                                <circle id="Oval-9" opacity="0.5" cx="10" cy="13" r="3"></circle>
+                                <circle id="Oval-2" opacity="0.300000012" cx="2" cy="9" r="2"></circle>
+                                <path d="M8.5,1 C7.67157288,1 7,1.67157288 7,2.5 C7,3.32842712 7.67157288,4 8.5,4 C9.32842712,4 10,3.32842712 10,2.5 C10,1.67157288 9.32842712,1 8.5,1 Z M8.5,7.10542736e-15 C9.88071187,7.10542736e-15 11,1.11928813 11,2.5 C11,3.88071187 9.88071187,5 8.5,5 C7.11928813,5 6,3.88071187 6,2.5 C6,1.11928813 7.11928813,7.10542736e-15 8.5,7.10542736e-15 Z" id="Rectangle" opacity="0.300000012"></path>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>

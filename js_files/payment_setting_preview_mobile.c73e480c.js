@@ -1,0 +1,1 @@
+"use strict";(self["webpackChunkaffiliate_network"]=self["webpackChunkaffiliate_network"]||[]).push([[2079],{84781:(e,t,n)=>{n.r(t),n.d(t,{default:()=>s});var a=n(67294),i=n.n(a),r=n(14122),f=n(95277),l=n(51660),c=n(85842);const s=function(){return i().createElement(l.Z,{type:c._.PaymentSettingMobile},i().createElement(r.Z,{type:f.s.pending}))}}}]);

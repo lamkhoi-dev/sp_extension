@@ -1,0 +1,59 @@
+{
+   "all": {
+      "message": "Total"
+   },
+   "cancel": {
+      "message": "Dibatalkan"
+   },
+   "commissionWarning": {
+      "message": "Komisi yang ditampilkan belum dikurangi biaya manajemen MCN."
+   },
+   "count": {
+      "message": "Jumlah Pesanan"
+   },
+   "date": {
+      "message": "Tanggal:"
+   },
+   "dateWarning": {
+      "message": "Anda sedang melihat hasil dari beberapa hari yang berbeda."
+   },
+   "extDesc": {
+      "message": "Hitung komisi dan jumlah pesanan Shopee secara instan setelah konversi – tidak perlu menunggu!"
+   },
+   "extName": {
+      "message": "Shopee Commission & Order Calculator"
+   },
+   "header": {
+      "message": "Alat Hitung Komisi Shopee"
+   },
+   "live": {
+      "message": "Pesanan Live"
+   },
+   "pageWarning": {
+      "message": "Terdapat lebih dari 1 halaman. Silakan gulir ke bawah dan pilih halaman 1."
+   },
+   "scroll": {
+      "message": "Gulir ke bawah"
+   },
+   "social": {
+      "message": "Pesanan Sosial"
+   },
+   "title": {
+      "message": "Shopee Commission Calculator"
+   },
+   "total": {
+      "message": "Total Komisi"
+   },
+   "type": {
+      "message": "Jenis Pesanan"
+   },
+   "unpaid": {
+      "message": "Belum Dibayar"
+   },
+   "video": {
+      "message": "Pesanan Video"
+   },
+   "zero": {
+      "message": "Pesanan 0Rp"
+   }
+}

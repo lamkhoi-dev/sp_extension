@@ -1,5 +1,6 @@
 const logger = require('../logger');
 const ShopeeAPI = require('../shopee-api');
+const convertLogStore = require('../api/convert-log-store');
 
 const shopee = new ShopeeAPI();
 
@@ -70,7 +71,7 @@ class ZaloCommands {
   }
 
   _extractShopeeUrl(text) {
-    const match = text.match(/(https?:\/\/[^\s]*shopee[^\s]*)/i);
+    const match = text.match(/(https?:\/\/[^\s]*(?:shopee|shp\.ee)[^\s]*)/i);
     return match ? match[1] : null;
   }
 
@@ -231,10 +232,24 @@ class ZaloCommands {
     this.actions.reactHeart(message);
     this.actions.fireTyping(message.threadId, message.type);
 
-    const result = await shopee.checkAndConvert(url, subIds, productHint);
+    // Build SubIDs: sub1=buyer, sub2=referrer, sub3=commission rate
+    const referrer = this.userCache?.getReferrer?.(senderUid);
+    const enrichedSubIds = {
+      sub1: senderUid,
+      sub2: referrer?.referrerId || subIds.subId2 || '',
+      sub3: subIds.subId3 || '',
+      ...subIds,
+    };
+
+    const result = await shopee.checkAndConvert(url, enrichedSubIds, productHint);
 
     // No commission
     if (result.noCommission) {
+      convertLogStore.save({
+        userId: senderUid, userName: senderName,
+        originalLink: url, status: 'no_commission',
+        subId1: senderUid, subId2: enrichedSubIds.sub2,
+      });
       const noCommText = '❌ Sản phẩm không có hoàn tiền.';
       await this.actions.sendText(noCommText, message.threadId, message.type);
       return noCommText;
@@ -242,14 +257,44 @@ class ZaloCommands {
 
     // Error
     if (!result.success) {
+      convertLogStore.save({
+        userId: senderUid, userName: senderName,
+        originalLink: url, status: 'error', errorMessage: result.error,
+        subId1: senderUid, subId2: enrichedSubIds.sub2,
+      });
       const errText = `❌ Lỗi: ${result.error}`;
       await this.actions.sendText(errText, message.threadId, message.type);
       return errText;
     }
 
+    // Success — save convert log
+    const parsedIds = shopee.parseShopeeLink(result.originalLink || url);
+    convertLogStore.save({
+      userId: senderUid,
+      userName: senderName,
+      originalLink: url,
+      affiliateLink: result.longLink || '',
+      shortLink: result.shortLink || '',
+      productName: result.productName || '',
+      commissionRate: result.commission || 0,
+      commissionAmount: result.commissionAmount || 0,
+      price: result.price || 0,
+      source: result.source || 'shopee',
+      subId1: senderUid,
+      subId2: enrichedSubIds.sub2,
+      subId3: String(result.commission || ''),
+      status: 'success',
+      itemId: result.itemId || parsedIds?.itemId || '',
+      shopId: result.shopId || parsedIds?.shopId || '',
+    });
+
     // Build reply with @mention
     const mentionTag = `@${senderName}`;
-    const msg = `✅ ${mentionTag}\n🔗 ${result.shortLink}\n🏷️ Hoa hồng: ${result.commission}%`;
+    let commissionText = `${result.commission}%`;
+    if (result.commissionAmount > 0) {
+      commissionText += ` (~${new Intl.NumberFormat('vi-VN').format(result.commissionAmount)}đ)`;
+    }
+    const msg = `✅ ${mentionTag}\n🔗 ${result.shortLink}\n🏷️ Hoa hồng: ${commissionText}`;
 
     const msgContent = {
       msg,

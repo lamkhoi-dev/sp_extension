@@ -101,8 +101,113 @@ async function handleAutomation(action, payload, reqId) {
     // Inject search script into MAIN world
     executeSearchInMainWorld(targetTab.id, payload.keyword, reqId);
 
+  } else if (action === 'sync_orders') {
+    // Orders sync: trigger export → poll → download CSV via Shopee API
+    executeSyncOrders(targetTab.id, payload, reqId);
+
+  } else if (action === 'fetch_product_images') {
+    // Background fetch: get img_code from Shopee report API
+    executeFetchProductImages(targetTab.id, payload, reqId);
+
   } else {
     sendResult(reqId, { success: false, error: `Unknown action: ${action}` });
+  }
+}
+
+// ─── Sync Orders — Shopee Export API Pipeline ─────────────
+// Step 1: Trigger CSV export via /api/v1/report/download
+// Step 2: Poll /api/v1/export/list until ready (status=3)
+// Step 3: Download CSV via /api/v1/export/download?task_id=X
+async function executeSyncOrders(tabId, payload, reqId) {
+  try {
+    // Increase timeout for this operation (up to 90s)
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (startTs, endTs) => {
+        try {
+          const headers = {
+            'accept': 'application/json, text/plain, */*',
+            'affiliate-program-type': '1',
+          };
+
+          // Step 1: Trigger export
+          console.log('[SyncOrders] Step 1: Triggering export...');
+          const exportUrl = `/api/v1/report/download?page_size=20&page_num=1&purchase_time_s=${startTs}&purchase_time_e=${endTs}`;
+          const exportRes = await fetch(exportUrl, { headers, credentials: 'include' });
+          const exportData = await exportRes.json();
+
+          if (exportData.code !== 0) {
+            return { success: false, error: `Export trigger failed: ${exportData.msg}` };
+          }
+
+          const taskId = exportData.data?.task_id;
+          if (!taskId) {
+            return { success: false, error: 'No task_id returned from export API' };
+          }
+          console.log('[SyncOrders] Step 1 done. task_id:', taskId);
+
+          // Step 2: Poll until ready (max 60s, every 3s)
+          console.log('[SyncOrders] Step 2: Waiting for export to complete...');
+          let fileName = '';
+          for (let i = 0; i < 20; i++) {
+            await new Promise(r => setTimeout(r, 3000));
+
+            const listRes = await fetch(
+              `/api/v1/export/list?page_size=5&page_num=1`,
+              { headers, credentials: 'include' }
+            );
+            const listData = await listRes.json();
+            const task = listData.data?.list?.find(t => t.task_id === taskId);
+
+            if (task) {
+              console.log(`[SyncOrders] Poll ${i + 1}: status=${task.status} progress=${task.progress}%`);
+              if (task.status === 3 && task.progress === 100) {
+                fileName = task.file_name;
+                break;
+              }
+            }
+
+            if (i === 19) {
+              return { success: false, error: 'Export timeout (60s). Try again later.' };
+            }
+          }
+
+          // Step 3: Download CSV
+          console.log('[SyncOrders] Step 3: Downloading CSV...', fileName);
+          const csvRes = await fetch(
+            `/api/v1/export/download?task_id=${taskId}`,
+            { credentials: 'include' }
+          );
+
+          if (!csvRes.ok) {
+            return { success: false, error: `Download failed: HTTP ${csvRes.status}` };
+          }
+
+          const csvText = await csvRes.text();
+          console.log(`[SyncOrders] Done! CSV size: ${csvText.length} chars`);
+
+          return {
+            success: true,
+            csv: csvText,
+            fileName,
+            taskId,
+          };
+        } catch (err) {
+          return { success: false, error: `SyncOrders error: ${err.message}` };
+        }
+      },
+      args: [
+        payload.startTimestamp || Math.floor(Date.now() / 1000) - 30 * 24 * 3600, // default: last 30 days
+        payload.endTimestamp || Math.floor(Date.now() / 1000),
+      ],
+    });
+
+    const result = results?.[0]?.result;
+    sendResult(reqId, result || { success: false, error: 'Script execution returned no result' });
+  } catch (err) {
+    console.error('[BG] SyncOrders error:', err);
+    sendResult(reqId, { success: false, error: `SyncOrders error: ${err.message}` });
   }
 }
 
@@ -231,18 +336,52 @@ async function executeConvertInMainWorld(tabId, payload, reqId) {
   }
 }
 
+// ─── Addlivetag Commission Lookup (Service Worker level) ──────
+// Calls third-party API to get commission data as fallback
+// Runs in service worker → no CORS issues
+async function fetchAddlivetagCommission(itemId) {
+  try {
+    const resp = await fetch(
+      `https://data.addlivetag.com/product-data/product-data.php?item_id=${itemId}`,
+      { method: 'GET' }
+    );
+    const data = await resp.json();
+    if (data.status === 'success' && data.productInfo?.commission > 0) {
+      const info = data.productInfo;
+      const rate = info.price > 0
+        ? Math.round((info.commission / info.price) * 10000) / 100
+        : 0;
+      return {
+        found: true,
+        commission: rate,
+        commissionAmount: info.commission,
+        productName: info.productName,
+        price: info.price,
+        shopName: info.shopName,
+        isXtra: info.isXtra || false,
+        source: 'addlivetag',
+      };
+    }
+    return { found: false };
+  } catch (err) {
+    console.warn('[BG] Addlivetag fetch failed:', err.message);
+    return { found: false };
+  }
+}
+
 // ─── Check Commission + Convert (All-API Pipeline) ──────
 // Step 1: Resolve short link (if needed) — in service worker (no CORS)
 // Step 2: Parse product name + itemId from URL
-// Step 3: Search in commission products (MAIN world API)
+// Step 2.5: Fire Addlivetag commission lookup in parallel (service worker)
+// Step 3: Search in commission products (MAIN world API) — uses addlivetag as fallback
 // Step 4: If found → generate affiliate link with SubIDs (MAIN world API)
 async function executeCheckAndConvert(tabId, payload, reqId) {
   try {
     let url = payload.url;
     const subIds = payload.subIds || { sub1: 'sub1', sub2: 'sub2', sub3: 'sub3' };
 
-    // Step 1: Resolve short links via HTTP redirect (s.shopee.vn does 302)
-    if (url.includes('s.shopee.vn/')) {
+    // Step 1: Resolve short links via HTTP redirect (s.shopee.vn or vn.shp.ee does 301/302)
+    if (url.includes('s.shopee.vn/') || url.includes('vn.shp.ee/')) {
       console.log('[BG] Resolving short link:', url);
       try {
         const resp = await fetch(url, { method: 'GET', redirect: 'follow' });
@@ -356,13 +495,8 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
         const nameResult = nameResults?.[0]?.result;
         if (nameResult?.name) {
           productInfo.searchKeyword = nameResult.name;
-          console.log('[BG] ✅ Got product name:', nameResult.name.slice(0, 60));
-        } else {
-          console.warn('[BG] ❌ item API returned no name:', JSON.stringify(nameResult));
         }
       } catch (err) {
-        console.warn('[BG] ❌ Tab injection failed:', err.message);
-        // Clean up temp tab on error
         if (tempTabId) chrome.tabs.remove(tempTabId).catch(() => {});
       }
     }
@@ -372,8 +506,13 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
       return;
     }
 
+    // Step 2.5: Fire Addlivetag commission lookup in parallel (service worker)
+    const addlivetagPromise = productInfo.itemId
+      ? fetchAddlivetagCommission(productInfo.itemId)
+      : Promise.resolve({ found: false });
+
     // Step 3 + 4: Search commission + generate link (combined in one MAIN world call)
-    const results = await chrome.scripting.executeScript({
+    const mainWorldPromise = chrome.scripting.executeScript({
       target: { tabId },
       world: 'MAIN',
       func: async (searchKeyword, targetItemId, targetShopId, originalUrl, subId1, subId2, subId3) => {
@@ -381,7 +520,6 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
           const csrfMatch = document.cookie.match(/csrftoken=([^;]+)/);
           const csrfToken = csrfMatch ? csrfMatch[1] : '';
 
-          // Helper: generate affiliate link
           const genLink = async (productLink) => {
             const gqlBody = {
               operationName: 'batchGetCustomLink',
@@ -397,13 +535,7 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
               variables: {
                 linkParams: [{
                   originalLink: productLink,
-                  advancedLinkParams: {
-                    subId1: subId1,
-                    subId2: subId2,
-                    subId3: subId3,
-                    subId4: '',
-                    subId5: '',
-                  },
+                  advancedLinkParams: { subId1: subId1, subId2: subId2, subId3: subId3, subId4: '', subId5: '' },
                 }],
                 sourceCaller: 'CUSTOM_LINK_CALLER',
               },
@@ -423,157 +555,131 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
             return data.data?.batchCustomLink?.[0];
           };
 
-          // Helper: parse commission rate
-          const parseRate = (v) => {
-            if (!v) return 0;
-            if (typeof v === 'number') return v;
-            return parseFloat(v) || 0;
-          };
-
-          // Helper: search commission products
+          const parseRate = (v) => { if (!v) return 0; if (typeof v === 'number') return v; return parseFloat(v) || 0; };
           const searchProducts = async (keyword) => {
             const searchUrl = `/api/v3/offer/product/list?list_type=0&keyword=${encodeURIComponent(keyword)}&sort_type=1&page_offset=0&page_limit=20&client_type=1`;
             const resp = await fetch(searchUrl, {
               method: 'GET',
-              headers: {
-                'accept': 'application/json, text/plain, */*',
-                'affiliate-program-type': '1',
-              },
+              headers: { 'accept': 'application/json, text/plain, */*', 'affiliate-program-type': '1' },
               credentials: 'include',
             });
             return resp.json();
           };
 
-          // ─── PATH A: We have product name → search → match → gen link ───
           if (searchKeyword) {
-            console.log('[MAIN] Path A: searching by keyword:', searchKeyword.slice(0, 50));
             const searchData = await searchProducts(searchKeyword);
-            if (searchData.code !== 0) {
-              return { success: false, error: searchData.msg || `Search API error: ${searchData.code}` };
-            }
-
+            if (searchData.code !== 0) return { success: false, error: searchData.msg || `Search API error: ${searchData.code}` };
             const list = searchData.data?.list || [];
-            if (list.length === 0) {
-              return { success: false, noCommission: true };
-            }
+            if (list.length === 0) return { success: false, noCommission: true, _needFallback: true };
 
             let matched = null;
-            if (targetItemId) {
-              matched = list.find(item => String(item.item_id) === String(targetItemId));
-            }
+            if (targetItemId) matched = list.find(item => String(item.item_id) === String(targetItemId));
             if (!matched) {
-              if (targetItemId) return { success: false, noCommission: true };
+              if (targetItemId) return { success: false, noCommission: true, _needFallback: true };
               matched = list[0];
             }
 
             const card = matched.batch_item_for_item_card_full || {};
             const rawPrice = card.price ? parseInt(card.price) / 100000 : 0;
+            const commission = Math.max(parseRate(matched.max_commission_rate), parseRate(matched.seller_commission_rate), parseRate(matched.default_commission_rate));
+            const commissionAmount = Math.round((rawPrice * commission) / 100);
 
-            console.log('[CHECK] Commission fields:', JSON.stringify({
-              seller: matched.seller_commission_rate,
-              default: matched.default_commission_rate,
-              max: matched.max_commission_rate,
-              item_id: matched.item_id,
-              name: card.name?.slice(0, 40),
-            }));
-
-            const commission = Math.max(
-              parseRate(matched.max_commission_rate),
-              parseRate(matched.seller_commission_rate),
-              parseRate(matched.default_commission_rate)
-            );
-            const productName = card.name || 'Sản phẩm';
-            const productLink = matched.product_link || originalUrl;
-
-            const linkResult = await genLink(productLink);
-            return {
-              success: true,
-              hasCommission: true,
-              productName,
-              commission,
-              price: new Intl.NumberFormat('vi-VN').format(rawPrice) + '₫',
-              shortLink: linkResult?.shortLink || linkResult?.longLink || null,
-            };
-          }
-
-          // ─── PATH B: No product name → try link gen directly ───
-          // batchCustomLink works with product URL even without name
-          // If it succeeds → product is in affiliate program
-          if (targetItemId) {
-            const productUrl = targetShopId
-              ? `https://shopee.vn/product/${targetShopId}/${targetItemId}`
-              : originalUrl;
-            console.log('[MAIN] Path B: no keyword, trying direct link gen with:', productUrl);
-
-            const linkResult = await genLink(productUrl);
-
-            if (!linkResult || (linkResult.failCode && linkResult.failCode !== 0)) {
-              console.log('[MAIN] Direct link gen failed → no commission. failCode:', linkResult?.failCode);
-              return { success: false, noCommission: true };
+            if (commission <= 0) {
+              const productName = card.name || 'Sản phẩm';
+              const productLink = matched.product_link || originalUrl;
+              const linkResult = await genLink(productLink);
+              return { success: true, hasCommission: false, _needFallback: true, productName, commission: 0, commissionAmount: 0, price: new Intl.NumberFormat('vi-VN').format(rawPrice) + '₫', shortLink: linkResult?.shortLink || linkResult?.longLink || null, source: 'shopee_zero' };
             }
 
-            console.log('[MAIN] Direct link gen succeeded! shortLink:', linkResult.shortLink);
+            const linkResult = await genLink(matched.product_link || originalUrl);
+            return { success: true, hasCommission: true, productName: card.name || 'Sản phẩm', commission, commissionAmount, price: new Intl.NumberFormat('vi-VN').format(rawPrice) + '₫', shortLink: linkResult?.shortLink || linkResult?.longLink || null, source: 'shopee' };
+          }
 
-            // Link gen succeeded → product has commission
-            // Now try to get commission rate from search API using the generated link
-            // The shortLink redirects back to a named product URL
+          if (targetItemId) {
+            const productUrl = targetShopId ? `https://shopee.vn/product/${targetShopId}/${targetItemId}` : originalUrl;
+            const linkResult = await genLink(productUrl);
+            if (!linkResult || (linkResult.failCode && linkResult.failCode !== 0)) return { success: false, noCommission: true, _needFallback: true };
+
             let commission = 0;
+            let commissionAmount = 0;
             let productName = 'Sản phẩm';
             let price = '';
-
-            // Try searching by item_id in affiliate search  
             try {
               const searchData = await searchProducts(targetItemId);
-              const list = searchData.data?.list || [];
-              const matched = list.find(item => String(item.item_id) === String(targetItemId));
+              const matched = (searchData.data?.list || []).find(item => String(item.item_id) === String(targetItemId));
               if (matched) {
                 const card = matched.batch_item_for_item_card_full || {};
-                commission = Math.max(
-                  parseRate(matched.max_commission_rate),
-                  parseRate(matched.seller_commission_rate),
-                  parseRate(matched.default_commission_rate)
-                );
+                commission = Math.max(parseRate(matched.max_commission_rate), parseRate(matched.seller_commission_rate), parseRate(matched.default_commission_rate));
                 productName = card.name || productName;
                 const rawPrice = card.price ? parseInt(card.price) / 100000 : 0;
                 price = rawPrice ? new Intl.NumberFormat('vi-VN').format(rawPrice) + '₫' : '';
-                console.log('[MAIN] Got commission from search:', commission, '%', productName.slice(0, 40));
+                commissionAmount = Math.round((rawPrice * commission) / 100);
               }
-            } catch (e) {
-              console.warn('[MAIN] Commission lookup failed:', e.message);
-            }
+            } catch (e) {}
 
-            return {
-              success: true,
-              hasCommission: true,
-              productName,
-              commission,
-              price,
-              shortLink: linkResult.shortLink || linkResult.longLink,
-            };
+            return { success: true, hasCommission: commission > 0, _needFallback: commission <= 0, productName, commission, commissionAmount, price, shortLink: linkResult.shortLink || linkResult.longLink, source: commission > 0 ? 'shopee' : 'shopee_zero' };
           }
-
           return { success: false, noCommission: true, error: 'No product info available' };
-        } catch (err) {
-          return { success: false, error: err.message };
-        }
+        } catch (err) { return { success: false, error: err.message }; }
       },
-      args: [
-        productInfo.searchKeyword || '',
-        productInfo.itemId || '',
-        productInfo.shopId || '',
-        url,
-        subIds.sub1 || 'sub1',
-        subIds.sub2 || 'sub2',
-        subIds.sub3 || 'sub3',
-      ],
+      args: [productInfo.searchKeyword || '', productInfo.itemId || '', productInfo.shopId || '', url, subIds.sub1 || 'sub1', subIds.sub2 || 'sub2', subIds.sub3 || 'sub3'],
     });
 
-    const result = results?.[0]?.result;
-    if (result) {
-      sendResult(reqId, result);
-    } else {
+    const [addlivetagData, mainResults] = await Promise.all([addlivetagPromise, mainWorldPromise]);
+    let result = mainResults?.[0]?.result;
+
+    if (!result) {
       sendResult(reqId, { success: false, error: 'Script execution returned no result' });
+      return;
     }
+
+    if (result._needFallback && addlivetagData.found) {
+      if (!result.success || !result.shortLink) {
+        const linkUrl = productInfo.shopId ? `https://shopee.vn/product/${productInfo.shopId}/${productInfo.itemId}` : url;
+        try {
+          const linkResults = await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: async (productLink, s1, s2, s3) => {
+              const csrfMatch = document.cookie.match(/csrftoken=([^;]+)/);
+              const gqlBody = {
+                operationName: 'batchGetCustomLink',
+                query: `query batchGetCustomLink($linkParams: [CustomLinkParam!], $sourceCaller: SourceCaller){ batchCustomLink(linkParams: $linkParams, sourceCaller: $sourceCaller){ shortLink longLink failCode } }`,
+                variables: { linkParams: [{ originalLink: productLink, advancedLinkParams: { subId1: s1, subId2: s2, subId3: s3, subId4: '', subId5: '' } }], sourceCaller: 'CUSTOM_LINK_CALLER' }
+              };
+              const resp = await fetch('/api/v3/gql?q=batchCustomLink', { method: 'POST', headers: { 'accept': 'application/json', 'content-type': 'application/json', 'affiliate-program-type': '1', 'csrf-token': csrfMatch ? csrfMatch[1] : '' }, credentials: 'include', body: JSON.stringify(gqlBody) });
+              const data = await resp.json();
+              const lr = data.data?.batchCustomLink?.[0];
+              return (!lr || (lr.failCode && lr.failCode !== 0)) ? null : (lr.shortLink || lr.longLink);
+            },
+            args: [linkUrl, subIds.sub1 || 'sub1', subIds.sub2 || 'sub2', subIds.sub3 || 'sub3'],
+          });
+          const shortLink = linkResults?.[0]?.result;
+          if (shortLink) {
+            result = { success: true, hasCommission: true, productName: addlivetagData.productName || 'Sản phẩm', commission: addlivetagData.commission, commissionAmount: addlivetagData.commissionAmount, price: addlivetagData.price ? new Intl.NumberFormat('vi-VN').format(addlivetagData.price) + '₫' : '', shortLink, source: 'addlivetag' };
+          } else {
+            result = { success: false, noCommission: true };
+          }
+        } catch (err) { result = { success: false, noCommission: true }; }
+      } else {
+        result.hasCommission = true;
+        result.commission = addlivetagData.commission;
+        result.commissionAmount = addlivetagData.commissionAmount;
+        result.productName = result.productName || addlivetagData.productName || 'Sản phẩm';
+        if (!result.price && addlivetagData.price) result.price = new Intl.NumberFormat('vi-VN').format(addlivetagData.price) + '₫';
+        result.source = 'addlivetag';
+      }
+    } else if (result._needFallback && !addlivetagData.found) {
+      if (!result.success || !result.shortLink) result = { success: false, noCommission: true };
+    } else if (result.success) {
+      console.log('[BG] ✅ Commission source:', result.source || 'shopee', `${result.commission}%`);
+    }
+
+    delete result._needFallback;
+    // Inject item/shop IDs for convert_logs matching
+    if (productInfo.itemId) result.itemId = productInfo.itemId;
+    if (productInfo.shopId) result.shopId = productInfo.shopId;
+    sendResult(reqId, result);
   } catch (err) {
     console.error('[BG] check_and_convert error:', err);
     sendResult(reqId, { success: false, error: err.message });
@@ -726,4 +832,94 @@ function sendResult(reqId, data) {
   }
 }
 
+// ─── Fetch Product Images from Conversion Report API ────
+// Calls /api/v3/report/list to extract img_code for each item.
+// Processes one page at a time with delay to avoid rate limiting.
+async function executeFetchProductImages(tabId, payload, reqId) {
+  try {
+    const { startTimestamp, endTimestamp, knownItemIds } = payload;
+    const knownSet = new Set(knownItemIds || []);
+
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (startTs, endTs, alreadyCachedIds) => {
+        const cached = new Set(alreadyCachedIds);
+        const imageMap = []; // [{item_id, shop_id, img_code}]
+        let pageNum = 1;
+        const pageSize = 50;
+        let totalFetched = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+          try {
+            const url = `/api/v3/report/list?page_size=${pageSize}&page_num=${pageNum}&purchase_time_s=${startTs}&purchase_time_e=${endTs}&version=1`;
+            const resp = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'accept': 'application/json, text/plain, */*',
+                'affiliate-program-type': '1',
+              },
+              credentials: 'include',
+            });
+
+            if (!resp.ok) {
+              return { success: false, error: `API returned ${resp.status}` };
+            }
+
+            const data = await resp.json();
+            if (data.code !== 0) {
+              return { success: false, error: data.msg || `API error code: ${data.code}` };
+            }
+
+            const list = data.data?.list || [];
+            const total = data.data?.total_count || 0;
+
+            for (const conv of list) {
+              for (const order of (conv.orders || [])) {
+                for (const item of (order.items || [])) {
+                  const itemId = String(item.item_id);
+                  if (item.img_code && !cached.has(itemId)) {
+                    imageMap.push({
+                      item_id: itemId,
+                      shop_id: String(item.shop_id || ''),
+                      img_code: item.img_code,
+                    });
+                    cached.add(itemId);
+                  }
+                }
+              }
+            }
+
+            totalFetched += list.length;
+            hasMore = totalFetched < total && list.length === pageSize;
+            pageNum++;
+
+            // Throttle: wait 1.5s between pages to be safe
+            if (hasMore) {
+              await new Promise(r => setTimeout(r, 1500));
+            }
+          } catch (err) {
+            return { success: false, error: `Page ${pageNum} failed: ${err.message}` };
+          }
+        }
+
+        return { success: true, images: imageMap, totalPages: pageNum - 1, totalFetched };
+      },
+      args: [startTimestamp, endTimestamp, Array.from(knownSet)],
+    });
+
+    const result = results?.[0]?.result;
+    if (result) {
+      sendResult(reqId, result);
+    } else {
+      sendResult(reqId, { success: false, error: 'Script execution returned no result' });
+    }
+  } catch (err) {
+    console.error('[BG] fetch_product_images error:', err);
+    sendResult(reqId, { success: false, error: err.message });
+  }
+}
+
 connect();
+

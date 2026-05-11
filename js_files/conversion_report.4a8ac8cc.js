@@ -1,0 +1,1 @@
+"use strict";(self["webpackChunkaffiliate_network"]=self["webpackChunkaffiliate_network"]||[]).push([[7832],{71261:(e,t,n)=>{n.r(t),n.d(t,{default:()=>s});var a=n(67294),r=n.n(a),c=n(53267),i=function(){return r().createElement("div",{className:"container"},r().createElement(c.Z,{pageType:"conversion_report"}))};const s=i}}]);

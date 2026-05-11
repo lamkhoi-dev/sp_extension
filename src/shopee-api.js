@@ -108,14 +108,19 @@ class ShopeeAPI {
         return { success: false, error: result.error };
       }
 
-      logger.info('ShopeeAPI', `✅ Commission found: ${result.commission}% → ${result.shortLink} (${duration}ms)`);
+      const src = result.source || 'shopee';
+      logger.info('ShopeeAPI', `✅ Commission found: ${result.commission}% [${src}] → ${result.shortLink} (${duration}ms)`);
       return {
         success: true,
         shortLink: result.shortLink,
         productName: result.productName,
         commission: result.commission,
+        commissionAmount: result.commissionAmount,
         price: result.price,
+        source: src,
         originalLink,
+        itemId: result.itemId || '',
+        shopId: result.shopId || '',
       };
     } catch (err) {
       logger.error('ShopeeAPI', `Check & Convert error: ${err.message}`);
@@ -136,8 +141,8 @@ class ShopeeAPI {
       return { shopId: nameMatch[1], itemId: nameMatch[2], type: 'named' };
     }
 
-    // Format 3: https://s.shopee.vn/{code} (short link)
-    const shortMatch = url.match(/s\.shopee\.vn\/([a-zA-Z0-9]+)/);
+    // Format 3: https://s.shopee.vn/{code} or https://vn.shp.ee/{code} (short link)
+    const shortMatch = url.match(/(?:s\.shopee\.vn|vn\.shp\.ee)\/([a-zA-Z0-9]+)/);
     if (shortMatch) {
       return { shortCode: shortMatch[1], type: 'short' };
     }
@@ -155,7 +160,7 @@ class ShopeeAPI {
     }
 
     // Generic: any shopee.vn link (for Custom Link support)
-    if (url.includes('shopee.vn')) {
+    if (url.includes('shopee.vn') || url.includes('shp.ee')) {
       return { type: 'generic' };
     }
 

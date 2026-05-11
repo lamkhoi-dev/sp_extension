@@ -1,0 +1,50 @@
+{
+   "action": {
+      "default_icon": {
+         "128": "/icon/icon128.png",
+         "16": "/icon/icon16.png",
+         "32": "/icon/icon32.png",
+         "48": "/icon/icon48.png"
+      },
+      "default_popup": "popup.html"
+   },
+   "background": {
+      "service_worker": "/js/background.js"
+   },
+   "content_scripts": [ {
+      "js": [ "js/server-config.js", "js/idb.js", "js/utils.js", "js/content.js" ],
+      "matches": [ "https://shopee.vn/*", "https://*.shopee.vn/*" ],
+      "run_at": "document_idle"
+   }, {
+      "css": [ "css/affiliate-product-offer.css" ],
+      "js": [ "js/server-config.js", "js/affiliate-product-offer.js" ],
+      "matches": [ "https://affiliate.shopee.vn/*" ],
+      "run_at": "document_start"
+   } ],
+   "default_locale": "vi",
+   "description": "__MSG_extDesc__",
+   "host_permissions": [ "https://affiliate.shopee.vn/*", "https://shopee.vn/*", "https://*.shopee.vn/*" ],
+   "icons": {
+      "128": "/icon/icon128.png",
+      "16": "/icon/icon16.png",
+      "32": "/icon/icon32.png",
+      "48": "/icon/icon48.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq5V1q8Viq5a1AWiqSR3E6MnIPJrlI9ZfHKP9oPet3mPrdJhVRMDtXV56s4Mre8FWfDm78unRdj2ww1C48+x2SjeSCthfUQ0xndRB513SixTnZUDgqEv85U0QtlEOxQTSVAoMHVO+RjDpGQBtg4xgBqBVEYhP5REK7Uj84j7uT1a+FXcOLVo1tpnwTQEfvxAy2FZt3msdtD/0M69UWqw540lveGYHk8zwgqovpyUf28R3gxIJ3551qKbeO0/hPaOvxrynn/OTlcgAxYB7Rl6hnms6/mLNsnDcW92YbvtsSDUr7gUd1T9kdg1Of4OsTZ0DS3/BdzSgymnNV8/uWhh5rQIDAQAB",
+   "manifest_version": 3,
+   "name": "__MSG_extName__",
+   "options_ui": {
+      "open_in_tab": true,
+      "page": "options.html"
+   },
+   "permissions": [ "scripting", "activeTab", "tabs", "storage", "notifications", "alarms", "offscreen", "sidePanel", "contextMenus" ],
+   "side_panel": {
+      "default_path": "sidepanel.html"
+   },
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "2.3.0",
+   "web_accessible_resources": [ {
+      "matches": [ "https://affiliate.shopee.vn/*", "https://shopee.vn/*", "https://*.shopee.vn/*" ],
+      "resources": [ "js/chart.min.js", "js/chart.js", "js/price-chart-creator.js", "js/injected-product-offer.js", "js/mcn-manager.js" ]
+   } ]
+}

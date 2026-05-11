@@ -1,0 +1,59 @@
+{
+   "all": {
+      "message": "Total"
+   },
+   "cancel": {
+      "message": "Canceled Orders"
+   },
+   "commissionWarning": {
+      "message": "The displayed commission has not deducted the MCN management fee."
+   },
+   "count": {
+      "message": "Order Count"
+   },
+   "date": {
+      "message": "Date:"
+   },
+   "dateWarning": {
+      "message": "You are viewing results from multiple days."
+   },
+   "extDesc": {
+      "message": "Calculate Shopee commissions and orders instantly after conversion – no need to wait!"
+   },
+   "extName": {
+      "message": "Shopee Commission & Order Calculator"
+   },
+   "header": {
+      "message": "Shopee Commission Calculator Tool"
+   },
+   "live": {
+      "message": "Live Orders"
+   },
+   "pageWarning": {
+      "message": "Multiple pages detected. Please scroll to the bottom and select page 1."
+   },
+   "scroll": {
+      "message": "Scroll to Bottom"
+   },
+   "social": {
+      "message": "Social Orders"
+   },
+   "title": {
+      "message": "Shopee Commission Calculator"
+   },
+   "total": {
+      "message": "Total Commission"
+   },
+   "type": {
+      "message": "Order Type"
+   },
+   "unpaid": {
+      "message": "Unpaid Orders"
+   },
+   "video": {
+      "message": "Video Orders"
+   },
+   "zero": {
+      "message": "0đ Orders"
+   }
+}

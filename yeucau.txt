@@ -1,0 +1,19 @@
+Mỗi user có UID chính là ID zalo của họ luôn, và sẽ fetch lại thông tin user đó sau 24 tiếng như bạn đã nói từ trước á
+
+
++ Form subID:
+subId 1: ID zalo người mua
+subId 2: ID zalo người giới thiệu, cái này sẽ bắt event người A mời người B vào nhóm thì người A sẽ là ngừoi giới thiệu người B
+SubID 3: phần trăm hoa hồng của link đó
+
+
++ trang http://localhost:5176/users
+- User table: thêm cột giới thiệu nhé ( display tên nguoời giới thiếu, đưa chuột vào toolip lên thông tin user đó)
+
++ trang http://localhost:5176/convert-logs
+- bạn xem qua nhé, ghi lại đầy đủ người đó đã đổi link nào thành link nào, Tên user và cả ID của họ.... vâng vâng
+
++ trang http://localhost:5176/orders
+- bắt chước lại table của  shopee, tôi có tải code về cho bạn xem trong folder test, kiểu bảng và thông tin tương tự, đồng thời tính toán và phân tích giúop tôi các cách lấy, fetch data đơn hàng này nhé ( https://affiliate.shopee.vn/report/conversion_report)
+
+-- các trang khác cũng như cơ chế hoàn tiền sẽ bàn luận sau, sau khi thảo luận xong phần trước nhé

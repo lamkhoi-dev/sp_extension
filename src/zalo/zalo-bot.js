@@ -190,7 +190,69 @@ class ZaloBot {
 
     // ─── Group event listener ──────────────────────
     this.listener.on('group_event', async (event) => {
-      logger.info('ZaloBot', `📋 Group event: ${JSON.stringify(event).slice(0, 100)}`);
+      logger.info('ZaloBot', `📋 Group event: ${JSON.stringify(event).slice(0, 1000)}`);
+
+      try {
+        const data = event.data || event;
+        const eventType = event.type || event.act || data.type || data.act || '';
+
+        // Only handle join/invite events
+        if (!['join', 'invite'].includes(eventType)) return;
+
+        // Resolve inviter: sourceId is who invited them
+        const inviterUid = data.sourceId
+          || data.updateMembers?.inviterUid
+          || data.inviterUid
+          || data.actorId;
+
+        // Resolve invited members from various possible formats
+        let invitedMembers = [];
+
+        if (data.updateMembers) {
+          const um = data.updateMembers;
+          if (Array.isArray(um.members)) {
+            invitedMembers = um.members;
+          } else if (Array.isArray(um)) {
+            invitedMembers = um;
+          }
+        }
+        if (invitedMembers.length === 0 && Array.isArray(data.invitedUids)) {
+          invitedMembers = data.invitedUids;
+        }
+        if (invitedMembers.length === 0 && Array.isArray(data.memberIds)) {
+          invitedMembers = data.memberIds;
+        }
+
+        logger.info('ZaloBot', `👥 Join event parsed — inviter: ${inviterUid}, members: ${JSON.stringify(invitedMembers).slice(0, 300)}`);
+
+        if (inviterUid && invitedMembers.length > 0) {
+          // Resolve inviter name
+          const inviterProfile = await this.actions?.getDisplayName?.(inviterUid) || '';
+          const inviterName = typeof inviterProfile === 'string' ? inviterProfile : (inviterProfile?.displayName || '');
+          logger.info('ZaloBot', `👥 Referrer resolved: ${inviterUid} (${inviterName}) invited ${invitedMembers.length} member(s)`);
+
+          for (const uid of invitedMembers) {
+            // Extract ID from various formats: string, {id: "..."}, {uid: "..."}, {0: "id", 1: "name"}
+            const memberId = typeof uid === 'string' ? uid
+              : (uid.id || uid.uid || uid.userId || String(uid));
+            const memberName = typeof uid === 'object' ? (uid.dName || uid.displayName || uid.name || '') : '';
+
+            if (memberId && memberId !== inviterUid) {
+              // Ensure invited user exists in DB
+              userCache.recordMessage(memberId, memberName);
+              // Save referrer relationship
+              userCache.setReferrer(memberId, inviterUid, inviterName);
+              logger.info('ZaloBot', `✅ Referrer saved: ${memberId} (${memberName}) → invited by ${inviterUid} (${inviterName})`);
+              // Async: fetch full profile of invited user
+              userCache.fetchAndSave(memberId).catch(() => {});
+            }
+          }
+        } else {
+          logger.warn('ZaloBot', `⚠️ Join event but could not resolve inviter or members`);
+        }
+      } catch (err) {
+        logger.warn('ZaloBot', `Group event handling error: ${err.message}`);
+      }
     });
 
     // ─── Reaction listener ─────────────────────────

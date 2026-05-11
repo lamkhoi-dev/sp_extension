@@ -12,6 +12,7 @@
   "host_permissions": [
     "https://affiliate.shopee.vn/*",
     "https://s.shopee.vn/*",
+    "https://vn.shp.ee/*",
     "https://shopee.vn/*",
     "http://localhost:3456/*"
   ],

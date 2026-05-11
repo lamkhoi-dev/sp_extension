@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="vi">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Sản phẩm bán chạy - Shopee Commission Calculator</title>
+        <link href="/css/bootstrap.min.css" rel="stylesheet" />
+        <link href="/css/dataTables.bootstrap5.min.css" rel="stylesheet" />
+        <link href="/css/product-analytics.css" rel="stylesheet" />
+        <style>
+            body {
+                background-color: #fffaf5;
+                color: #333;
+                font-family: "Segoe UI", sans-serif;
+            }
+
+            a {
+                text-decoration: none;
+            }
+
+            .header-section {
+                background-color: white;
+                border-radius: 8px;
+                padding: 0.5rem;
+                margin-bottom: 1rem;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+            }
+
+            .filter-section {
+                background-color: white;
+                border-radius: 8px;
+                padding: 0.5rem;
+                margin-bottom: 0.5rem;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+            }
+
+            .product-card {
+                background-color: white;
+                border-radius: 8px;
+                padding: 0.5rem;
+                margin-bottom: 0.5rem;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                transition: transform 0.2s, box-shadow 0.2s;
+                border: 1px solid #e0e0e0;
+            }
+
+            .product-card:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            }
+
+            .product-card-image {
+                width: 80px;
+                height: 80px;
+                object-fit: cover;
+                border-radius: 4px;
+                margin-right: 0.5rem;
+            }
+
+            .product-card-content {
+                flex: 1;
+            }
+
+            .product-card-title {
+                font-size: 1rem;
+                font-weight: 600;
+                margin-bottom: 5px;
+                color: #333;
+            }
+
+            .product-card-shop {
+                font-size: 0.85rem;
+                color: #666;
+                margin-bottom: 8px;
+            }
+
+            .product-card-stats {
+                display: flex;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
+
+            .product-card-stat {
+                font-size: 0.9rem;
+            }
+
+            .product-card-stat-label {
+                color: #666;
+                font-size: 0.8rem;
+            }
+
+            .product-card-stat-value {
+                font-weight: 600;
+                color: #f36f21;
+            }
+
+            .favorite-btn {
+                background: none;
+                border: none;
+                font-size: 1.5rem;
+                cursor: pointer;
+                padding: 5px;
+                transition: transform 0.2s;
+            }
+
+            .favorite-btn:hover {
+                transform: scale(1.2);
+            }
+
+            .favorite-btn.active {
+                color: #ffd700;
+            }
+
+            .favorite-btn:not(.active) {
+                color: #ccc;
+            }
+
+            .criteria-btn.active {
+                background-color: #0d6efd;
+                border-color: #0d6efd;
+                color: white;
+            }
+
+            .criteria-btn.active:hover {
+                background-color: #0b5ed7;
+                border-color: #0a58ca;
+            }
+
+            .table-responsive {
+                max-height: 80vh;
+                overflow-y: auto;
+            }
+
+            .tab-content {
+                padding: 0.5rem;
+                border: 1px solid #dee2e6;
+                border-top: none;
+                border-radius: 0 0 5px 5px;
+            }
+
+            .nav-tabs .nav-link.active {
+                background-color: #f36f21;
+                color: white;
+                border-color: #f36f21;
+            }
+
+            .loading {
+                text-align: center;
+                padding: 20px;
+            }
+
+            .alert-box {
+                padding: 0.5rem;
+                margin-bottom: 15px;
+                border-radius: 4px;
+            }
+
+            .alert-warning {
+                background-color: #fff3cd;
+                border: 1px solid #ffeeba;
+                color: #856404;
+            }
+
+            .alert-info {
+                background-color: #d1ecf1;
+                border: 1px solid #bee5eb;
+                color: #0c5460;
+            }
+
+            .product-image-small {
+                width: 50px;
+                height: 50px;
+                object-fit: cover;
+                border-radius: 4px;
+            }
+
+            .action-buttons {
+                display: flex;
+                gap: 0.5rem;
+            }
+
+            .action-btn {
+                padding: 0.25rem 0.5rem;
+                font-size: 0.9rem;
+                border-radius: 4px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container mt-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h4 mb-0">Sản phẩm bán chạy</h2>
+                <button id="exportReportBtn" class="btn btn-success btn-sm">📥 Export Report</button>
+            </div>
+            <div id="common-header"></div>
+
+            <!-- Search Section -->
+            <div class="filter-section">
+                <form id="filterForm">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="form-group">
+                                <label for="searchInput">Tìm kiếm sản phẩm:</label>
+                                <input type="text" id="searchInput" class="form-control form-control-sm" placeholder="Tìm kiếm sản phẩm..." />
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label for="sortSelect">Sắp xếp theo:</label>
+                                <select id="sortSelect" class="form-control form-control-sm">
+                                    <option value="commission_desc">Hoa hồng (giảm dần)</option>
+                                    <option value="commission_asc">Hoa hồng (tăng dần)</option>
+                                    <option value="sold_desc">Đã bán (giảm dần)</option>
+                                    <option value="sold_asc">Đã bán (tăng dần)</option>
+                                    <option value="clicks_desc">Clicks (giảm dần)</option>
+                                    <option value="clicks_asc">Clicks (tăng dần)</option>
+                                    <option value="epc_desc">EPC (giảm dần)</option>
+                                    <option value="epc_asc">EPC (tăng dần)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <div id="loadingMessage" class="loading">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Đang tải...</span>
+                </div>
+                <p class="mt-2">Đang tải dữ liệu...</p>
+            </div>
+
+            <div id="noDataMessage" class="alert alert-warning" style="display: none">
+                <strong>Chưa có dữ liệu!</strong>
+                <p class="mb-1">Chưa có đơn hàng nào được đồng bộ. Vui lòng đồng bộ đơn hàng từ trang Shopee Affiliate.</p>
+                <p class="mb-0 small">Mở <strong>Cài đặt</strong> → <strong>Đồng bộ dữ liệu</strong> → Nhấn <strong>Đồng bộ ngay</strong></p>
+                <p class="mt-2 mb-0">
+                    <button class="btn btn-sm btn-primary" id="openOptionsBtn">Mở trang cài đặt</button>
+                </p>
+            </div>
+
+            <div id="noFilterResultsMessage" class="alert alert-info p-2" style="display: none">
+                <strong>Không có kết quả!</strong>
+                <p class="mb-0">Không tìm thấy sản phẩm nào phù hợp với bộ lọc bạn đã chọn. Vui lòng thử lại với tiêu chí khác.</p>
+            </div>
+
+            <!-- Main Content -->
+            <div id="mainContent" style="display: none">
+                <!-- Tabs -->
+                <ul class="nav nav-tabs" id="productTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="hot-tab" data-bs-toggle="tab" data-bs-target="#hot-products" type="button" role="tab">🔥 Sản phẩm Hot</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="bestsellers-tab" data-bs-toggle="tab" data-bs-target="#bestsellers" type="button" role="tab">📈 Bán chạy nhất</button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="productTabContent">
+                    <!-- Hot Products Tab -->
+                    <div class="tab-pane fade show active" id="hot-products" role="tabpanel">
+                        <div class="filter-section mb-3">
+                            <div class="mb-0">
+                                <label class="form-label small">Chọn tiêu chí sản phẩm Hot:</label>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <button type="button" class="btn btn-outline-primary criteria-btn active" data-criteria="commission" id="criteria-commission">💰 Hoa hồng</button>
+                                    <button type="button" class="btn btn-outline-primary criteria-btn" data-criteria="sold" id="criteria-sold">📦 Đã bán</button>
+                                    <button type="button" class="btn btn-outline-primary criteria-btn" data-criteria="epc" id="criteria-epc">📊 EPC</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="hotProductsContainer"></div>
+                        <div id="hotProductsNoData" class="alert alert-info p-2" style="display: none">
+                            <strong>Không có dữ liệu!</strong>
+                            <p class="mb-0">Không có sản phẩm hot nào phù hợp với tiêu chí đã chọn.</p>
+                        </div>
+                    </div>
+
+                    <!-- Best Sellers Tab -->
+                    <div class="tab-pane fade" id="bestsellers" role="tabpanel">
+                        <div class="stats-card">
+                            <div class="table-responsive" style="max-height: 80vh">
+                                <table id="productsTable" class="table table-bordered table-hover" style="width: 100%">
+                                    <thead class="thead-light" style="white-space: nowrap">
+                                        <tr>
+                                            <th>Sản phẩm</th>
+                                            <th>Shop</th>
+                                            <th>Danh mục</th>
+                                            <th>Đã bán</th>
+                                            <th>Clicks</th>
+                                            <th>Hoa hồng</th>
+                                            <th>EPC</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scripts -->
+        <script src="/js/jquery.min.js"></script>
+        <script src="/js/bootstrap.bundle.min.js"></script>
+        <script src="/js/jquery.dataTables.min.js"></script>
+        <script src="/js/dataTables.bootstrap5.min.js"></script>
+        <script src="/js/idb.js"></script>
+        <script src="/js/common-header.js"></script>
+        <script src="/js/product-analytics.js"></script>
+        <script src="/js/product-analytics-page.js"></script>
+    </body>
+</html>
