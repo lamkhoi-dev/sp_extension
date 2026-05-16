@@ -2,39 +2,92 @@ let socket = null;
 let botActive = true;
 const SERVER_URL = 'ws://localhost:3456';
 
-// Load saved state
-chrome.storage.local.get('botActive', (data) => {
+// ─── MV3 Keep-Alive Strategy ────────────────────────────────
+// Problem: Chrome MV3 terminates Service Workers after ~30s of inactivity.
+// setInterval alone cannot prevent termination — Chrome ignores it.
+//
+// Solution:
+// 1. chrome.alarms API — only reliable MV3 wake mechanism (fires every 25s)
+// 2. On each alarm tick: check WS health → reconnect if dead
+// 3. On SW restart (install/startup): restore botActive + reconnect
+// ────────────────────────────────────────────────────────────
+
+// Load saved state on every SW startup (SW restarts lose all variables)
+chrome.storage.local.get(['botActive'], (data) => {
   botActive = data.botActive !== false; // default ON
+  // Auto-connect on SW startup if bot is active
+  if (botActive) {
+    console.log('[BG] SW started/restarted — auto-connecting...');
+    connect();
+  }
 });
 
-// Listen for toggle from popup
-chrome.runtime.onMessage.addListener((msg) => {
+// Register keep-alive alarm (survives SW termination)
+chrome.alarms.get('keepAlive', (alarm) => {
+  if (!alarm) {
+    chrome.alarms.create('keepAlive', { periodInMinutes: 0.4 }); // every ~24s
+    console.log('[BG] Keep-alive alarm created.');
+  }
+});
+
+// Alarm handler — wakes SW and checks connection health
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== 'keepAlive') return;
+
+  const isConnected = socket && socket.readyState === WebSocket.OPEN;
+  const isDead = !socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING;
+
+  if (isConnected) {
+    // WS alive → send ping to keep connection warm
+    socket.send(JSON.stringify({ type: 'ping' }));
+  } else if (isDead && botActive) {
+    // WS dead + bot should be active → reconnect
+    console.log('[BG] Alarm: WS dead, reconnecting...');
+    socket = null;
+    connect();
+  }
+});
+
+// Listen for messages from popup
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'toggle_bot') {
     botActive = msg.active;
+    chrome.storage.local.set({ botActive }); // persist through SW restarts
     console.log('[BG] Bot', botActive ? 'ACTIVATED' : 'DEACTIVATED');
-    if (botActive && !socket) connect();
+    if (botActive && (!socket || socket.readyState !== WebSocket.OPEN)) connect();
     if (!botActive && socket) {
       socket.close();
       socket = null;
     }
   }
+  if (msg.type === 'get_status') {
+    sendResponse({ connected: !!(socket && socket.readyState === WebSocket.OPEN), botActive });
+  }
+  return true; // keep channel open for async
 });
 
-// Keep-alive: MV3 Service Worker sleeps after ~30s of inactivity
-setInterval(() => {
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify({ type: 'ping' }));
-  }
-}, 20000);
+// Handle SW install/update events
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create('keepAlive', { periodInMinutes: 0.4 });
+  console.log('[BG] Extension installed/updated — keep-alive alarm set.');
+});
 
+let _reconnectTimer = null;
 function connect() {
+  // Prevent duplicate connection attempts
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    console.log('[BG] Already connected or connecting, skip.');
+    return;
+  }
+
   console.log('[BG] Connecting to Server:', SERVER_URL);
+  if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
 
   try {
     socket = new WebSocket(SERVER_URL);
   } catch (e) {
     console.error('[BG] WebSocket creation failed', e);
-    setTimeout(connect, 5000);
+    _reconnectTimer = setTimeout(connect, 5000);
     return;
   }
 
@@ -62,13 +115,18 @@ function connect() {
     }
   };
 
-  socket.onclose = () => {
-    console.log('[BG] Connection lost, reconnecting in 5s...');
-    setTimeout(connect, 5000);
+  socket.onclose = (evt) => {
+    console.log(`[BG] Connection closed (code=${evt.code}), reconnecting in 5s...`);
+    socket = null;
+    // Only auto-reconnect if bot is active
+    if (botActive) {
+      _reconnectTimer = setTimeout(connect, 5000);
+    }
   };
 
   socket.onerror = (e) => {
-    console.error('[BG] WebSocket Error', e);
+    console.error('[BG] WebSocket error — connection will close and retry.');
+    // onclose will fire after onerror, handling reconnect
   };
 }
 
@@ -921,5 +979,4 @@ async function executeFetchProductImages(tabId, payload, reqId) {
   }
 }
 
-connect();
-
+// SW auto-connects inside storage.local.get() callback above (on every restart)
