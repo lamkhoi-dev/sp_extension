@@ -57,12 +57,49 @@ app.use((req, res, next) => {
 let activeExtensionWs = null;
 let extensionStatus = { connected: false, lastSeen: null };
 const pendingRequests = {};
+const reconnectQueue = []; // requests queued while extension is offline
+
+// Drain the reconnect queue when extension comes back online
+function drainReconnectQueue() {
+  while (reconnectQueue.length > 0) {
+    const { reqId, payload, resolve, reject, queueTimer } = reconnectQueue.shift();
+    clearTimeout(queueTimer);
+    // Extension is now connected — dispatch immediately
+    pendingRequests[reqId] = {
+      resolve,
+      reject,
+      timeout: setTimeout(() => {
+        delete pendingRequests[reqId];
+        reject(new Error('Extension không phản hồi (timeout 45s)'));
+      }, 45000),
+    };
+    try {
+      activeExtensionWs.send(JSON.stringify({
+        type: 'execute_automation',
+        data: { reqId, ...payload },
+      }));
+      logger.info('Server', `[Queue] Dispatched queued request ${reqId} after reconnect`);
+    } catch (e) {
+      clearTimeout(pendingRequests[reqId].timeout);
+      delete pendingRequests[reqId];
+      reject(new Error('Extension reconnect dispatch failed'));
+    }
+  }
+}
 
 // Extension router — used by shopee-api to dispatch commands
 function sendToExtension(reqId, payload) {
   return new Promise((resolve, reject) => {
     if (!activeExtensionWs || activeExtensionWs.readyState !== 1) {
-      return reject(new Error('Extension chưa kết nối! Hãy mở tab Shopee Affiliate trên Chrome.'));
+      // Extension offline — queue request for up to 30s waiting for reconnect
+      logger.warn('Server', `Extension offline — queuing request ${reqId} (max 30s wait)`);
+      const queueTimer = setTimeout(() => {
+        const idx = reconnectQueue.findIndex(r => r.reqId === reqId);
+        if (idx !== -1) reconnectQueue.splice(idx, 1);
+        reject(new Error('Extension chưa kết nối! Hãy mở tab Shopee Affiliate trên Chrome.'));
+      }, 30000);
+      reconnectQueue.push({ reqId, payload, resolve, reject, queueTimer });
+      return;
     }
 
     pendingRequests[reqId] = {
@@ -70,8 +107,8 @@ function sendToExtension(reqId, payload) {
       reject,
       timeout: setTimeout(() => {
         delete pendingRequests[reqId];
-        reject(new Error('Extension không phản hồi (timeout 20s)'));
-      }, 20000),
+        reject(new Error('Extension không phản hồi (timeout 45s)'));
+      }, 45000),
     };
 
     activeExtensionWs.send(JSON.stringify({
@@ -443,6 +480,8 @@ wss.on('connection', (ws) => {
         ws.isExtension = true;
         extensionStatus = { connected: true, lastSeen: new Date().toISOString() };
         broadcastExtensionStatus();
+        // Drain any queued requests that arrived while extension was offline
+        drainReconnectQueue();
         return;
       }
 

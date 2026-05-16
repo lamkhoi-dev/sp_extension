@@ -30,7 +30,21 @@ chrome.alarms.get('keepAlive', (alarm) => {
   }
 });
 
-// Alarm handler — wakes SW and checks connection health
+// ─── Offscreen Document — prevents SW from ever sleeping ─────
+// An offscreen page pings the SW every 5s, making it appear active to Chrome.
+// This is more reliable than alarms (which only fire every 24s minimum).
+async function ensureOffscreen() {
+  const existing = await chrome.offscreen.hasDocument();
+  if (!existing) {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['BLOBS'],
+      justification: 'Keep service worker alive for persistent WebSocket connection',
+    }).catch((e) => console.warn('[BG] Offscreen create failed:', e.message));
+  }
+}
+ensureOffscreen();
+
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== 'keepAlive') return;
 
@@ -63,13 +77,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'get_status') {
     sendResponse({ connected: !!(socket && socket.readyState === WebSocket.OPEN), botActive });
   }
-  return true; // keep channel open for async
+  // offscreen_ping from offscreen.js — keeps SW alive, check WS health
+  if (msg.type === 'offscreen_ping') {
+    if (botActive && (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING)) {
+      console.log('[BG] Offscreen ping: WS dead, reconnecting...');
+      socket = null;
+      connect();
+    } else if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'ping' }));
+    }
+    sendResponse({ ok: true });
+  }
+  return true;
 });
 
 // Handle SW install/update events
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   chrome.alarms.create('keepAlive', { periodInMinutes: 0.4 });
-  console.log('[BG] Extension installed/updated — keep-alive alarm set.');
+  await ensureOffscreen();
+  console.log('[BG] Extension installed/updated — keep-alive alarm + offscreen set.');
 });
 
 let _reconnectTimer = null;
