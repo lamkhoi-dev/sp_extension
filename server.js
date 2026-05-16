@@ -59,15 +59,43 @@ let extensionStatus = { connected: false, lastSeen: null };
 const pendingRequests = {};
 const reconnectQueue = []; // requests queued while extension is offline
 
-// Drain the reconnect queue when extension comes back online
+// Drain the reconnect queue + re-dispatch any mid-flight requests that were lost
+// when the SW was killed during task execution
 function drainReconnectQueue() {
+  // 1. Re-dispatch already-sent requests whose SW died mid-execution
+  const midFlight = Object.entries(pendingRequests);
+  if (midFlight.length > 0) {
+    logger.warn('Server', `[Reconnect] Re-dispatching ${midFlight.length} mid-flight request(s) to new SW`);
+    for (const [reqId, entry] of midFlight) {
+      if (!entry.payload) continue; // no payload stored, can't retry
+      clearTimeout(entry.timeout);
+      // Reset timeout for 45s from NOW (fresh start)
+      entry.timeout = setTimeout(() => {
+        delete pendingRequests[reqId];
+        entry.reject(new Error('Extension không phản hồi (timeout 45s sau reconnect)'));
+      }, 45000);
+      try {
+        activeExtensionWs.send(JSON.stringify({
+          type: 'execute_automation',
+          data: { reqId, ...entry.payload },
+        }));
+        logger.info('Server', `[Reconnect] Re-dispatched mid-flight reqId=${reqId}`);
+      } catch (e) {
+        clearTimeout(entry.timeout);
+        delete pendingRequests[reqId];
+        entry.reject(new Error('Extension reconnect re-dispatch failed'));
+      }
+    }
+  }
+
+  // 2. Drain queued requests that arrived while extension was offline
   while (reconnectQueue.length > 0) {
     const { reqId, payload, resolve, reject, queueTimer } = reconnectQueue.shift();
     clearTimeout(queueTimer);
-    // Extension is now connected — dispatch immediately
     pendingRequests[reqId] = {
       resolve,
       reject,
+      payload,
       timeout: setTimeout(() => {
         delete pendingRequests[reqId];
         reject(new Error('Extension không phản hồi (timeout 45s)'));
@@ -102,9 +130,11 @@ function sendToExtension(reqId, payload) {
       return;
     }
 
+    // Store payload so we can re-dispatch if SW dies mid-execution
     pendingRequests[reqId] = {
       resolve,
       reject,
+      payload, // ← key: saved for re-dispatch on reconnect
       timeout: setTimeout(() => {
         delete pendingRequests[reqId];
         reject(new Error('Extension không phản hồi (timeout 45s)'));
