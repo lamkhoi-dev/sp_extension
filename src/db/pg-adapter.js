@@ -20,9 +20,26 @@ class PgAdapter {
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     };
-    if (connectionString.includes('sslmode=require')) {
+    let finalConnectionString = connectionString;
+    const isLocalhost = connectionString.includes('@localhost') || connectionString.includes('@127.0.0.1');
+
+    // Force SSL with rejectUnauthorized: false for all remote connections
+    // Many cloud providers (like Aiven) use self-signed certs that cause pg to fail.
+    if (!isLocalhost) {
       poolConfig.ssl = { rejectUnauthorized: false };
+      // Strip common ssl flags from connection string to prevent conflicts with the poolConfig.ssl object
+      finalConnectionString = finalConnectionString
+        .replace(/[?&]sslmode=require/i, '')
+        .replace(/[?&]sslmode=no-verify/i, '')
+        .replace(/[?&]ssl=true/i, '');
+      
+      // Clean up trailing '?' if any query params were removed
+      if (finalConnectionString.endsWith('?')) {
+        finalConnectionString = finalConnectionString.slice(0, -1);
+      }
     }
+
+    poolConfig.connectionString = finalConnectionString;
     this.pool = new Pool(poolConfig);
     this.type = 'postgres';
 
