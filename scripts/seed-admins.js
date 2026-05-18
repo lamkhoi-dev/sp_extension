@@ -6,6 +6,7 @@
  * Idempotent — skips existing usernames.
  */
 
+require('dotenv').config();
 const db = require('../src/db');
 const { runMigrations } = require('../src/db/migrations');
 const authStore = require('../src/auth/auth-store');
