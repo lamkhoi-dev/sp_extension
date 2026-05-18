@@ -9,3 +9,11 @@ curl_request.txt
 zalo-session.json
 public/zalo-qr.png
 data/
+
+# Environment variables & secrets
+.env
+.env.*
+
+# DB Dumps
+*.sql
+*.dump
