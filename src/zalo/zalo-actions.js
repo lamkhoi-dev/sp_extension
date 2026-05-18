@@ -48,7 +48,7 @@ class ZaloActions {
 
     // 2. SQLite userCache (already fetched by bot listener)
     if (this.userCache) {
-      const cached = this.userCache.getUser(userId);
+      const cached = await this.userCache.getUser(userId);
       if (cached?.displayName) {
         this.userNameCache.set(userId, cached.displayName);
         return cached.displayName;

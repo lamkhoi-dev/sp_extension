@@ -1,8 +1,15 @@
 const logger = require('../logger');
 const ShopeeAPI = require('../shopee-api');
 const convertLogStore = require('../api/convert-log-store');
+const reportGenerator = require('../stats/report-generator');
+const reportStore = require('../stats/report-store');
 
 const shopee = new ShopeeAPI();
+
+function formatVND(val) {
+  if (!val && val !== 0) return '0đ';
+  return new Intl.NumberFormat('vi-VN').format(Math.round(val)) + 'đ';
+}
 
 const HELP_TEXT = `🤖 Shopee Affiliate Bot
 
@@ -12,6 +19,7 @@ Xin chào! Gửi link Shopee hoặc tên sản phẩm, tôi sẽ tạo affiliate
 /link <URL shopee> — Tạo affiliate link
 /link <URL> <sub_id> — Tạo link có Sub ID
 /search <tên SP> — Tìm sản phẩm
+/thongke — Xem thống kê cá nhân (chat riêng)
 /status — Xem trạng thái hệ thống
 /help — Hiển thị hướng dẫn
 
@@ -85,7 +93,7 @@ class ZaloCommands {
 
     // Mark processing in store
     if (msgId && this.messageStore) {
-      this.messageStore.markProcessing(msgId);
+      await this.messageStore.markProcessing(msgId);
     }
 
     try {
@@ -98,6 +106,13 @@ class ZaloCommands {
       } else if (text === '/status') {
         replyText = await this._buildStatusText();
         await this.actions.humanReply(message, replyText, { react: false });
+      } else if (text === '/thongke') {
+        if (isGroup) {
+          replyText = '⚠️ Lệnh /thongke chỉ dùng trong tin nhắn riêng.';
+          await this.actions.humanReply(message, replyText, { react: false });
+        } else {
+          replyText = await this._handleThongke(message);
+        }
       } else if (text.startsWith('/search ')) {
         const keyword = text.slice(8).trim();
         if (!keyword) {
@@ -127,7 +142,7 @@ class ZaloCommands {
           await this.actions.humanReply(message, replyText, { react: false });
         } else if (isGroup) {
           // Skip generic text in groups
-          if (msgId && this.messageStore) this.messageStore.markSkipped(msgId);
+          if (msgId && this.messageStore) await this.messageStore.markSkipped(msgId);
           return;
         } else {
           replyText = GENERIC_REPLY;
@@ -138,14 +153,14 @@ class ZaloCommands {
       // Mark replied in store
       const elapsed = Date.now() - startTime;
       if (msgId && this.messageStore && replyText) {
-        this.messageStore.markReplied(msgId, replyText, elapsed);
+        await this.messageStore.markReplied(msgId, replyText, elapsed);
       }
 
     } catch (err) {
       logger.error('ZaloCommands', `Error handling message: ${err.message}`);
       const elapsed = Date.now() - startTime;
       if (msgId && this.messageStore) {
-        this.messageStore.markFailed(msgId, err.message, elapsed);
+        await this.messageStore.markFailed(msgId, err.message, elapsed);
       }
       try {
         await this.actions.sendText(`❌ Lỗi xử lý: ${err.message}`, message.threadId, message.type);
@@ -161,6 +176,41 @@ class ZaloCommands {
 
   // ─── Individual handlers ────────────────────────────
 
+  async _handleThongke(message) {
+    const senderUid = message.data?.uidFrom || message.data?.fromUid;
+    if (!senderUid) {
+      await this.actions.humanReply(message, '❌ Không xác định được user.', { react: false });
+      return '❌ Không xác định được user.';
+    }
+
+    try {
+      await this.actions.humanReply(message, '⏳ Đang tạo thống kê...', { react: false });
+
+      const data = await reportGenerator.generateReport(senderUid);
+      const token = await reportStore.createReport(senderUid, data);
+
+      const serverUrl = process.env.SERVER_URL || 'http://localhost:3456';
+      const reportUrl = `${serverUrl}/s/${token}`;
+
+      const replyText = `📊 Thống kê của bạn:\n\n` +
+        `👤 ${data.user.displayName}\n` +
+        `💰 Tổng hoa hồng: ${formatVND(data.summary.totalNetCommission)}\n` +
+        `✅ Đã hoàn: ${formatVND(data.summary.totalPaid)}\n` +
+        `⏳ Chờ hoàn: ${formatVND(data.summary.pendingPayment)}\n` +
+        `📦 ${data.summary.totalOrders} đơn • ${data.summary.totalLinks} link\n\n` +
+        `🔗 Xem chi tiết:\n${reportUrl}\n\n` +
+        `⏰ Link có hiệu lực 24 giờ`;
+
+      await this.actions.humanReply(message, replyText, { react: false });
+      return replyText;
+    } catch (err) {
+      logger.error('ZaloCommands', `Thongke failed for ${senderUid}: ${err.message}`);
+      const errText = '❌ Không thể tạo thống kê. Vui lòng thử lại sau.';
+      await this.actions.humanReply(message, errText, { react: false });
+      return errText;
+    }
+  }
+
   async _buildStatusText() {
     const extConnected = !!ShopeeAPI.sendToExtension;
     const icon = extConnected ? '🟢' : '🔴';
@@ -169,12 +219,12 @@ class ZaloCommands {
     status += `🤖 Zalo Bot: 🟢 Online\n`;
     status += `📨 Hàng đợi: ${this.actions.limiter.pending} tin nhắn\n`;
     if (this.messageStore) {
-      const stats = this.messageStore.getStats();
+      const stats = await this.messageStore.getStats();
       status += `\n📈 Thống kê hôm nay:\n`;
-      status += `  Tổng tin: ${stats.today.total}\n`;
-      status += `  Đã xử lý: ${stats.today.replied}\n`;
-      status += `  Thất bại: ${stats.today.failed}\n`;
-      status += `  TB phản hồi: ${stats.today.avg_response_ms || '--'}ms\n`;
+      status += `  Tổng tin: ${stats.today?.total || 0}\n`;
+      status += `  Đã xử lý: ${stats.today?.replied || 0}\n`;
+      status += `  Thất bại: ${stats.today?.failed || 0}\n`;
+      status += `  TB phản hồi: ${stats.today?.avg_response_ms || '--'}ms\n`;
     }
     return status;
   }
@@ -233,7 +283,7 @@ class ZaloCommands {
     this.actions.fireTyping(message.threadId, message.type);
 
     // Build SubIDs: sub1=buyer, sub2=referrer, sub3=commission rate
-    const referrer = this.userCache?.getReferrer?.(senderUid);
+    const referrer = await this.userCache?.getReferrer?.(senderUid);
     const enrichedSubIds = {
       sub1: senderUid,
       sub2: referrer?.referrerId || subIds.subId2 || '',
@@ -245,7 +295,7 @@ class ZaloCommands {
 
     // No commission
     if (result.noCommission) {
-      convertLogStore.save({
+      await convertLogStore.save({
         userId: senderUid, userName: senderName,
         originalLink: url, status: 'no_commission',
         subId1: senderUid, subId2: enrichedSubIds.sub2,
@@ -257,7 +307,7 @@ class ZaloCommands {
 
     // Error
     if (!result.success) {
-      convertLogStore.save({
+      await convertLogStore.save({
         userId: senderUid, userName: senderName,
         originalLink: url, status: 'error', errorMessage: result.error,
         subId1: senderUid, subId2: enrichedSubIds.sub2,
@@ -269,7 +319,7 @@ class ZaloCommands {
 
     // Success — save convert log
     const parsedIds = shopee.parseShopeeLink(result.originalLink || url);
-    convertLogStore.save({
+    await convertLogStore.save({
       userId: senderUid,
       userName: senderName,
       originalLink: url,

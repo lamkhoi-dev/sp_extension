@@ -149,15 +149,15 @@ class ZaloBot {
       logger.info('ZaloBot', `📩 ${isGroup ? 'Group' : 'DM'} [${message.threadId}] from ${senderUid}: ${contentPreview}`);
 
       // Save to message store FIRST
-      const msgId = messageStore.save(message, { isGroup });
+      const msgId = await messageStore.save(message, { isGroup });
 
       // Record user (non-blocking profile fetch)
       const senderName = message.data?.dName || '';
-      userCache.recordMessage(senderUid, senderName);
+      await userCache.recordMessage(senderUid, senderName);
       userCache.fetchAndSave(senderUid).catch(() => {}); // async, non-blocking
 
       // Emit for dashboard
-      const entry = messageStore.getById(msgId);
+      const entry = await messageStore.getById(msgId);
       if (entry) this._emitMessage(entry);
 
       // Process via concurrent handler — parallel across threads, sequential within same thread
@@ -165,7 +165,7 @@ class ZaloBot {
         try {
           await this.commands.handleMessage(message, { isGroup, msgId });
           // Re-emit updated status after processing
-          const updated = messageStore.getById(msgId);
+          const updated = await messageStore.getById(msgId);
           if (updated) this._emitMessage(updated);
         } catch (err) {
           logger.error('ZaloBot', `Message handler error: ${err.message}`);
@@ -239,9 +239,9 @@ class ZaloBot {
 
             if (memberId && memberId !== inviterUid) {
               // Ensure invited user exists in DB
-              userCache.recordMessage(memberId, memberName);
+              await userCache.recordMessage(memberId, memberName);
               // Save referrer relationship
-              userCache.setReferrer(memberId, inviterUid, inviterName);
+              await userCache.setReferrer(memberId, inviterUid, inviterName);
               logger.info('ZaloBot', `✅ Referrer saved: ${memberId} (${memberName}) → invited by ${inviterUid} (${inviterName})`);
               // Async: fetch full profile of invited user
               userCache.fetchAndSave(memberId).catch(() => {});
@@ -271,21 +271,21 @@ class ZaloBot {
       for (const msg of messages) {
         if (msg.isSelf) continue;
         const isGroup = msg.type === ThreadType?.Group;
-        messageStore.save(msg, { isGroup });
+        await messageStore.save(msg, { isGroup });
       }
     });
   }
 
   // Replay unprocessed messages from previous session
-  _replayUnprocessed() {
-    const unprocessed = messageStore.getUnprocessed();
+  async _replayUnprocessed() {
+    const unprocessed = await messageStore.getUnprocessed();
     if (unprocessed.length === 0) return;
 
     logger.info('ZaloBot', `🔄 Replaying ${unprocessed.length} unprocessed message(s) from last session`);
     for (const msg of unprocessed) {
       // Mark as skipped — we can't properly replay without the original message object
       // But we log them so user can see what was missed
-      messageStore.markSkipped(msg.id);
+      await messageStore.markSkipped(msg.id);
       logger.warn('ZaloBot', `⏭️ Skipped (no replay context): [${msg.sender_name}] "${msg.content.slice(0, 50)}"`);
     }
   }

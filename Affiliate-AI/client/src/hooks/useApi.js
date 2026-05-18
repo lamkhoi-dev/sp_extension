@@ -5,13 +5,51 @@ const API_BASE = '/api';
 async function apiFetch(url, options = {}) {
   const res = await fetch(`${API_BASE}${url}`, {
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     ...options,
   });
+  if (res.status === 401) {
+    if (!window.location.pathname.includes('/login')) {
+      window.location.href = '/login';
+    }
+    throw new Error('Unauthorized');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || `HTTP ${res.status}`);
   }
   return res.json();
+}
+
+// Auth helpers
+export async function apiLogin(username, password, remember = false) {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ username, password, remember }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Login failed');
+  return data;
+}
+
+export async function apiLogout() {
+  await fetch(`${API_BASE}/auth/logout`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+}
+
+export async function apiGetMe() {
+  return apiFetch('/auth/me');
+}
+
+export async function apiChangePassword(oldPassword, newPassword) {
+  return apiFetch('/auth/change-password', {
+    method: 'PATCH',
+    body: JSON.stringify({ oldPassword, newPassword }),
+  });
 }
 
 // Dashboard stats
@@ -240,7 +278,7 @@ export function formatShortVND(value) {
 
 // Payouts
 export function usePayouts() {
-  const [summary, setSummary] = useState({ buyers: [], referrers: [] });
+  const [summary, setSummary] = useState({ users: [] });
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -344,3 +382,69 @@ export async function triggerProductImageFetch() {
   return apiFetch('/product-images/fetch', { method: 'POST' });
 }
 
+// Audit Logs
+export function useAuditLogs() {
+  const [logs, setLogs] = useState([]);
+  const [stats, setStats] = useState([]);
+  const [admins, setAdmins] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  
+  const [filters, setFilters] = useState({
+    action: '',
+    admin: '',
+    dateFrom: '',
+    dateTo: '',
+    limit: 50,
+  });
+
+  const loadData = useCallback(async (reset = false) => {
+    try {
+      const isInitial = reset || logs.length === 0;
+      if (isInitial) setLoading(true);
+      else setLoadingMore(true);
+
+      const offset = reset ? 0 : logs.length;
+      const queryParams = new URLSearchParams({
+        limit: filters.limit,
+        offset: offset,
+      });
+
+      if (filters.action) queryParams.append('action', filters.action);
+      if (filters.admin) queryParams.append('admin', filters.admin);
+      if (filters.dateFrom) queryParams.append('dateFrom', filters.dateFrom);
+      if (filters.dateTo) queryParams.append('dateTo', filters.dateTo);
+
+      const data = await apiFetch(`/audit-logs?${queryParams.toString()}`);
+      
+      setLogs(prev => reset ? data.logs : [...prev, ...data.logs]);
+      setHasMore(data.hasMore);
+
+      if (isInitial) {
+        const statsData = await apiFetch('/audit-logs/stats');
+        setStats(statsData.stats || []);
+        
+        const adminsData = await apiFetch('/audit-logs/admins');
+        setAdmins(adminsData.admins || []);
+      }
+    } catch (err) {
+      console.error('Audit logs fetch error:', err);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [filters, logs.length]);
+
+  useEffect(() => {
+    loadData(true);
+  }, [loadData]);
+
+  const loadMore = () => {
+    if (!loading && !loadingMore && hasMore) {
+      loadData(false);
+    }
+  };
+
+  return { logs, stats, admins, loading, loadingMore, hasMore, filters, setFilters, loadMore };
+}

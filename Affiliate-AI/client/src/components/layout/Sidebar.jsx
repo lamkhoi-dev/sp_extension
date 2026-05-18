@@ -13,7 +13,8 @@ import {
   ChevronRight,
   Zap,
   Menu,
-  X
+  X,
+  FlaskConical
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -26,6 +27,7 @@ const menuItems = [
   { path: '/reports', icon: BarChart3, label: 'Báo cáo' },
   { path: '/system-history', icon: History, label: 'Lịch sử hệ thống' },
   { path: '/settings', icon: Settings, label: 'Cài đặt' },
+  { path: '/simulate', icon: FlaskConical, label: 'Mô phỏng Đơn' },
 ];
 
 function SidebarContent({ isMobile, collapsed, setCollapsed, setMobileOpen, location }) {

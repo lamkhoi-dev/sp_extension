@@ -1,91 +1,20 @@
-const db = require('./database');
+const db = require('../db');
 const logger = require('../logger');
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-const stmts = {
-  upsert: db.prepare(`
-    INSERT INTO users (user_id, display_name, zalo_name, avatar, cover, gender, dob, phone_number, status_text, is_friend, is_blocked, is_active, is_active_pc, is_active_web, last_action_time, account_status, global_id, message_count, first_contact, last_seen, cached_at)
-    VALUES (@userId, @displayName, @zaloName, @avatar, @cover, @gender, @dob, @phoneNumber, @statusText, @isFriend, @isBlocked, @isActive, @isActivePc, @isActiveWeb, @lastActionTime, @accountStatus, @globalId, 1, datetime('now'), datetime('now'), datetime('now'))
-    ON CONFLICT(user_id) DO UPDATE SET
-      display_name = @displayName,
-      zalo_name = @zaloName,
-      avatar = @avatar,
-      cover = @cover,
-      gender = @gender,
-      dob = @dob,
-      phone_number = @phoneNumber,
-      status_text = @statusText,
-      is_friend = @isFriend,
-      is_blocked = @isBlocked,
-      is_active = @isActive,
-      is_active_pc = @isActivePc,
-      is_active_web = @isActiveWeb,
-      last_action_time = @lastActionTime,
-      account_status = @accountStatus,
-      global_id = @globalId,
-      message_count = message_count + 1,
-      last_seen = datetime('now'),
-      cached_at = datetime('now')
-  `),
-
-  getById: db.prepare(`SELECT * FROM users WHERE user_id = ?`),
-
-  incrementCount: db.prepare(`
-    UPDATE users SET message_count = message_count + 1, last_seen = datetime('now') WHERE user_id = ?
-  `),
-
-  updateLastSeen: db.prepare(`UPDATE users SET last_seen = datetime('now') WHERE user_id = ?`),
-
-  getAll: db.prepare(`SELECT * FROM users ORDER BY last_seen DESC`),
-
-  getTopUsers: db.prepare(`SELECT * FROM users ORDER BY message_count DESC LIMIT ?`),
-
-  getCount: db.prepare(`SELECT COUNT(*) as count FROM users`),
-
-  setBasicInfo: db.prepare(`
-    INSERT INTO users (user_id, display_name, message_count, first_contact, last_seen, cached_at)
-    VALUES (?, ?, 1, datetime('now'), datetime('now'), '')
-    ON CONFLICT(user_id) DO UPDATE SET
-      display_name = CASE WHEN display_name = '' THEN excluded.display_name ELSE display_name END,
-      message_count = message_count + 1,
-      last_seen = datetime('now')
-  `),
-
-  setReferrer: db.prepare(`
-    UPDATE users SET referrer_id = ?, referrer_name = ? WHERE user_id = ?
-  `),
-
-  getReferrer: db.prepare(`
-    SELECT referrer_id, referrer_name FROM users WHERE user_id = ?
-  `),
-
-  getAllPaginated: db.prepare(`
-    SELECT * FROM users ORDER BY last_seen DESC LIMIT ? OFFSET ?
-  `),
-
-  searchUsers: db.prepare(`
-    SELECT * FROM users
-    WHERE display_name LIKE ? OR zalo_name LIKE ? OR user_id LIKE ?
-    ORDER BY last_seen DESC LIMIT ?
-  `),
-};
 
 class UserCache {
   constructor() {
     this._api = null;
   }
 
-  // Set the zca-js API reference (called after login)
   setApi(api) {
     this._api = api;
   }
 
-  // Get user from cache, or fetch from API if expired/missing
   async getOrFetch(userId) {
-    const cached = stmts.getById.get(userId);
+    const cached = await db.get('SELECT * FROM users WHERE user_id = ?', [userId]);
 
-    // Return cache if fresh enough
     if (cached && cached.cached_at) {
       const age = Date.now() - new Date(cached.cached_at + 'Z').getTime();
       if (age < CACHE_TTL_MS) {
@@ -93,43 +22,43 @@ class UserCache {
       }
     }
 
-    // Fetch from API
     if (this._api) {
       try {
         const info = await this._api.getUserInfo(userId);
         if (info && info.changed_profiles && info.changed_profiles[userId]) {
-          const profile = info.changed_profiles[userId];
-          return this._saveProfile(userId, profile);
+          return await this._saveProfile(userId, info.changed_profiles[userId]);
         }
       } catch (err) {
         logger.warn('UserCache', `getUserInfo(${userId}) failed: ${err.message}`);
       }
     }
 
-    // Return whatever we have in cache, or create minimal entry
-    if (cached) {
-      return this._formatUser(cached);
-    }
-
+    if (cached) return this._formatUser(cached);
     return this._createMinimal(userId);
   }
 
-  // Quick record — just save display name from message, no API call
-  recordMessage(userId, displayName = '') {
+  async recordMessage(userId, displayName = '') {
+    const now = new Date().toISOString();
     try {
-      stmts.setBasicInfo.run(userId, displayName);
+      await db.run(`
+        INSERT INTO users (user_id, display_name, message_count, first_contact, last_seen, cached_at)
+        VALUES (?, ?, 1, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+          display_name = CASE WHEN "users".display_name = '' THEN EXCLUDED.display_name ELSE "users".display_name END,
+          message_count = "users".message_count + 1,
+          last_seen = EXCLUDED.last_seen
+      `, [userId, displayName, now, now, now]);
     } catch (err) {
       logger.warn('UserCache', `recordMessage failed: ${err.message}`);
     }
   }
 
-  // Fetch and save full profile from API (async, non-blocking)
   async fetchAndSave(userId) {
     if (!this._api) return null;
     try {
       const info = await this._api.getUserInfo(userId);
       if (info && info.changed_profiles && info.changed_profiles[userId]) {
-        return this._saveProfile(userId, info.changed_profiles[userId]);
+        return await this._saveProfile(userId, info.changed_profiles[userId]);
       }
     } catch (err) {
       logger.warn('UserCache', `fetchAndSave(${userId}) failed: ${err.message}`);
@@ -137,7 +66,7 @@ class UserCache {
     return null;
   }
 
-  _saveProfile(userId, profile) {
+  async _saveProfile(userId, profile) {
     const data = {
       userId,
       displayName: profile.displayName || profile.zaloName || '',
@@ -159,7 +88,34 @@ class UserCache {
     };
 
     try {
-      stmts.upsert.run(data);
+      const now = new Date().toISOString();
+      data.firstContact = now;
+      data.lastSeen = now;
+      data.cachedAt = now;
+      await db.runNamed(`
+        INSERT INTO users (user_id, display_name, zalo_name, avatar, cover, gender, dob, phone_number, status_text, is_friend, is_blocked, is_active, is_active_pc, is_active_web, last_action_time, account_status, global_id, message_count, first_contact, last_seen, cached_at)
+        VALUES (@userId, @displayName, @zaloName, @avatar, @cover, @gender, @dob, @phoneNumber, @statusText, @isFriend, @isBlocked, @isActive, @isActivePc, @isActiveWeb, @lastActionTime, @accountStatus, @globalId, 1, @firstContact, @lastSeen, @cachedAt)
+        ON CONFLICT(user_id) DO UPDATE SET
+          display_name = EXCLUDED.display_name,
+          zalo_name = EXCLUDED.zalo_name,
+          avatar = EXCLUDED.avatar,
+          cover = EXCLUDED.cover,
+          gender = EXCLUDED.gender,
+          dob = EXCLUDED.dob,
+          phone_number = EXCLUDED.phone_number,
+          status_text = EXCLUDED.status_text,
+          is_friend = EXCLUDED.is_friend,
+          is_blocked = EXCLUDED.is_blocked,
+          is_active = EXCLUDED.is_active,
+          is_active_pc = EXCLUDED.is_active_pc,
+          is_active_web = EXCLUDED.is_active_web,
+          last_action_time = EXCLUDED.last_action_time,
+          account_status = EXCLUDED.account_status,
+          global_id = EXCLUDED.global_id,
+          message_count = "users".message_count + 1,
+          last_seen = EXCLUDED.last_seen,
+          cached_at = EXCLUDED.cached_at
+      `, data);
       logger.info('UserCache', `Cached profile: ${data.displayName} (${userId})`);
     } catch (err) {
       logger.error('UserCache', `Save profile failed: ${err.message}`);
@@ -209,51 +165,67 @@ class UserCache {
       qrCode: row.qr_code || null,
       totalCommission: row.total_commission || null,
       totalRefunded: row.total_refunded || null,
-      cashbackBuyerRate: row.cashback_buyer_rate ?? 40,
-      cashbackReferrerRate: row.cashback_referrer_rate ?? 30,
+      cashbackBuyerRate: row.cashback_buyer_rate ?? 60,
+      cashbackReferrerRate: row.cashback_referrer_rate ?? 20,
     };
   }
 
-  // Referrer tracking
-  setReferrer(userId, referrerId, referrerName = '') {
+  async setReferrer(userId, referrerId, referrerName = '') {
     try {
-      stmts.setReferrer.run(referrerId, referrerName, userId);
+      await db.run('UPDATE users SET referrer_id = ?, referrer_name = ? WHERE user_id = ?', [referrerId, referrerName, userId]);
       logger.info('UserCache', `Set referrer: ${userId} → invited by ${referrerId} (${referrerName})`);
     } catch (err) {
       logger.warn('UserCache', `setReferrer failed: ${err.message}`);
     }
   }
 
-  getReferrer(userId) {
-    const row = stmts.getReferrer.get(userId);
+  async getReferrer(userId) {
+    const row = await db.get('SELECT referrer_id, referrer_name FROM users WHERE user_id = ?', [userId]);
     return row ? { referrerId: row.referrer_id, referrerName: row.referrer_name } : null;
   }
 
-  // Dashboard queries
-  getAll() {
-    return stmts.getAll.all().map((r) => this._formatUser(r));
+  async getAll() {
+    const rows = await db.all('SELECT * FROM users ORDER BY last_seen DESC');
+    return rows.map((r) => this._formatUser(r));
   }
 
-  getAllPaginated(limit = 50, offset = 0) {
-    return stmts.getAllPaginated.all(limit, offset).map((r) => this._formatUser(r));
+  async getAllPaginated(limit = 50, offset = 0) {
+    const rows = await db.all('SELECT * FROM users ORDER BY last_seen DESC LIMIT ? OFFSET ?', [limit, offset]);
+    return rows.map((r) => this._formatUser(r));
   }
 
-  search(query, limit = 20) {
+  async search(query, limit = 20) {
     const q = `%${query}%`;
-    return stmts.searchUsers.all(q, q, q, limit).map((r) => this._formatUser(r));
+    const rows = await db.all(
+      'SELECT * FROM users WHERE display_name LIKE ? OR zalo_name LIKE ? OR user_id LIKE ? ORDER BY last_seen DESC LIMIT ?',
+      [q, q, q, limit]
+    );
+    return rows.map((r) => this._formatUser(r));
   }
 
-  getTopUsers(count = 10) {
-    return stmts.getTopUsers.all(count).map((r) => this._formatUser(r));
+  async getTopUsers(count = 10) {
+    const rows = await db.all('SELECT * FROM users ORDER BY message_count DESC LIMIT ?', [count]);
+    return rows.map((r) => this._formatUser(r));
   }
 
-  getUser(userId) {
-    const row = stmts.getById.get(userId);
+  async getUser(userId) {
+    const row = await db.get('SELECT * FROM users WHERE user_id = ?', [userId]);
     return row ? this._formatUser(row) : null;
   }
 
-  getUserCount() {
-    return stmts.getCount.get().count;
+  async getUserCount() {
+    const row = await db.get('SELECT COUNT(*) as count FROM users');
+    return row.count;
+  }
+
+  async updateBankInfo(userId, bankName, bankAccount, qrCode) {
+    try {
+      await db.run('UPDATE users SET bank_name = ?, bank_account = ?, qr_code = ? WHERE user_id = ?', [bankName, bankAccount, qrCode, userId]);
+      return true;
+    } catch (err) {
+      logger.error('UserCache', `updateBankInfo failed: ${err.message}`);
+      return false;
+    }
   }
 }
 

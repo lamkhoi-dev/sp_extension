@@ -1,229 +1,38 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="vi">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Shopee Affiliate Bot</title>
-  <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Affiliate AI - Quản lý Affiliate Marketing</title>
+
+  <!-- SEO Meta Tags -->
+  <meta name="description"
+    content="Hệ thống quản lý Affiliate Marketing thông minh - Theo dõi hoa hồng, đơn hàng từ Shopee và TikTok" />
+  <meta name="keywords" content="affiliate, marketing, shopee, tiktok, commission, hoa hồng" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Affiliate AI - Quản lý Affiliate Marketing" />
+  <meta property="og:description"
+    content="Hệ thống quản lý Affiliate Marketing thông minh - Theo dõi hoa hồng, đơn hàng từ Shopee và TikTok" />
+  <meta property="og:image" content="/affiliate.jpeg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Affiliate AI - Quản lý Affiliate Marketing" />
+  <meta name="twitter:description"
+    content="Hệ thống quản lý Affiliate Marketing thông minh - Theo dõi hoa hồng, đơn hàng từ Shopee và TikTok" />
+  <meta name="twitter:image" content="/affiliate.jpeg" />
+  <script type="module" crossorigin src="/assets/index-D76Fd_DZ.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-DRIILhLs.css">
 </head>
+
 <body>
-  <div class="app">
-    <!-- Header -->
-    <header class="header">
-      <div class="header-left">
-        <div class="logo">🛒</div>
-        <h1>Shopee Affiliate Bot</h1>
-      </div>
-      <div class="header-right">
-        <div class="ext-badge" id="extBadge">
-          <span class="ext-dot" id="extDot"></span>
-          <span id="extText">Extension: Chờ kết nối...</span>
-        </div>
-        <span class="status-dot" id="statusDot"></span>
-        <span class="status-text" id="statusText">Connecting...</span>
-      </div>
-    </header>
-
-    <!-- Main Content -->
-    <div class="main">
-      <!-- Chat Panel -->
-      <div class="chat-panel">
-        <div class="chat-messages" id="chatMessages"></div>
-        <div class="chat-typing" id="chatTyping" style="display:none">
-          <div class="typing-dots"><span></span><span></span><span></span></div>
-          <span>Bot đang xử lý...</span>
-        </div>
-        <div class="chat-input-area">
-          <div class="command-hints" id="commandHints" style="display:none">
-            <button class="hint-btn" data-cmd="/search ">/search</button>
-            <button class="hint-btn" data-cmd="/link ">/link</button>
-            <button class="hint-btn" data-cmd="/status">/status</button>
-            <button class="hint-btn" data-cmd="/help">/help</button>
-          </div>
-          <div class="chat-input-wrapper">
-            <input type="text" id="chatInput" placeholder="Gõ /help để bắt đầu..." autocomplete="off">
-            <button id="sendBtn" title="Gửi">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Dashboard Panel -->
-      <div class="dashboard-panel">
-        <!-- Extension Status Card -->
-        <div class="card">
-          <h2 class="card-title">🔌 Extension Status</h2>
-          <div class="status-grid">
-            <div class="status-item">
-              <span class="status-label">Trạng thái</span>
-              <span class="status-value" id="extStatus">Chờ kết nối</span>
-            </div>
-            <div class="status-item">
-              <span class="status-label">Hoạt động cuối</span>
-              <span class="status-value" id="extLastSeen">--</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Zalo Bot Status Card -->
-        <div class="card card-zalo">
-          <h2 class="card-title">🤖 Zalo Bot</h2>
-          <div class="status-grid">
-            <div class="status-item">
-              <span class="status-label">Trạng thái</span>
-              <span class="status-value" id="zaloStatus">Đang khởi tạo...</span>
-            </div>
-            <div class="status-item">
-              <span class="status-label">Tài khoản</span>
-              <span class="status-value" id="zaloAccount">--</span>
-            </div>
-          </div>
-          <div class="zalo-qr-section" id="zaloQrSection" style="display:none">
-            <div class="zalo-qr-label">📱 Quét mã QR bằng Zalo để đăng nhập</div>
-            <img id="zaloQrImage" class="zalo-qr-image" src="" alt="Zalo QR Code">
-          </div>
-          <div class="zalo-actions">
-            <button class="action-btn zalo-restart-btn" id="zaloRestart">🔄 Khởi động lại</button>
-          </div>
-        </div>
-
-        <!-- Zalo Message Monitor -->
-        <div class="card card-monitor">
-          <h2 class="card-title">📨 Zalo Messages</h2>
-          <!-- Stats Bar -->
-          <div class="stats-bar">
-            <div class="stat-item">
-              <span class="stat-value" id="statTotal">0</span>
-              <span class="stat-label">Tổng</span>
-            </div>
-            <div class="stat-item stat-success">
-              <span class="stat-value" id="statReplied">0</span>
-              <span class="stat-label">Đã xử lý</span>
-            </div>
-            <div class="stat-item stat-danger">
-              <span class="stat-value" id="statFailed">0</span>
-              <span class="stat-label">Thất bại</span>
-            </div>
-            <div class="stat-item stat-info">
-              <span class="stat-value" id="statAvgTime">--</span>
-              <span class="stat-label">TB (ms)</span>
-            </div>
-            <div class="stat-item stat-users">
-              <span class="stat-value" id="statUsers">0</span>
-              <span class="stat-label">Users</span>
-            </div>
-          </div>
-          <!-- Filter -->
-          <div class="msg-filter">
-            <button class="filter-btn active" data-filter="all">Tất cả</button>
-            <button class="filter-btn" data-filter="dm">DM</button>
-            <button class="filter-btn" data-filter="group">Nhóm</button>
-            <button class="filter-btn" data-filter="failed">❌ Lỗi</button>
-          </div>
-          <!-- Message Log Table -->
-          <div class="msg-log-container" id="msgLogContainer">
-            <table class="msg-log-table">
-              <thead>
-                <tr>
-                  <th>Thời gian</th>
-                  <th>Người gửi</th>
-                  <th>Nội dung</th>
-                  <th>Trạng thái</th>
-                  <th>Phản hồi (ms)</th>
-                </tr>
-              </thead>
-              <tbody id="msgLogBody"></tbody>
-            </table>
-            <div class="msg-log-empty" id="msgLogEmpty">Chưa có tin nhắn nào</div>
-          </div>
-        </div>
-
-        <!-- Top Users -->
-        <div class="card card-users">
-          <h2 class="card-title">👤 Người dùng (<span id="userCount">0</span>)</h2>
-          <div class="user-list" id="userList">
-            <div class="user-list-empty">Chưa có dữ liệu</div>
-          </div>
-        </div>
-
-        <!-- Quick Actions -->
-        <div class="card">
-          <h2 class="card-title">⚡ Thao tác nhanh</h2>
-          <div class="quick-actions">
-            <button class="action-btn" id="quickSearch">🔍 Test Search</button>
-            <button class="action-btn" id="quickLink">🔗 Test Link</button>
-            <button class="action-btn" id="quickStatus">📊 Status</button>
-          </div>
-        </div>
-
-        <!-- Logs Card -->
-        <div class="card card-logs">
-          <h2 class="card-title">📋 Activity Logs</h2>
-          <div class="logs-container" id="logsContainer"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- User Detail Modal -->
-  <div class="modal-overlay" id="userModal" style="display:none">
-    <div class="modal-card">
-      <button class="modal-close" id="modalClose">&times;</button>
-      <div class="modal-header">
-        <div class="modal-avatar" id="modalAvatar">👤</div>
-        <div class="modal-title">
-          <h3 id="modalName">--</h3>
-          <span class="modal-subtitle" id="modalZaloName">--</span>
-        </div>
-      </div>
-      <div class="modal-body">
-        <div class="modal-field">
-          <span class="modal-label">Zalo ID</span>
-          <span class="modal-value" id="modalUserId">--</span>
-        </div>
-        <div class="modal-field">
-          <span class="modal-label">Giới tính</span>
-          <span class="modal-value" id="modalGender">--</span>
-        </div>
-        <div class="modal-field">
-          <span class="modal-label">Số điện thoại</span>
-          <span class="modal-value" id="modalPhone">--</span>
-        </div>
-        <div class="modal-field">
-          <span class="modal-label">Ngày sinh</span>
-          <span class="modal-value" id="modalDob">--</span>
-        </div>
-        <div class="modal-field">
-          <span class="modal-label">Bio / Status</span>
-          <span class="modal-value" id="modalBio">--</span>
-        </div>
-        <div class="modal-field">
-          <span class="modal-label">Bạn bè</span>
-          <span class="modal-value" id="modalFriend">--</span>
-        </div>
-        <div class="modal-field">
-          <span class="modal-label">Online</span>
-          <span class="modal-value" id="modalOnline">--</span>
-        </div>
-        <div class="modal-divider"></div>
-        <div class="modal-field">
-          <span class="modal-label">Tổng tin nhắn</span>
-          <span class="modal-value modal-highlight" id="modalMsgCount">0</span>
-        </div>
-        <div class="modal-field">
-          <span class="modal-label">Lần đầu liên hệ</span>
-          <span class="modal-value" id="modalFirstContact">--</span>
-        </div>
-        <div class="modal-field">
-          <span class="modal-label">Hoạt động cuối</span>
-          <span class="modal-value" id="modalLastSeen">--</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script src="app.js"></script>
+  <div id="root"></div>
 </body>
+
 </html>

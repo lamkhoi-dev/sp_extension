@@ -1,103 +1,90 @@
-const db = require('../zalo/database');
+const db = require('../db');
 const logger = require('../logger');
-
-// ─── Prepared Statements ────────────────────────────────
-const stmts = {
-  // Get user cashback rates
-  getUserRates: db.prepare(`
-    SELECT user_id, display_name, cashback_buyer_rate, cashback_referrer_rate,
-           referrer_id, referrer_name
-    FROM users WHERE user_id = ?
-  `),
-
-  // Update user cashback rates
-  updateRates: db.prepare(`
-    UPDATE users SET cashback_buyer_rate = ?, cashback_referrer_rate = ?
-    WHERE user_id = ?
-  `),
-
-  // Get all completed orders that have a matching convert_log (by item_id or product_name)
-  // Grouped per user (sub_id1 = buyer)
-  getMatchedOrders: db.prepare(`
-    SELECT o.*, cl.sub_id2 as referrer_id
-    FROM orders o
-    INNER JOIN convert_logs cl ON (
-      (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-      OR
-      (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-    )
-    WHERE cl.status = 'success'
-    ORDER BY o.order_time DESC
-  `),
-
-  // Get matched orders for a specific user (buyer)
-  getMatchedOrdersByUser: db.prepare(`
-    SELECT o.*, cl.sub_id2 as referrer_id
-    FROM orders o
-    INNER JOIN convert_logs cl ON (
-      (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-      OR
-      (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-    )
-    WHERE cl.status = 'success' AND o.sub_id1 = ?
-    ORDER BY o.order_time DESC
-  `),
-
-  // Get total paid out to a user in a given role
-  getTotalPaid: db.prepare(`
-    SELECT COALESCE(SUM(amount), 0) as total_paid
-    FROM payouts WHERE user_id = ? AND role = ?
-  `),
-
-  // Insert a payout record
-  insertPayout: db.prepare(`
-    INSERT INTO payouts (user_id, user_name, role, amount, payment_method, bill_image, admin_note)
-    VALUES (@userId, @userName, @role, @amount, @paymentMethod, @billImage, @adminNote)
-  `),
-
-  // Get payout history
-  getPayoutHistory: db.prepare(`
-    SELECT * FROM payouts ORDER BY paid_at DESC LIMIT ? OFFSET ?
-  `),
-
-  // Get payout history for a user
-  getPayoutsByUser: db.prepare(`
-    SELECT * FROM payouts WHERE user_id = ? ORDER BY paid_at DESC
-  `),
-
-  // Update bill image
-  updateBill: db.prepare(`
-    UPDATE payouts SET bill_image = ? WHERE id = ?
-  `),
-
-  // All users with any matched orders
-  getUsersWithOrders: db.prepare(`
-    SELECT DISTINCT u.user_id, u.display_name, u.zalo_name, u.avatar,
-           u.cashback_buyer_rate, u.cashback_referrer_rate,
-           u.referrer_id, u.referrer_name
-    FROM users u
-    INNER JOIN orders o ON o.sub_id1 = u.user_id
-    INNER JOIN convert_logs cl ON (
-      (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-      OR
-      (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-    )
-    WHERE cl.status = 'success'
-  `),
-};
 
 // Completed statuses for Shopee orders
 const COMPLETED_STATUSES = new Set(['Hoàn thành', 'Completed']);
 
+// SQL: Get all matched orders (orders that have a corresponding convert_log entry)
+const MATCHED_ORDERS_SQL = `
+  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id
+  FROM orders o
+  INNER JOIN convert_logs cl ON (
+    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
+    OR
+    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+  )
+  WHERE cl.status = 'success'
+  ORDER BY o.order_time DESC
+`;
+
+const MATCHED_ORDERS_BY_USER_SQL = `
+  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id
+  FROM orders o
+  INNER JOIN convert_logs cl ON (
+    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
+    OR
+    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+  )
+  WHERE cl.status = 'success' AND o.sub_id1 = ?
+  ORDER BY o.order_time DESC
+`;
+
+// Orders where this user is the REFERRER (not the buyer)
+const REFERRER_ORDERS_BY_USER_SQL = `
+  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id1 as buyer_id
+  FROM orders o
+  INNER JOIN convert_logs cl ON (
+    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
+    OR
+    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+  )
+  WHERE cl.status = 'success' AND cl.sub_id2 = ?
+  ORDER BY o.order_time DESC
+`;
+
+const USERS_WITH_ORDERS_SQL = `
+  SELECT DISTINCT u.user_id, u.display_name, u.zalo_name, u.avatar,
+         u.cashback_buyer_rate, u.cashback_referrer_rate,
+         u.referrer_id, u.referrer_name
+  FROM users u
+  INNER JOIN orders o ON o.sub_id1 = u.user_id
+  INNER JOIN convert_logs cl ON (
+    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
+    OR
+    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+  )
+  WHERE cl.status = 'success'
+`;
+
+/**
+ * Collect all order IDs that have been paid in previous payouts for a user+role.
+ * Returns Set<orderId>.
+ */
+async function _getPaidOrderIds(userId, role) {
+  const payouts = await db.all(
+    'SELECT paid_orders FROM payouts WHERE user_id = ? AND role = ?',
+    [userId, role]
+  );
+  const paidIds = new Set();
+  for (const p of payouts) {
+    let orders = p.paid_orders;
+    if (typeof orders === 'string') {
+      try { orders = JSON.parse(orders); } catch { orders = null; }
+    }
+    if (Array.isArray(orders)) {
+      for (const o of orders) {
+        if (o.orderId) paidIds.add(o.orderId);
+      }
+    }
+  }
+  return paidIds;
+}
+
 const payoutStore = {
-  /**
-   * Get cashback summary for all users who have matched orders.
-   * Returns an array of user summaries with total/completed/pending breakdowns.
-   */
-  getSummary() {
+  async getSummary() {
     try {
-      const users = stmts.getUsersWithOrders.all();
-      const allOrders = stmts.getMatchedOrders.all();
+      const users = await db.all(USERS_WITH_ORDERS_SQL);
+      const allOrders = await db.all(MATCHED_ORDERS_SQL);
 
       // Group orders by buyer (sub_id1)
       const ordersByUser = {};
@@ -114,36 +101,41 @@ const payoutStore = {
         const orders = ordersByUser[uid] || [];
         if (orders.length === 0) continue;
 
-        const buyerRate = user.cashback_buyer_rate ?? 40;
-        const referrerRate = user.cashback_referrer_rate ?? 30;
+        const buyerRate = user.cashback_buyer_rate ?? 60;
+        const referrerRate = user.cashback_referrer_rate ?? 20;
         const hasReferrer = !!(user.referrer_id && user.referrer_id !== '');
+
+        // Collect paid order IDs from snapshots (immutable)
+        const paidOrderIds = await _getPaidOrderIds(uid, 'buyer');
 
         let totalNetCommission = 0;
         let completedNetCommission = 0;
         let pendingNetCommission = 0;
         let completedCount = 0;
         let pendingCount = 0;
+        let unpaidCompletedCashback = 0;
 
         for (const o of orders) {
           const nc = o.net_commission || 0;
           totalNetCommission += nc;
           if (COMPLETED_STATUSES.has(o.order_status)) {
-            completedNetCommission += nc;
-            completedCount++;
+            if (!paidOrderIds.has(o.order_id)) {
+              completedNetCommission += nc;
+              completedCount++;
+              unpaidCompletedCashback += Math.round(nc * buyerRate / 100);
+            }
           } else {
             pendingNetCommission += nc;
             pendingCount++;
           }
         }
 
-        // Calculate buyer cashback
-        const effectiveBuyerRate = hasReferrer ? buyerRate : (buyerRate + referrerRate);
-        const totalBuyerCashback = Math.round(totalNetCommission * effectiveBuyerRate / 100);
-        const completedBuyerCashback = Math.round(completedNetCommission * effectiveBuyerRate / 100);
+        const totalBuyerCashback = Math.round(totalNetCommission * buyerRate / 100);
+        const completedBuyerCashback = Math.round(completedNetCommission * buyerRate / 100);
 
-        // Already paid
-        const paidAsBuyer = stmts.getTotalPaid.get(uid, 'buyer').total_paid;
-        const pendingPayment = Math.max(0, completedBuyerCashback - paidAsBuyer);
+        // totalPaid from payouts SUM (exact bank amount, immutable)
+        const paidRow = await db.get('SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts WHERE user_id = ? AND role = ?', [uid, 'buyer']);
+        const paidAsBuyer = paidRow.total_paid;
 
         summaries.push({
           userId: uid,
@@ -161,28 +153,53 @@ const payoutStore = {
           totalBuyerCashback,
           completedBuyerCashback,
           totalPaid: paidAsBuyer,
-          pendingPayment,
+          pendingBuyerPayment: unpaidCompletedCashback,
           completedCount,
           pendingCount,
           totalOrders: orders.length,
         });
       }
 
-      // Also calculate referrer payouts
-      const referrerSummaries = this._calcReferrerSummaries(allOrders, users);
+      // Merge buyer + referrer into unified list
+      const referrerSummaries = await this._calcReferrerSummaries(allOrders, users);
+      const userMap = {};
+      for (const b of summaries) {
+        userMap[b.userId] = { ...b, pendingReferrerPayment: 0, referrerOrderCount: 0, totalReferrerCashback: 0 };
+      }
+      for (const r of referrerSummaries) {
+        if (userMap[r.userId]) {
+          userMap[r.userId].pendingReferrerPayment = r.pendingPayment;
+          userMap[r.userId].referrerOrderCount = r.orderCount;
+          userMap[r.userId].totalReferrerCashback = r.totalReferrerCashback;
+          userMap[r.userId].totalPaid += r.totalPaid;
+        } else {
+          userMap[r.userId] = {
+            userId: r.userId, displayName: r.displayName, avatar: r.avatar,
+            referrerId: '', referrerName: '', hasReferrer: false,
+            buyerRate: 0, referrerRate: 0, adminRate: 0,
+            totalNetCommission: 0, completedNetCommission: 0, pendingNetCommission: 0,
+            totalBuyerCashback: 0, completedBuyerCashback: 0,
+            totalPaid: r.totalPaid,
+            pendingBuyerPayment: 0, completedCount: 0, pendingCount: 0, totalOrders: 0,
+            pendingReferrerPayment: r.pendingPayment,
+            referrerOrderCount: r.orderCount,
+            totalReferrerCashback: r.totalReferrerCashback,
+          };
+        }
+      }
+      const unified = Object.values(userMap).map(u => ({
+        ...u,
+        pendingPayment: u.pendingBuyerPayment + u.pendingReferrerPayment,
+      }));
 
-      return { buyers: summaries, referrers: referrerSummaries };
+      return { users: unified };
     } catch (err) {
       logger.error('PayoutStore', `getSummary failed: ${err.message}`);
-      return { buyers: [], referrers: [] };
+      return { users: [] };
     }
   },
 
-  /**
-   * Calculate referrer summaries — users who earn cashback as referrers.
-   */
-  _calcReferrerSummaries(allOrders, users) {
-    // Build map: referrerId → orders they referred
+  async _calcReferrerSummaries(allOrders, users) {
     const referrerOrders = {};
     for (const o of allOrders) {
       const refId = o.referrer_id;
@@ -196,31 +213,49 @@ const payoutStore = {
 
     const summaries = [];
     for (const [refId, orders] of Object.entries(referrerOrders)) {
-      // Look up the buyer's config to get the referrer rate
+      // Collect paid order IDs from referrer snapshots
+      const paidOrderIds = await _getPaidOrderIds(refId, 'referrer');
+
       let totalRef = 0;
       let completedRef = 0;
+      let unpaidCompletedRef = 0;
+      let completedCount = 0;
 
       for (const o of orders) {
         const buyerUser = userMap[o.sub_id1];
-        const refRate = buyerUser?.cashback_referrer_rate ?? 30;
+        const refRate = buyerUser?.cashback_referrer_rate ?? 20;
         const nc = o.net_commission || 0;
-        totalRef += nc * refRate / 100;
+        const cb = Math.round(nc * refRate / 100);
+        totalRef += cb;
         if (COMPLETED_STATUSES.has(o.order_status)) {
-          completedRef += nc * refRate / 100;
+          if (!paidOrderIds.has(o.order_id)) {
+            completedRef += cb;
+            completedCount++;
+            unpaidCompletedRef += cb;
+          }
         }
       }
 
-      const paidAsReferrer = stmts.getTotalPaid.get(refId, 'referrer').total_paid;
-      const refUser = userMap[refId];
+      const paidRow = await db.get('SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts WHERE user_id = ? AND role = ?', [refId, 'referrer']);
+      const paidAsReferrer = paidRow.total_paid;
+
+      // Fix Bug #4: If referrer is not a buyer, they won't be in userMap.
+      // Do a separate lookup.
+      let refUser = userMap[refId];
+      if (!refUser) {
+        refUser = await db.get('SELECT user_id, display_name, zalo_name, avatar FROM users WHERE user_id = ?', [refId]);
+      }
 
       summaries.push({
         userId: refId,
         displayName: refUser?.display_name || refUser?.zalo_name || refId,
         avatar: refUser?.avatar || '',
-        totalReferrerCashback: Math.round(totalRef),
-        completedReferrerCashback: Math.round(completedRef),
+        totalReferrerCashback: totalRef,
+        completedReferrerCashback: completedRef,
         totalPaid: paidAsReferrer,
-        pendingPayment: Math.max(0, Math.round(completedRef) - paidAsReferrer),
+        // pendingPayment = only UNPAID completed referrer orders × current rate
+        pendingPayment: unpaidCompletedRef,
+        completedCount,
         orderCount: orders.length,
       });
     }
@@ -228,23 +263,26 @@ const payoutStore = {
     return summaries;
   },
 
-  /**
-   * Get detailed order list for a specific user (for expanded tree view).
-   */
-  getUserDetail(userId) {
+  async getUserDetail(userId) {
     try {
-      const orders = stmts.getMatchedOrdersByUser.all(userId);
-      const userRow = stmts.getUserRates.get(userId);
+      // --- Buyer orders (this user bought) ---
+      const buyerOrders = await db.all(MATCHED_ORDERS_BY_USER_SQL, [userId]);
+      const userRow = await db.get(`
+        SELECT user_id, display_name, cashback_buyer_rate, cashback_referrer_rate,
+               referrer_id, referrer_name
+        FROM users WHERE user_id = ?
+      `, [userId]);
 
-      const buyerRate = userRow?.cashback_buyer_rate ?? 40;
-      const referrerRate = userRow?.cashback_referrer_rate ?? 30;
+      const buyerRate = userRow?.cashback_buyer_rate ?? 60;
+      const referrerRate = userRow?.cashback_referrer_rate ?? 20;
       const hasReferrer = !!(userRow?.referrer_id && userRow.referrer_id !== '');
-      const effectiveBuyerRate = hasReferrer ? buyerRate : (buyerRate + referrerRate);
 
       const completed = [];
       const pending = [];
 
-      for (const o of orders) {
+      const paidBuyerIds = await _getPaidOrderIds(userId, 'buyer');
+
+      for (const o of buyerOrders) {
         const nc = o.net_commission || 0;
         const item = {
           orderId: o.order_id,
@@ -257,19 +295,85 @@ const payoutStore = {
           orderTime: o.order_time,
           completeTime: o.complete_time,
           netCommission: nc,
-          buyerCashback: Math.round(nc * effectiveBuyerRate / 100),
+          buyerCashback: Math.round(nc * buyerRate / 100),
           referrerCashback: hasReferrer ? Math.round(nc * referrerRate / 100) : 0,
-          adminProfit: Math.round(nc * (100 - effectiveBuyerRate - (hasReferrer ? referrerRate : 0)) / 100),
+          adminProfit: Math.round(nc * (100 - buyerRate - (hasReferrer ? referrerRate : 0)) / 100),
+          type: 'buyer',
         };
 
         if (COMPLETED_STATUSES.has(o.order_status)) {
-          completed.push(item);
+          if (!paidBuyerIds.has(o.order_id)) {
+            completed.push(item);
+          }
         } else {
           pending.push(item);
         }
       }
 
-      const payoutHistory = stmts.getPayoutsByUser.all(userId);
+      // --- Referrer orders (this user referred the buyer) ---
+      const refOrders = await db.all(REFERRER_ORDERS_BY_USER_SQL, [userId]);
+
+      // Fix Bug #6: Batch lookup all buyer IDs instead of N+1
+      const buyerIds = [...new Set(refOrders.map(o => o.sub_id1).filter(Boolean))];
+      const buyerMap = {};
+      if (buyerIds.length > 0) {
+        const placeholders = buyerIds.map((_, i) => `$${i + 1}`).join(',');
+        const buyerRows = await db.all(
+          `SELECT user_id, display_name, cashback_referrer_rate FROM users WHERE user_id IN (${placeholders})`,
+          buyerIds
+        );
+        for (const b of buyerRows) buyerMap[b.user_id] = b;
+      }
+
+      const completedReferrer = [];
+      const pendingReferrer = [];
+
+      const paidReferrerIds = await _getPaidOrderIds(userId, 'referrer');
+
+      for (const o of refOrders) {
+        const nc = o.net_commission || 0;
+        const buyerUser = buyerMap[o.sub_id1];
+        const refRate = buyerUser?.cashback_referrer_rate ?? 20;
+        const buyerDisplayName = buyerUser?.display_name || o.sub_id1;
+
+        const item = {
+          orderId: o.order_id,
+          itemId: o.item_id,
+          itemName: o.item_name,
+          shopName: o.shop_name,
+          price: o.price,
+          quantity: o.quantity,
+          orderStatus: o.order_status,
+          orderTime: o.order_time,
+          completeTime: o.complete_time,
+          netCommission: nc,
+          referrerCashback: Math.round(nc * refRate / 100),
+          buyerName: buyerDisplayName,
+          buyerId: o.sub_id1,
+          type: 'referrer',
+        };
+
+        if (COMPLETED_STATUSES.has(o.order_status)) {
+          if (!paidReferrerIds.has(o.order_id)) {
+            completedReferrer.push(item);
+          }
+        } else {
+          pendingReferrer.push(item);
+        }
+      }
+
+      // --- Payout history (both buyer and referrer roles) ---
+      const payoutHistory = await db.all('SELECT * FROM payouts WHERE user_id = ? ORDER BY paid_at DESC', [userId]);
+
+      for (const p of payoutHistory) {
+        if (typeof p.paid_orders === 'string') {
+          try {
+            p.paid_orders = JSON.parse(p.paid_orders);
+          } catch (e) {
+            p.paid_orders = null;
+          }
+        }
+      }
 
       return {
         userId,
@@ -281,6 +385,8 @@ const payoutStore = {
         referrerName: userRow?.referrer_name || '',
         completed,
         pending,
+        completedReferrer,
+        pendingReferrer,
         payoutHistory,
       };
     } catch (err) {
@@ -290,11 +396,122 @@ const payoutStore = {
   },
 
   /**
-   * Create a new payout record.
+   * Server-side payout calculator.
+   * Atomically determines unpaid orders, calculates amount, and creates payout record.
+   * Returns { payoutId, amount, paidOrders, userName } or null on failure.
    */
-  createPayout(data) {
+  async calculateServerPayout(userId, role, paymentMethod, adminNote, billImage) {
     try {
-      const result = stmts.insertPayout.run({
+      return await db.transaction(async (tx) => {
+        const userRow = await tx.get(
+          'SELECT display_name, zalo_name, cashback_buyer_rate FROM users WHERE user_id = $1',
+          [userId]
+        );
+        const userName = userRow?.display_name || userRow?.zalo_name || userId;
+
+        // Helper: get paid order IDs for a specific role
+        const getPaidIds = async (r) => {
+          const rows = await tx.all('SELECT paid_orders FROM payouts WHERE user_id = $1 AND role = $2', [userId, r]);
+          const ids = new Set();
+          for (const p of rows) {
+            let o = p.paid_orders;
+            if (typeof o === 'string') { try { o = JSON.parse(o); } catch { o = null; } }
+            if (Array.isArray(o)) o.forEach(x => x.orderId && ids.add(x.orderId));
+          }
+          return ids;
+        };
+
+        // Helper: collect unpaid buyer orders
+        const getBuyerUnpaid = async () => {
+          const paidIds = await getPaidIds('buyer');
+          const buyerRate = userRow?.cashback_buyer_rate ?? 60;
+          const orders = await tx.all(`
+            SELECT DISTINCT o.* FROM orders o
+            INNER JOIN convert_logs cl ON (
+              (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1) OR
+              (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+            ) WHERE cl.status = 'success' AND o.sub_id1 = $1 ORDER BY o.order_time ASC
+          `, [userId]);
+          const unpaid = [];
+          for (const o of orders) {
+            if (!COMPLETED_STATUSES.has(o.order_status) || paidIds.has(o.order_id)) continue;
+            const nc = o.net_commission || 0;
+            unpaid.push({ orderId: o.order_id, itemName: o.item_name, shopName: o.shop_name, netCommission: nc, cashback: Math.round(nc * buyerRate / 100), appliedRate: buyerRate, role: 'buyer' });
+          }
+          return unpaid;
+        };
+
+        // Helper: collect unpaid referrer orders
+        const getReferrerUnpaid = async () => {
+          const paidIds = await getPaidIds('referrer');
+          const refOrders = await tx.all(`
+            SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id1 as buyer_id FROM orders o
+            INNER JOIN convert_logs cl ON (
+              (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1) OR
+              (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+            ) WHERE cl.status = 'success' AND cl.sub_id2 = $1 ORDER BY o.order_time ASC
+          `, [userId]);
+          const buyerIds = [...new Set(refOrders.map(o => o.sub_id1).filter(Boolean))];
+          const rateMap = {};
+          if (buyerIds.length > 0) {
+            const ph = buyerIds.map((_, i) => `$${i + 1}`).join(',');
+            const rows = await tx.all(`SELECT user_id, cashback_referrer_rate FROM users WHERE user_id IN (${ph})`, buyerIds);
+            rows.forEach(b => rateMap[b.user_id] = b.cashback_referrer_rate ?? 20);
+          }
+          const unpaid = [];
+          for (const o of refOrders) {
+            if (!COMPLETED_STATUSES.has(o.order_status) || paidIds.has(o.order_id)) continue;
+            const nc = o.net_commission || 0;
+            const rate = rateMap[o.sub_id1] ?? 20;
+            unpaid.push({ orderId: o.order_id, itemName: o.item_name, shopName: o.shop_name, netCommission: nc, cashback: Math.round(nc * rate / 100), appliedRate: rate, role: 'referrer', buyerId: o.sub_id1 });
+          }
+          return unpaid;
+        };
+
+        // Helper: insert payout record
+        const insertPayout = async (r, orders) => {
+          if (orders.length === 0) return null;
+          const amt = orders.reduce((s, o) => s + o.cashback, 0);
+          if (amt <= 0) return null;
+          const res = await tx.runNamed(`
+            INSERT INTO payouts (user_id, user_name, role, amount, payment_method, bill_image, admin_note, paid_orders)
+            VALUES (@userId, @userName, @role, @amount, @paymentMethod, @billImage, @adminNote, @paidOrders) RETURNING id
+          `, { userId, userName, role: r, amount: amt, paymentMethod: paymentMethod || '', billImage: billImage || '', adminNote: adminNote || '', paidOrders: JSON.stringify(orders) });
+          logger.info('PayoutStore', `Payout created: user=${userId}, role=${r}, amount=${amt}, orders=${orders.length}`);
+          return { payoutId: res?.lastInsertRowid, amount: amt, paidOrders: orders };
+        };
+
+        // Execute based on role
+        if (role === 'combined') {
+          const buyerOrders = await getBuyerUnpaid();
+          const refOrders = await getReferrerUnpaid();
+          const bResult = await insertPayout('buyer', buyerOrders);
+          const rResult = await insertPayout('referrer', refOrders);
+          const totalAmount = (bResult?.amount || 0) + (rResult?.amount || 0);
+          if (totalAmount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
+          return { amount: totalAmount, userName, buyerPayout: bResult, referrerPayout: rResult };
+        } else {
+          const orders = role === 'buyer' ? await getBuyerUnpaid() : await getReferrerUnpaid();
+          const amount = orders.reduce((s, o) => s + o.cashback, 0);
+          if (amount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
+          const result = await insertPayout(role, orders);
+          return { ...result, userName };
+        }
+      });
+    } catch (err) {
+      logger.error('PayoutStore', `calculateServerPayout failed: ${err.message}`);
+      return null;
+    }
+  },
+
+  async createPayout(data) {
+    try {
+      const paidOrdersStr = data.paidOrders ? JSON.stringify(data.paidOrders) : null;
+      const result = await db.getNamed(`
+        INSERT INTO payouts (user_id, user_name, role, amount, payment_method, bill_image, admin_note, paid_orders)
+        VALUES (@userId, @userName, @role, @amount, @paymentMethod, @billImage, @adminNote, @paidOrders)
+        RETURNING id
+      `, {
         userId: data.userId,
         userName: data.userName || '',
         role: data.role || 'buyer',
@@ -302,20 +519,18 @@ const payoutStore = {
         paymentMethod: data.paymentMethod || '',
         billImage: data.billImage || '',
         adminNote: data.adminNote || '',
+        paidOrders: paidOrdersStr,
       });
-      return result.lastInsertRowid;
+      return result?.id;
     } catch (err) {
       logger.error('PayoutStore', `createPayout failed: ${err.message}`);
       return null;
     }
   },
 
-  /**
-   * Update bill image for a payout.
-   */
-  updateBill(payoutId, imagePath) {
+  async updateBill(payoutId, imagePath) {
     try {
-      stmts.updateBill.run(imagePath, payoutId);
+      await db.run('UPDATE payouts SET bill_image = ? WHERE id = ?', [imagePath, payoutId]);
       return true;
     } catch (err) {
       logger.error('PayoutStore', `updateBill failed: ${err.message}`);
@@ -323,26 +538,23 @@ const payoutStore = {
     }
   },
 
-  /**
-   * Get payout history.
-   */
-  getHistory(limit = 50, offset = 0) {
-    return stmts.getPayoutHistory.all(limit, offset);
+  async getHistory(limit = 50, offset = 0) {
+    return db.all('SELECT * FROM payouts ORDER BY paid_at DESC LIMIT ? OFFSET ?', [limit, offset]);
   },
 
-  /**
-   * Update user cashback rates.
-   */
-  updateUserRates(userId, buyerRate, referrerRate) {
+  async updateUserReferrerRate(userId, referrerRate) {
     try {
-      const adminRate = 100 - buyerRate - referrerRate;
-      if (adminRate < 0 || buyerRate < 0 || referrerRate < 0) {
-        return { success: false, error: 'Invalid rates: total must be 100%' };
+      if (referrerRate < 0 || referrerRate > 40) {
+        return { success: false, error: 'Referrer rate must be between 0% and 40%' };
       }
-      stmts.updateRates.run(buyerRate, referrerRate, userId);
+      await db.run('UPDATE users SET cashback_referrer_rate = ? WHERE user_id = ?', [referrerRate, userId]);
+      // Buyer rate is system-wide (from users.cashback_buyer_rate default), not changed per-user here
+      const userRow = await db.get('SELECT cashback_buyer_rate FROM users WHERE user_id = ?', [userId]);
+      const buyerRate = userRow?.cashback_buyer_rate ?? 60;
+      const adminRate = 100 - buyerRate - referrerRate;
       return { success: true, buyerRate, referrerRate, adminRate };
     } catch (err) {
-      logger.error('PayoutStore', `updateUserRates failed: ${err.message}`);
+      logger.error('PayoutStore', `updateUserReferrerRate failed: ${err.message}`);
       return { success: false, error: err.message };
     }
   },

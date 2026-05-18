@@ -32,7 +32,7 @@ Shopee CSV (export thủ công) → Import vào hệ thống → Matching đơn 
 |-----------|-------|
 | Bot chat | Zalo API (zca-js) |
 | Server | Node.js + Express + WebSocket |
-| Database | SQLite (better-sqlite3), WAL mode |
+| Database | PostgreSQL (pg, pg-pool) |
 | Extension | Chrome Extension (background.js) kết nối WS tới server |
 | Dashboard | React (Vite) — Admin panel |
 
@@ -212,43 +212,44 @@ Kết quả: Chỉ item "Xiaomi Band 10" được cashback.
 
 | Bên | Khi có Referrer | Khi không có Referrer |
 |-----|-----------------|----------------------|
-| **Buyer** (sub1) | **40%** | **70%** |
-| **Referrer** (sub2) | **30%** | 0% |
-| **Admin** | **30%** | **30%** |
+| **Buyer** (sub1) | **60%** | **60%** (giữ nguyên) |
+| **Referrer** (sub2) | **20%** | 0% |
+| **Admin** | **20%** | **40%** (nhận thêm phần referrer) |
 | **Tổng** | 100% | 100% |
 
-### 6.2 Tỷ lệ tuỳ chỉnh per-user
+### 6.2 Tỷ lệ tuỳ chỉnh
 
-- Admin có thể **override tỷ lệ** cho từng user qua Dashboard
-- DB: `users.cashback_buyer_rate` (default 40), `users.cashback_referrer_rate` (default 30)
+- **Buyer rate (60%)**: Cài đặt **system-wide**, áp dụng cho TẤT CẢ user. Không chỉnh per-user.
+- **Referrer rate (20%)**: Có thể **override per-user** (trên bảng buyer). Ví dụ: buyer A có referrer rate = 25% → referrer nhận 25%, admin nhận 15%.
 - Admin rate = 100 - buyer_rate - referrer_rate (luôn auto-calculate)
-- Khi không có referrer: buyer nhận = `buyer_rate + referrer_rate`, admin giữ nguyên
+- DB: `users.cashback_buyer_rate` (default 60, system-wide), `users.cashback_referrer_rate` (default 20, adjustable per-user)
+- Khi không có referrer: buyer vẫn nhận 60%, admin nhận 40% (KHÔNG cộng dồn cho buyer)
 
 ### 6.3 Công thức tính Cashback
 
 ```
 Đầu vào:
   net_commission = 59,670đ (từ orders)
-  buyer_rate = 40% (từ users table)
-  referrer_rate = 30% (từ users table)
+  buyer_rate = 60% (system-wide)
+  referrer_rate = 20% (per-user, default)
   has_referrer = true (sub_id2 != '')
 
 Tính toán:
   CÓ referrer:
-    buyer_cashback    = 59,670 × 40% = 23,868đ
-    referrer_cashback = 59,670 × 30% = 17,901đ
-    admin_profit      = 59,670 × 30% = 17,901đ
+    buyer_cashback    = 59,670 × 60% = 35,802đ
+    referrer_cashback = 59,670 × 20% = 11,934đ
+    admin_profit      = 59,670 × 20% = 11,934đ
 
   KHÔNG có referrer:
-    buyer_cashback    = 59,670 × 70% = 41,769đ
+    buyer_cashback    = 59,670 × 60% = 35,802đ
     referrer_cashback = 0đ
-    admin_profit      = 59,670 × 30% = 17,901đ
+    admin_profit      = 59,670 × 40% = 23,868đ
 ```
 
 ### 6.4 Snapshot tỷ lệ
 
 > **Quy tắc**: Tỷ lệ được lấy **tại thời điểm tính cashback** (khi admin mở trang Payouts).
-> Nếu admin thay đổi tỷ lệ user sau đó → các đơn chưa thanh toán sẽ tính theo tỷ lệ mới.
+> Nếu admin thay đổi referrer rate sau đó → các đơn chưa thanh toán sẽ tính theo rate mới.
 > Các đơn **đã thanh toán** (payouts record) → giữ nguyên số tiền đã trả.
 
 ---
@@ -308,8 +309,8 @@ Tính toán:
 
 ```sql
 -- Các cột mới cho cashback:
-cashback_buyer_rate REAL DEFAULT 40    -- % buyer nhận
-cashback_referrer_rate REAL DEFAULT 30 -- % referrer nhận
+cashback_buyer_rate REAL DEFAULT 60    -- % buyer nhận (system-wide, chỉ đổi qua Settings)
+cashback_referrer_rate REAL DEFAULT 20 -- % referrer nhận (adjustable per-user)
 -- Admin rate = 100 - buyer - referrer (auto)
 
 -- Tracking quan hệ giới thiệu:
@@ -359,7 +360,7 @@ CREATE TABLE payouts (
 | `GET` | `/api/payouts/user/:userId` | Chi tiết eligible items cho 1 user |
 | `POST` | `/api/payouts/create` | Tạo payout mới |
 | `POST` | `/api/payouts/upload-bill` | Upload ảnh bill |
-| `PATCH` | `/api/users/:userId/cashback-rates` | Cập nhật tỷ lệ cashback per-user |
+| `PATCH` | `/api/users/:userId/cashback-rates` | Cập nhật tỷ lệ referrer rate per-user (chỉ referrerRate) |
 
 ---
 
@@ -372,7 +373,7 @@ CREATE TABLE payouts (
 | 3 | User convert rồi mua thêm SP khác | Chỉ SP đã convert mới được cashback |
 | 4 | Đơn bị hủy/trả hàng | Không tính cashback |
 | 5 | Đơn "Đang xử lý" | Hiển thị trong tree nhưng không enable nút "Trả" |
-| 6 | User không có referrer | buyer_rate + referrer_rate → buyer, admin giữ nguyên |
+| 6 | User không có referrer | buyer vẫn nhận 60%, admin nhận 40% (KHÔNG cộng cho buyer) |
 | 7 | convert_logs cũ không có item_id | Fallback match bằng product_name |
 | 8 | Admin đổi tỷ lệ user | Áp dụng cho đơn chưa thanh toán |
 | 9 | Admin đã trả 1 phần | Số pending = total eligible - SUM(payouts đã trả) |

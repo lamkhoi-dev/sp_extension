@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Download, Calendar, TrendingUp, TrendingDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Download, Calendar, TrendingUp, TrendingDown, Loader2 } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -16,7 +16,6 @@ import {
   Cell
 } from 'recharts';
 import Button from '../components/ui/Button';
-import { dailyCommissionData, topProducts } from '../data/dummyData';
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444'];
 
@@ -44,20 +43,54 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function ReportsPage() {
-  const [dateRange, setDateRange] = useState('7days');
+  const [dateRange, setDateRange] = useState('30');
+  const [reportData, setReportData] = useState({ summary: {}, chartData: [], topProducts: [] });
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchReport() {
+      setIsLoading(true);
+      try {
+        const res = await fetch(`/api/reports/dashboard?days=${dateRange}`);
+        if (!res.ok) throw new Error('Network error');
+        const data = await res.json();
+        setReportData(data);
+      } catch (err) {
+        console.error('Failed to fetch report data', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchReport();
+  }, [dateRange]);
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+      </div>
+    );
+  }
+
+  const { summary, chartData, topProducts } = reportData;
 
   // Calculate comparison data
-  const shopeeTotal = dailyCommissionData.reduce((sum, d) => sum + d.shopee, 0);
-  const tiktokTotal = dailyCommissionData.reduce((sum, d) => sum + d.tiktok, 0);
+  // Currently we only have Shopee data according to requirements, so TikTok is 0.
+  const shopeeTotal = summary.totalRevenue || 0;
+  const tiktokTotal = 0;
   const total = shopeeTotal + tiktokTotal;
 
   const comparisonData = [
-    { name: 'Shopee', value: shopeeTotal, percentage: ((shopeeTotal / total) * 100).toFixed(1) },
-    { name: 'TikTok', value: tiktokTotal, percentage: ((tiktokTotal / total) * 100).toFixed(1) },
+    { name: 'Shopee', value: shopeeTotal, percentage: total > 0 ? ((shopeeTotal / total) * 100).toFixed(1) : 0 },
+    { name: 'TikTok', value: tiktokTotal, percentage: total > 0 ? ((tiktokTotal / total) * 100).toFixed(1) : 0 },
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print-area">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -68,17 +101,17 @@ export default function ReportsPage() {
             Phân tích chi tiết hiệu suất affiliate
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 no-print">
           <select
             value={dateRange}
             onChange={(e) => setDateRange(e.target.value)}
             className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="7days">7 ngày qua</option>
-            <option value="30days">30 ngày qua</option>
-            <option value="90days">90 ngày qua</option>
+            <option value="7">7 ngày qua</option>
+            <option value="30">30 ngày qua</option>
+            <option value="90">90 ngày qua</option>
           </select>
-          <Button variant="outline" icon={Download}>
+          <Button variant="outline" icon={Download} onClick={handlePrint}>
             Export PDF
           </Button>
         </div>
@@ -87,44 +120,46 @@ export default function ReportsPage() {
       {/* Summary Cards - 2 columns on mobile */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-3">
-          <p className="text-xs text-slate-500 dark:text-slate-400">Tổng doanh thu</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Tổng Giá Trị (GMV)</p>
           <p className="text-lg font-bold text-slate-900 dark:text-white mt-0.5">
-            {total.toLocaleString('vi-VN')}đ
+            {(summary.totalOrderValue || 0).toLocaleString('vi-VN')}đ
           </p>
           <div className="flex items-center gap-1 text-emerald-500 text-xs mt-1">
             <TrendingUp className="w-3 h-3" />
-            <span>+12.5%</span>
+            <span>Tăng trưởng</span>
           </div>
         </div>
 
         <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-3">
-          <p className="text-xs text-slate-500 dark:text-slate-400">Shopee</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Hoa Hồng Dự Kiến</p>
           <p className="text-lg font-bold text-[#EE4D2D] mt-0.5">
-            {shopeeTotal.toLocaleString('vi-VN')}đ
+            {(summary.totalCommission || 0).toLocaleString('vi-VN')}đ
           </p>
           <div className="flex items-center gap-1 text-emerald-500 text-xs mt-1">
             <TrendingUp className="w-3 h-3" />
-            <span>+8.3%</span>
+            <span>Dự kiến</span>
           </div>
         </div>
 
         <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-3">
-          <p className="text-xs text-slate-500 dark:text-slate-400">TikTok</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Hoa Hồng Đã Nhận</p>
+          <p className="text-lg font-bold text-emerald-500 mt-0.5">
+            {(summary.receivedCommission || 0).toLocaleString('vi-VN')}đ
+          </p>
+          <div className="flex items-center gap-1 text-emerald-500 text-xs mt-1">
+            <TrendingUp className="w-3 h-3" />
+            <span>Đã đối soát</span>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-3">
+          <p className="text-xs text-slate-500 dark:text-slate-400">Tổng Đơn Hàng</p>
           <p className="text-lg font-bold text-[#00F2EA] mt-0.5">
-            {tiktokTotal.toLocaleString('vi-VN')}đ
+            {(summary.totalOrders || 0).toLocaleString('vi-VN')}
           </p>
-          <div className="flex items-center gap-1 text-emerald-500 text-xs mt-1">
-            <TrendingUp className="w-3 h-3" />
-            <span>+15.2%</span>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-3">
-          <p className="text-xs text-slate-500 dark:text-slate-400">Tỷ lệ chuyển đổi</p>
-          <p className="text-lg font-bold text-slate-900 dark:text-white mt-0.5">12.5%</p>
-          <div className="flex items-center gap-1 text-red-500 text-xs mt-1">
-            <TrendingDown className="w-3 h-3" />
-            <span>-2.1%</span>
+          <div className="flex items-center gap-1 text-slate-400 text-xs mt-1">
+            <TrendingUp className="w-3 h-3 text-emerald-500" />
+            <span>Chuyển đổi: {summary.conversionRate || 0}%</span>
           </div>
         </div>
       </div>
@@ -138,14 +173,13 @@ export default function ReportsPage() {
           </h3>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dailyCommissionData}>
+              <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                 <XAxis dataKey="date" stroke="#64748b" fontSize={12} />
                 <YAxis stroke="#64748b" fontSize={12} tickFormatter={(v) => `${(v / 1000000).toFixed(1)}M`} />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend />
-                <Bar dataKey="shopee" name="Shopee" fill="#EE4D2D" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="tiktok" name="TikTok" fill="#00F2EA" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="commission" name="Shopee" fill="#EE4D2D" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -187,7 +221,7 @@ export default function ReportsPage() {
           <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
             Top sản phẩm theo doanh thu
           </h3>
-          <Button variant="outline" size="sm" icon={Download}>
+          <Button variant="outline" size="sm" icon={Download} onClick={handlePrint} className="no-print">
             Export
           </Button>
         </div>
@@ -232,23 +266,23 @@ export default function ReportsPage() {
                   <td className="py-2.5 px-3 sm:px-0 sm:pr-4">
                     <span className="font-medium text-slate-900 dark:text-white text-sm">{product.name}</span>
                   </td>
-                  <td className="py-2.5 pr-2 sm:pr-4 text-slate-600 dark:text-slate-400 text-sm">{product.orders}</td>
+                  <td className="py-2.5 pr-2 sm:pr-4 text-slate-600 dark:text-slate-400 text-sm">{product.sold}</td>
                   <td className="py-2.5 pr-2 sm:pr-4 font-medium text-slate-900 dark:text-white text-sm whitespace-nowrap">
-                    {(product.revenue / 1000000).toFixed(1)}M
+                    {(product.revenue / 1000).toLocaleString('vi-VN')}k
                   </td>
                   <td className="py-2.5 pr-2 sm:pr-4 font-semibold text-emerald-500 text-sm whitespace-nowrap">
-                    {(product.commission / 1000000).toFixed(1)}M
+                    {(product.commission / 1000).toLocaleString('vi-VN')}k
                   </td>
                   <td className="py-2.5 px-3 sm:px-0 hidden sm:table-cell">
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden max-w-[80px]">
                         <div
                           className="h-full bg-gradient-to-r from-blue-500 to-violet-500 rounded-full"
-                          style={{ width: `${(product.commission / topProducts[0].commission) * 100}%` }}
+                          style={{ width: `${topProducts.length > 0 ? (product.commission / topProducts[0].commission) * 100 : 0}%` }}
                         />
                       </div>
                       <span className="text-xs text-slate-500">
-                        {((product.commission / topProducts.reduce((s, p) => s + p.commission, 0)) * 100).toFixed(0)}%
+                        {topProducts.length > 0 ? ((product.commission / topProducts.reduce((s, p) => s + p.commission, 0)) * 100).toFixed(0) : 0}%
                       </span>
                     </div>
                   </td>

@@ -3,6 +3,7 @@ const http = require('http');
 const fs = require('fs');
 const { WebSocketServer } = require('ws');
 const path = require('path');
+const cookieParser = require('cookie-parser');
 const logger = require('./src/logger');
 const { handleCommand, getWelcome } = require('./src/commands');
 const ZaloBot = require('./src/zalo/zalo-bot');
@@ -11,8 +12,18 @@ const userCache = require('./src/zalo/user-cache');
 const convertLogStore = require('./src/api/convert-log-store');
 const orderStore = require('./src/api/order-store');
 const payoutStore = require('./src/api/payout-store');
+const simulateStore = require('./src/api/simulate-store');
 const productImageStore = require('./src/api/product-image-store');
+const reportDashboardStore = require('./src/api/report-dashboard-store');
+const db = require('./src/db');
+const { runMigrations } = require('./src/db/migrations');
 const multer = require('multer');
+const authStore = require('./src/auth/auth-store');
+const { requireAuth, signToken, JWT_COOKIE } = require('./src/auth/middleware');
+const auditStore = require('./src/audit/audit-store');
+const reportGenerator = require('./src/stats/report-generator');
+const reportStore = require('./src/stats/report-store');
+const { renderReport } = require('./src/stats/report-template');
 
 const app = express();
 const server = http.createServer(app);
@@ -20,35 +31,38 @@ const wss = new WebSocketServer({ server });
 
 const PORT = 3456;
 
-// Auto-backup DB on startup to prevent data loss
-const DB_PATH = path.join(__dirname, 'data/zalo-bot.db');
-const BACKUP_DIR = path.join(__dirname, 'data/backups');
-try {
-  if (fs.existsSync(DB_PATH) && fs.statSync(DB_PATH).size > 4096) {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    fs.copyFileSync(DB_PATH, path.join(BACKUP_DIR, `zalo-bot-${stamp}.db`));
-    // Keep only the 7 most recent backups
-    const backups = fs.readdirSync(BACKUP_DIR)
-      .filter(f => f.endsWith('.db'))
-      .sort()
-      .reverse();
-    backups.slice(7).forEach(f => fs.unlinkSync(path.join(BACKUP_DIR, f)));
-    console.log(`[INFO] Server: DB backed up → backups/zalo-bot-${stamp}.db`);
+// Auto-backup DB on startup (SQLite only)
+if (db.type === 'sqlite') {
+  const DB_PATH = path.join(__dirname, 'data/zalo-bot.db');
+  const BACKUP_DIR = path.join(__dirname, 'data/backups');
+  try {
+    if (fs.existsSync(DB_PATH) && fs.statSync(DB_PATH).size > 4096) {
+      fs.mkdirSync(BACKUP_DIR, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      fs.copyFileSync(DB_PATH, path.join(BACKUP_DIR, `zalo-bot-${stamp}.db`));
+      const backups = fs.readdirSync(BACKUP_DIR)
+        .filter(f => f.endsWith('.db'))
+        .sort()
+        .reverse();
+      backups.slice(7).forEach(f => fs.unlinkSync(path.join(BACKUP_DIR, f)));
+      console.log(`[INFO] Server: DB backed up → backups/zalo-bot-${stamp}.db`);
+    }
+  } catch (e) {
+    console.warn('[WARN] Server: Could not create DB backup:', e.message);
   }
-} catch (e) {
-  console.warn('[WARN] Server: Could not create DB backup:', e.message);
 }
 
-
 app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // CORS for Dashboard dev server
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  const origin = req.headers.origin || '*';
+  res.header('Access-Control-Allow-Origin', origin);
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Credentials', 'true');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
@@ -57,19 +71,15 @@ app.use((req, res, next) => {
 let activeExtensionWs = null;
 let extensionStatus = { connected: false, lastSeen: null };
 const pendingRequests = {};
-const reconnectQueue = []; // requests queued while extension is offline
+const reconnectQueue = [];
 
-// Drain the reconnect queue + re-dispatch any mid-flight requests that were lost
-// when the SW was killed during task execution
 function drainReconnectQueue() {
-  // 1. Re-dispatch already-sent requests whose SW died mid-execution
   const midFlight = Object.entries(pendingRequests);
   if (midFlight.length > 0) {
     logger.warn('Server', `[Reconnect] Re-dispatching ${midFlight.length} mid-flight request(s) to new SW`);
     for (const [reqId, entry] of midFlight) {
-      if (!entry.payload) continue; // no payload stored, can't retry
+      if (!entry.payload) continue;
       clearTimeout(entry.timeout);
-      // Reset timeout for 45s from NOW (fresh start)
       entry.timeout = setTimeout(() => {
         delete pendingRequests[reqId];
         entry.reject(new Error('Extension không phản hồi (timeout 45s sau reconnect)'));
@@ -88,7 +98,6 @@ function drainReconnectQueue() {
     }
   }
 
-  // 2. Drain queued requests that arrived while extension was offline
   while (reconnectQueue.length > 0) {
     const { reqId, payload, resolve, reject, queueTimer } = reconnectQueue.shift();
     clearTimeout(queueTimer);
@@ -115,11 +124,9 @@ function drainReconnectQueue() {
   }
 }
 
-// Extension router — used by shopee-api to dispatch commands
 function sendToExtension(reqId, payload) {
   return new Promise((resolve, reject) => {
     if (!activeExtensionWs || activeExtensionWs.readyState !== 1) {
-      // Extension offline — queue request for up to 30s waiting for reconnect
       logger.warn('Server', `Extension offline — queuing request ${reqId} (max 30s wait)`);
       const queueTimer = setTimeout(() => {
         const idx = reconnectQueue.findIndex(r => r.reqId === reqId);
@@ -130,11 +137,10 @@ function sendToExtension(reqId, payload) {
       return;
     }
 
-    // Store payload so we can re-dispatch if SW dies mid-execution
     pendingRequests[reqId] = {
       resolve,
       reject,
-      payload, // ← key: saved for re-dispatch on reconnect
+      payload,
       timeout: setTimeout(() => {
         delete pendingRequests[reqId];
         reject(new Error('Extension không phản hồi (timeout 45s)'));
@@ -151,7 +157,112 @@ function sendToExtension(reqId, payload) {
 // Zalo Bot instance
 const zaloBot = new ZaloBot();
 
-// REST API
+// ═══════════════════════════════════════════════════════
+// PUBLIC ROUTES (no auth required)
+// ═══════════════════════════════════════════════════════
+
+// ─── Stat Report (public) ─────────────────────────────
+app.get('/s/:token', async (req, res) => {
+  try {
+    const report = await reportStore.getReport(req.params.token);
+    if (!report) return res.status(404).send('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>404</title><style>body{background:#0f172a;color:#94a3b8;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;flex-direction:column}h1{font-size:48px;color:#f8fafc}p{margin-top:8px}</style></head><body><h1>404</h1><p>Link đã hết hạn hoặc không tồn tại</p></body></html>');
+    const html = renderReport(report.data);
+    res.type('html').send(html);
+  } catch (err) {
+    logger.error('Report', `Error rendering report: ${err.message}`);
+    res.status(500).send('Internal error');
+  }
+});
+
+// ─── Auth Routes (login is public) ────────────────────
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password, remember } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Username và password là bắt buộc' });
+
+    const admin = await authStore.validateLogin(username, password);
+    if (!admin) return res.status(401).json({ error: 'Sai tên đăng nhập hoặc mật khẩu' });
+
+    const token = signToken(
+      { username: admin.username, displayName: admin.displayName },
+      !!remember
+    );
+
+    res.cookie(JWT_COOKIE, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: remember ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000,
+    });
+
+    await auditStore.log(admin.username, 'LOGIN', 'auth', '', {}, req.ip);
+
+    res.json({
+      username: admin.username,
+      displayName: admin.displayName,
+      mustChangePassword: admin.mustChangePassword,
+    });
+  } catch (err) {
+    logger.error('Auth', `Login error: ${err.message}`);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════
+// AUTH MIDDLEWARE — protects all /api/* below this point
+// ═══════════════════════════════════════════════════════
+app.use('/api', requireAuth);
+
+// ─── Authenticated Auth Routes ────────────────────────
+app.post('/api/auth/logout', async (req, res) => {
+  await auditStore.log(req.admin.username, 'LOGOUT', 'auth', '', {}, req.ip);
+  res.clearCookie(JWT_COOKIE);
+  res.json({ ok: true });
+});
+
+app.get('/api/auth/me', async (req, res) => {
+  const admin = await authStore.getAdmin(req.admin.username);
+  if (!admin) return res.status(404).json({ error: 'Admin not found' });
+  res.json(admin);
+});
+
+app.patch('/api/auth/change-password', async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword) return res.status(400).json({ error: 'Thiếu thông tin' });
+    if (newPassword.length < 6) return res.status(400).json({ error: 'Mật khẩu mới phải ít nhất 6 ký tự' });
+    await authStore.changePassword(req.admin.username, oldPassword, newPassword);
+    await auditStore.log(req.admin.username, 'CHANGE_PASSWORD', 'auth', '', {}, req.ip);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ─── Audit Log Routes ─────────────────────────────────
+app.get('/api/audit-logs', async (req, res) => {
+  const { limit = 50, offset = 0, action, admin, resourceType, dateFrom, dateTo } = req.query;
+  const result = await auditStore.getRecent(
+    parseInt(limit), parseInt(offset),
+    { action, admin, resourceType, dateFrom, dateTo }
+  );
+  res.json(result);
+});
+
+app.get('/api/audit-logs/stats', async (req, res) => {
+  const stats = await auditStore.getStats();
+  res.json(stats);
+});
+
+app.get('/api/audit-logs/admins', async (req, res) => {
+  const admins = await auditStore.getAdminList();
+  res.json(admins);
+});
+
+// ═══════════════════════════════════════════════════════
+// REST API — All async for database adapter compatibility
+// ═══════════════════════════════════════════════════════
+
 app.get('/api/status', (req, res) => {
   res.json({ extension: extensionStatus, zalo: zaloBot.getStatus() });
 });
@@ -179,6 +290,7 @@ app.post('/api/zalo-restart', async (req, res) => {
   try {
     await zaloBot.stop();
     zaloBot.start().catch((err) => logger.error('Server', `Zalo restart failed: ${err.message}`));
+    await auditStore.log(req.admin?.username || 'system', 'ZALO_RESTART', 'zalo', '', {}, req.ip);
     res.json({ success: true, message: 'Restarting Zalo bot...' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -186,29 +298,29 @@ app.post('/api/zalo-restart', async (req, res) => {
 });
 
 // ─── Zalo Monitoring API ────────────────────────────────
-app.get('/api/zalo-messages', (req, res) => {
+app.get('/api/zalo-messages', async (req, res) => {
   const count = parseInt(req.query.count) || 50;
   const filter = req.query.filter || 'all';
-  res.json(messageStore.getRecent(count, filter));
+  res.json(await messageStore.getRecent(count, filter));
 });
 
-app.get('/api/zalo-users', (req, res) => {
+app.get('/api/zalo-users', async (req, res) => {
   const top = parseInt(req.query.top);
   if (top) {
-    res.json(userCache.getTopUsers(top));
+    res.json(await userCache.getTopUsers(top));
   } else {
-    res.json(userCache.getAll());
+    res.json(await userCache.getAll());
   }
 });
 
-app.get('/api/zalo-stats', (req, res) => {
-  const stats = messageStore.getStats();
-  stats.userCount = userCache.getUserCount();
+app.get('/api/zalo-stats', async (req, res) => {
+  const stats = await messageStore.getStats();
+  stats.userCount = await userCache.getUserCount();
   res.json(stats);
 });
 
-app.get('/api/zalo-user/:userId', (req, res) => {
-  const user = userCache.getUser(req.params.userId);
+app.get('/api/zalo-user/:userId', async (req, res) => {
+  const user = await userCache.getUser(req.params.userId);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json(user);
 });
@@ -224,16 +336,18 @@ app.get('/api/zalo-user-fetch/:userId', async (req, res) => {
 // REST API — Dashboard
 // ═══════════════════════════════════════════════════════
 
-// Dashboard stats overview
-app.get('/api/dashboard-stats', (req, res) => {
-  const msgStats = messageStore.getStats();
-  const convertStats = convertLogStore.getStats();
-  const orderStats = orderStore.getStats();
-  const todayConvert = convertLogStore.getTodayStats();
+app.get('/api/dashboard-stats', async (req, res) => {
+  const [msgStats, convertStats, orderStats, todayConvert, userCount] = await Promise.all([
+    messageStore.getStats(),
+    convertLogStore.getStats(),
+    orderStore.getStats(),
+    convertLogStore.getTodayStats(),
+    userCache.getUserCount(),
+  ]);
 
   res.json({
-    users: { total: userCache.getUserCount() },
-    messages: { total: msgStats.total, today: msgStats.today?.total || 0 },
+    users: { total: userCount },
+    messages: { total: msgStats.allTime?.total || 0, today: msgStats.today?.total || 0 },
     converts: {
       total: convertStats.total || 0,
       success: convertStats.success || 0,
@@ -259,65 +373,75 @@ app.get('/api/dashboard-stats', (req, res) => {
 });
 
 // Users API (paginated + search)
-app.get('/api/users', (req, res) => {
+app.get('/api/users', async (req, res) => {
   const { search, limit = 50, offset = 0 } = req.query;
   if (search) {
-    res.json(userCache.search(search, parseInt(limit)));
+    res.json(await userCache.search(search, parseInt(limit)));
   } else {
-    res.json(userCache.getAllPaginated(parseInt(limit), parseInt(offset)));
+    res.json(await userCache.getAllPaginated(parseInt(limit), parseInt(offset)));
   }
 });
 
 // Convert Logs API
-app.get('/api/convert-logs', (req, res) => {
+app.get('/api/convert-logs', async (req, res) => {
   const { search, user_id, limit = 50, offset = 0 } = req.query;
   if (search) {
-    res.json(convertLogStore.search(search, parseInt(limit)));
+    res.json(await convertLogStore.search(search, parseInt(limit)));
   } else if (user_id) {
-    res.json(convertLogStore.getByUser(user_id, parseInt(limit)));
+    res.json(await convertLogStore.getByUser(user_id, parseInt(limit)));
   } else {
-    res.json(convertLogStore.getRecent(parseInt(limit), parseInt(offset)));
+    res.json(await convertLogStore.getRecent(parseInt(limit), parseInt(offset)));
   }
 });
 
-app.get('/api/convert-logs/stats', (req, res) => {
-  res.json(convertLogStore.getStats());
+app.get('/api/convert-logs/stats', async (req, res) => {
+  res.json(await convertLogStore.getStats());
 });
 
 // Orders API
-app.get('/api/orders', (req, res) => {
+app.get('/api/orders', async (req, res) => {
   const { search, status, limit = 200, offset = 0,
     timeField, dateFrom, dateTo, orderId, shopName, shopType,
     productName, commissionType, channel } = req.query;
 
-  // If any advanced filter param is present, use getFiltered
   const hasAdvancedFilter = timeField || dateFrom || dateTo || orderId
     || shopName || shopType || productName || commissionType || channel
     || (status && status !== 'Tất cả');
 
   if (hasAdvancedFilter) {
-    res.json(orderStore.getFiltered({
+    res.json(await orderStore.getFiltered({
       timeField, dateFrom, dateTo, status, orderId,
       shopName, shopType, productName, commissionType, channel
     }, parseInt(limit)));
   } else if (search) {
-    res.json(orderStore.search(search, parseInt(limit)));
+    res.json(await orderStore.search(search, parseInt(limit)));
   } else {
-    res.json(orderStore.getRecent(parseInt(limit), parseInt(offset)));
+    res.json(await orderStore.getRecent(parseInt(limit), parseInt(offset)));
   }
 });
 
-app.get('/api/orders/filter-options', (req, res) => {
-  res.json(orderStore.getFilterOptions());
+app.get('/api/orders/filter-options', async (req, res) => {
+  res.json(await orderStore.getFilterOptions());
 });
 
-app.get('/api/orders/stats', (req, res) => {
-  res.json(orderStore.getStats());
+app.get('/api/orders/stats', async (req, res) => {
+  res.json(await orderStore.getStats());
+});
+
+// ─── Report Dashboard API ───────────────────────────────
+app.get('/api/reports/dashboard', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const data = await reportDashboardStore.getDashboardReports(days);
+    res.json(data);
+  } catch (err) {
+    logger.error('Reports', `Dashboard report failed: ${err.message}`);
+    res.status(500).json({ error: 'Failed to generate report' });
+  }
 });
 
 // ─── Payout API ─────────────────────────────────────────
 
-// Bill upload storage
 const billUpload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => {
@@ -333,77 +457,136 @@ const billUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-// Serve bill images
 app.use('/api/payouts/bills', express.static(path.join(__dirname, 'data/bills')));
 
-app.get('/api/payouts/summary', (req, res) => {
-  res.json(payoutStore.getSummary());
+app.get('/api/payouts/summary', async (req, res) => {
+  res.json(await payoutStore.getSummary());
 });
 
-app.get('/api/payouts/history', (req, res) => {
+app.get('/api/payouts/history', async (req, res) => {
   const { limit = 50, offset = 0 } = req.query;
-  res.json(payoutStore.getHistory(parseInt(limit), parseInt(offset)));
+  res.json(await payoutStore.getHistory(parseInt(limit), parseInt(offset)));
 });
 
-app.get('/api/payouts/user/:userId', (req, res) => {
-  const detail = payoutStore.getUserDetail(req.params.userId);
+app.get('/api/payouts/user/:userId', async (req, res) => {
+  const detail = await payoutStore.getUserDetail(req.params.userId);
   if (!detail) return res.status(404).json({ error: 'User not found' });
   res.json(detail);
 });
 
-app.post('/api/payouts/create', (req, res) => {
-  const { userId, userName, role, amount, paymentMethod, adminNote } = req.body;
-  if (!userId || !amount || amount <= 0) {
-    return res.status(400).json({ error: 'userId and positive amount are required' });
+app.post('/api/payouts/create', async (req, res) => {
+  const { userId, role, paymentMethod, adminNote, billImage } = req.body;
+  if (!userId || !role) {
+    return res.status(400).json({ error: 'userId and role are required' });
   }
-  const id = payoutStore.createPayout({ userId, userName, role, amount, paymentMethod, adminNote });
-  if (!id) return res.status(500).json({ error: 'Failed to create payout' });
-  res.json({ success: true, payoutId: id });
+
+  // Server-side calculation: atomically find unpaid orders + create payout
+  const result = await payoutStore.calculateServerPayout(userId, role, paymentMethod, adminNote, billImage);
+
+  if (!result) return res.status(500).json({ error: 'Failed to create payout' });
+  if (result.error || result.amount <= 0) {
+    return res.status(400).json({ error: result.error || 'No unpaid orders found' });
+  }
+
+  const orderCount = role === 'combined' 
+    ? ((result.buyerPayout?.paidOrders?.length || 0) + (result.referrerPayout?.paidOrders?.length || 0))
+    : (result.paidOrders?.length || 0);
+
+  const payoutId = role === 'combined' 
+    ? `${result.buyerPayout?.payoutId || ''},${result.referrerPayout?.payoutId || ''}`.replace(/^,|,$/g, '') 
+    : String(result.payoutId);
+
+  await auditStore.log(req.admin?.username || 'system', 'CREATE_PAYOUT', 'payout', payoutId, { userId, amount: result.amount, role }, req.ip);
+  res.json({ success: true, payoutId, amount: result.amount, orderCount });
 });
 
-app.post('/api/payouts/upload-bill', billUpload.single('bill'), (req, res) => {
+app.post('/api/payouts/upload-bill', billUpload.single('bill'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   const payoutId = req.body.payoutId;
   if (payoutId) {
-    payoutStore.updateBill(payoutId, req.file.filename);
+    await payoutStore.updateBill(payoutId, req.file.filename);
+    await auditStore.log(req.admin?.username || 'system', 'UPDATE_BILL', 'payout', payoutId, { filename: req.file.filename }, req.ip);
   }
   res.json({ success: true, filename: req.file.filename, path: `/api/payouts/bills/${req.file.filename}` });
 });
 
-// User cashback rate update
-app.patch('/api/users/:userId/cashback-rates', (req, res) => {
-  const { buyerRate, referrerRate } = req.body;
-  if (buyerRate == null || referrerRate == null) {
-    return res.status(400).json({ error: 'buyerRate and referrerRate are required' });
+app.patch('/api/users/:userId/cashback-rates', async (req, res) => {
+  const { referrerRate } = req.body;
+  if (referrerRate == null) {
+    return res.status(400).json({ error: 'referrerRate is required' });
   }
-  const result = payoutStore.updateUserRates(req.params.userId, Number(buyerRate), Number(referrerRate));
+  const result = await payoutStore.updateUserReferrerRate(req.params.userId, Number(referrerRate));
+  await auditStore.log(req.admin?.username || 'system', 'UPDATE_USER_RATES', 'user', req.params.userId, { referrerRate }, req.ip);
+  res.json(result);
+});
+
+// ─── Simulate Order API ─────────────────────────────────
+app.get('/api/users/select', async (req, res) => {
+  const users = await db.all(`
+    SELECT user_id, display_name, zalo_name, avatar, referrer_id, referrer_name,
+           cashback_buyer_rate, cashback_referrer_rate
+    FROM users ORDER BY display_name ASC
+  `);
+  res.json(users);
+});
+
+app.post('/api/shopee/extract', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  try {
+    const ShopeeAPI = require('./src/shopee-api');
+    const api = new ShopeeAPI();
+    const result = await api.checkAndConvert(url, { sub1: 'sim', sub2: 'sim', sub3: 'sim' });
+    if (!result.success) return res.json({ success: false, error: result.error || 'Không lấy được thông tin' });
+    res.json({
+      success: true,
+      productName: result.productName || '',
+      price: result.price || 0,
+      commissionRate: result.commission || 0,
+      itemId: result.itemId || '',
+      shopId: result.shopId || '',
+    });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/orders/simulate', async (req, res) => {
+  const { itemId, itemName, shopId, shopName, price, quantity, commissionRate, status, subId1, subId2, orderTime, completeTime } = req.body;
+  if (!subId1) {
+    return res.status(400).json({ error: 'subId1 (buyer) is required' });
+  }
+  const result = await simulateStore.createOrder({
+    itemId, itemName, shopId, shopName, price: Number(price), quantity: Number(quantity || 1),
+    commissionRate: Number(commissionRate || 0), status, subId1, subId2: subId2 || '',
+    orderTime, completeTime,
+  });
+  if (result.success) {
+    await auditStore.log(req.admin?.username || 'system', 'SIMULATE_ORDER', 'order', result.orderId, req.body, req.ip);
+  }
   res.json(result);
 });
 
 // ─── Product Images API ─────────────────────────────────
 
-// Get image map for a list of item_ids (POST to handle large arrays)
-app.post('/api/product-images/batch', (req, res) => {
+app.post('/api/product-images/batch', async (req, res) => {
   const { itemIds } = req.body;
   if (!itemIds || !Array.isArray(itemIds)) {
     return res.status(400).json({ error: 'itemIds array required' });
   }
-  res.json(productImageStore.getImgMap(itemIds));
+  res.json(await productImageStore.getImgMap(itemIds));
 });
 
-// Get stats about cached images
-app.get('/api/product-images/stats', (req, res) => {
-  const cached = productImageStore.getCount();
-  const missing = productImageStore.getMissingItems(1000).length;
-  res.json({ cached, missing, total: cached + missing });
+app.get('/api/product-images/stats', async (req, res) => {
+  const cached = await productImageStore.getCount();
+  const missing = await productImageStore.getMissingItems(1000);
+  res.json({ cached, missing: missing.length, total: cached + missing.length });
 });
 
-// Manual trigger for image fetch (non-blocking)
 app.post('/api/product-images/fetch', async (req, res) => {
   if (!activeExtensionWs || activeExtensionWs.readyState !== 1) {
     return res.status(400).json({ error: 'Extension chưa kết nối' });
   }
-  // Start fetch in background, respond immediately
   triggerImageFetch();
   res.json({ success: true, message: 'Image fetch started in background' });
 });
@@ -440,8 +623,9 @@ app.post('/api/orders/sync', async (req, res) => {
       return res.status(400).json({ success: false, error: result.error });
     }
 
-    const importResult = orderStore.importCSV(result.csv);
+    const importResult = await orderStore.importCSV(result.csv);
     logger.info('Server', `Orders sync complete: ${importResult.inserted}/${importResult.total} records`);
+    await auditStore.log(req.admin?.username || 'system', 'SYNC_ORDERS', 'order', '', { inserted: importResult.inserted, total: importResult.total }, req.ip);
     res.json({ success: true, fileName: result.fileName, ...importResult });
 
   } catch (err) {
@@ -451,14 +635,15 @@ app.post('/api/orders/sync', async (req, res) => {
 });
 
 // Orders CSV Upload (manual fallback)
-app.post('/api/orders/import-csv', (req, res) => {
+app.post('/api/orders/import-csv', async (req, res) => {
   const { csv } = req.body;
   if (!csv) {
     return res.status(400).json({ success: false, error: 'Missing csv field in request body' });
   }
   try {
-    const result = orderStore.importCSV(csv);
+    const result = await orderStore.importCSV(csv);
     logger.info('Server', `CSV import: ${result.inserted}/${result.total} records`);
+    await auditStore.log(req.admin?.username || 'system', 'IMPORT_CSV', 'order', '', { inserted: result.inserted, total: result.total }, req.ip);
     res.json({ success: true, ...result });
   } catch (err) {
     logger.error('Server', `CSV import failed: ${err.message}`);
@@ -486,10 +671,23 @@ wss.on('connection', (ws) => {
   // Send recent logs
   ws.send(JSON.stringify({ type: 'logs_batch', data: logger.getRecent(30) }));
 
-  // Send Zalo message stats + recent messages
-  ws.send(JSON.stringify({ type: 'zalo_stats', data: { ...messageStore.getStats(), userCount: userCache.getUserCount() } }));
-  ws.send(JSON.stringify({ type: 'zalo_messages_batch', data: messageStore.getRecent(30) }));
-  ws.send(JSON.stringify({ type: 'zalo_users', data: userCache.getTopUsers(10) }));
+  // Send async data after connection
+  (async () => {
+    try {
+      const [stats, messages, topUsers] = await Promise.all([
+        messageStore.getStats().then(async s => ({ ...s, userCount: await userCache.getUserCount() })),
+        messageStore.getRecent(30),
+        userCache.getTopUsers(10),
+      ]);
+      if (ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify({ type: 'zalo_stats', data: stats }));
+        ws.send(JSON.stringify({ type: 'zalo_messages_batch', data: messages }));
+        ws.send(JSON.stringify({ type: 'zalo_users', data: topUsers }));
+      }
+    } catch (err) {
+      logger.warn('WebSocket', `Init data send failed: ${err.message}`);
+    }
+  })();
 
   // Subscribe to log updates
   const unsubLog = logger.subscribe((entry) => {
@@ -503,33 +701,28 @@ wss.on('connection', (ws) => {
     try {
       const msg = JSON.parse(data.toString());
 
-      // Extension registration
       if (msg.type === 'register_extension') {
         logger.info('Server', '🔌 Chrome Extension đã kết nối!');
         activeExtensionWs = ws;
         ws.isExtension = true;
         extensionStatus = { connected: true, lastSeen: new Date().toISOString() };
         broadcastExtensionStatus();
-        // Drain any queued requests that arrived while extension was offline
         drainReconnectQueue();
         return;
       }
 
-      // Extension keep-alive
       if (msg.type === 'ping') {
         extensionStatus.lastSeen = new Date().toISOString();
         if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'pong' }));
         return;
       }
 
-      // Extension automation result
       if (msg.type === 'automation_result') {
         const result = msg.data;
         const reqId = result.reqId;
         if (pendingRequests[reqId]) {
           clearTimeout(pendingRequests[reqId].timeout);
           if (result.success || result.noCommission) {
-            // noCommission is a valid business result, not an error
             pendingRequests[reqId].resolve(result);
           } else {
             pendingRequests[reqId].reject(new Error(result.error || 'Automation failed'));
@@ -539,7 +732,6 @@ wss.on('connection', (ws) => {
         return;
       }
 
-      // Chat message from Dashboard UI
       if (msg.type === 'user_message') {
         const userText = msg.content;
         logger.info('Chat', `User: ${userText}`);
@@ -589,14 +781,19 @@ zaloBot.onStatusChange((data) => {
 });
 
 // Broadcast real-time message events to dashboard
-zaloBot.onMessageEvent((entry) => {
-  const stats = { ...messageStore.getStats(), userCount: userCache.getUserCount() };
-  wss.clients.forEach((client) => {
-    if (client.readyState === 1 && !client.isExtension) {
-      client.send(JSON.stringify({ type: 'zalo_message', data: entry }));
-      client.send(JSON.stringify({ type: 'zalo_stats', data: stats }));
-    }
-  });
+zaloBot.onMessageEvent(async (entry) => {
+  try {
+    const stats = await messageStore.getStats();
+    stats.userCount = await userCache.getUserCount();
+    wss.clients.forEach((client) => {
+      if (client.readyState === 1 && !client.isExtension) {
+        client.send(JSON.stringify({ type: 'zalo_message', data: entry }));
+        client.send(JSON.stringify({ type: 'zalo_stats', data: stats }));
+      }
+    });
+  } catch (err) {
+    logger.warn('Server', `Broadcast message event failed: ${err.message}`);
+  }
 });
 
 // ─── Background Product Image Fetch ─────────────────────
@@ -606,22 +803,17 @@ async function triggerImageFetch() {
   if (imageFetchInProgress) return;
   if (!activeExtensionWs || activeExtensionWs.readyState !== 1) return;
 
-  // Check if there are orders missing images
-  const missing = productImageStore.getMissingItems(1);
+  const missing = await productImageStore.getMissingItems(1);
   if (missing.length === 0) return;
 
   imageFetchInProgress = true;
   const reqId = `img_fetch_${Date.now()}`;
 
-  // Time range: 6 months back
   const now = Math.floor(Date.now() / 1000);
   const startTimestamp = now - 180 * 24 * 3600;
 
-  // Get already-cached item_ids to skip
-  const allCachedMap = productImageStore.getImgMap([]);
-  // We need all cached item_ids — get them from DB
-  const db = require('./src/zalo/database');
-  const cachedRows = db.prepare('SELECT item_id FROM product_images').all();
+  // Get cached item IDs to skip
+  const cachedRows = await db.all('SELECT item_id FROM product_images');
   const knownItemIds = cachedRows.map(r => r.item_id);
 
   logger.info('ProductImages', `Starting background fetch (${knownItemIds.length} already cached, ${missing.length}+ missing)`);
@@ -648,7 +840,7 @@ async function triggerImageFetch() {
     });
 
     if (result.success && result.images?.length > 0) {
-      const saved = productImageStore.bulkSave(result.images);
+      const saved = await productImageStore.bulkSave(result.images);
       logger.info('ProductImages', `Cached ${saved} new product images (${result.totalPages} pages, ${result.totalFetched} conversions)`);
     } else if (result.success) {
       logger.info('ProductImages', 'No new images found');
@@ -662,26 +854,58 @@ async function triggerImageFetch() {
   }
 }
 
-// Auto-fetch images every 5 minutes (non-blocking, safe)
+// Auto-fetch images every 5 minutes
 setInterval(() => {
   triggerImageFetch().catch(() => {});
 }, 5 * 60 * 1000);
 
-// Start
-server.listen(PORT, () => {
-  logger.info('Server', `Running at http://localhost:${PORT}`);
-  console.log(`\n🚀 Shopee Affiliate Bot running at \x1b[36mhttp://localhost:${PORT}\x1b[0m`);
-  console.log(`⏳ Đang chờ Chrome Extension kết nối...`);
+// ─── SPA Catch-all Route ─────────────────────────────────
+app.get('/zalo-scan', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'zalo.html'));
+});
 
-  // Auto-start Zalo bot
-  console.log(`🤖 Đang khởi tạo Zalo Bot...\n`);
-  zaloBot.start().catch((err) => {
-    logger.error('Server', `Zalo Bot startup failed: ${err.message}`);
-    console.log(`\n⚠️ Zalo Bot chưa khởi động. Truy cập Dashboard để xem mã QR hoặc gõ /api/zalo-restart.\n`);
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  } else {
+    next();
+  }
+});
+
+// ─── Cleanup Crons ───────────────────────────────────────
+// Audit logs: delete older than 6 months (run daily)
+setInterval(() => auditStore.cleanup(6).catch(() => {}), 24 * 60 * 60 * 1000);
+// Stat reports: delete expired (run hourly)
+setInterval(() => reportStore.cleanup().catch(() => {}), 60 * 60 * 1000);
+
+// ─── Start ──────────────────────────────────────────────
+async function start() {
+  // Run database migrations
+  await runMigrations(db);
+  logger.info('Server', 'Database migrations complete');
+
+  // Initial cleanup
+  auditStore.cleanup(6).catch(() => {});
+  reportStore.cleanup().catch(() => {});
+
+  server.listen(PORT, () => {
+    logger.info('Server', `Running at http://localhost:${PORT}`);
+    console.log(`\n🚀 Shopee Affiliate Bot running at \x1b[36mhttp://localhost:${PORT}\x1b[0m`);
+    console.log(`⏳ Đang chờ Chrome Extension kết nối...`);
+
+    console.log(`🤖 Đang khởi tạo Zalo Bot...\n`);
+    zaloBot.start().catch((err) => {
+      logger.error('Server', `Zalo Bot startup failed: ${err.message}`);
+      console.log(`\n⚠️ Zalo Bot chưa khởi động. Truy cập Dashboard để xem mã QR hoặc gõ /api/zalo-restart.\n`);
+    });
+
+    setTimeout(() => {
+      triggerImageFetch().catch(() => {});
+    }, 30000);
   });
+}
 
-  // First image fetch after 30s (give extension time to connect)
-  setTimeout(() => {
-    triggerImageFetch().catch(() => {});
-  }, 30000);
+start().catch((err) => {
+  console.error('Fatal startup error:', err);
+  process.exit(1);
 });
