@@ -133,7 +133,7 @@ export default function ReportsPage() {
         <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-3">
           <p className="text-xs text-slate-500 dark:text-slate-400">Hoa Hồng Dự Kiến</p>
           <p className="text-lg font-bold text-[#EE4D2D] mt-0.5">
-            {(summary.totalCommission || 0).toLocaleString('vi-VN')}đ
+            {(summary.totalRevenue || 0).toLocaleString('vi-VN')}đ
           </p>
           <div className="flex items-center gap-1 text-emerald-500 text-xs mt-1">
             <TrendingUp className="w-3 h-3" />

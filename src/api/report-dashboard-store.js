@@ -15,10 +15,10 @@ const reportDashboardStore = {
       // 1. Summary
       const summaryRow = await db.get(`
         SELECT 
-          COUNT(*) as totalOrders,
-          SUM(net_commission) as totalRevenue,
-          SUM(CASE WHEN order_status = 'Hoàn thành' THEN net_commission ELSE 0 END) as receivedCommission,
-          SUM(order_value) as totalOrderValue
+          COUNT(*) as "totalOrders",
+          SUM(net_commission) as "totalRevenue",
+          SUM(CASE WHEN order_status = 'Hoàn thành' THEN net_commission ELSE 0 END) as "receivedCommission",
+          SUM(order_value) as "totalOrderValue"
         FROM orders
         ${whereClause}
       `, params);
@@ -28,17 +28,20 @@ const reportDashboardStore = {
       // we'll return a static/placeholder or base it on something else if needed, 
       // or just calculate total unique buyers as a proxy)
       const buyersRow = await db.get(`
-        SELECT COUNT(DISTINCT sub_id1) as uniqueBuyers
+        SELECT COUNT(DISTINCT sub_id1) as "uniqueBuyers"
         FROM orders
         ${whereClause}
       `, params);
 
+      const totalOrders = summaryRow.totalOrders || summaryRow.totalorders || 0;
+      const uniqueBuyers = buyersRow.uniqueBuyers || buyersRow.uniquebuyers || 0;
+
       const summary = {
-        totalRevenue: summaryRow.totalRevenue || 0,
-        receivedCommission: summaryRow.receivedCommission || 0,
-        totalOrderValue: summaryRow.totalOrderValue || 0,
-        totalOrders: summaryRow.totalOrders || 0,
-        conversionRate: buyersRow.uniqueBuyers ? ((summaryRow.totalOrders / buyersRow.uniqueBuyers) * 100).toFixed(2) : 0, 
+        totalRevenue: summaryRow.totalRevenue || summaryRow.totalrevenue || 0,
+        receivedCommission: summaryRow.receivedCommission || summaryRow.receivedcommission || 0,
+        totalOrderValue: summaryRow.totalOrderValue || summaryRow.totalordervalue || 0,
+        totalOrders: totalOrders,
+        conversionRate: uniqueBuyers ? ((totalOrders / uniqueBuyers) * 100).toFixed(2) : 0, 
         // 👆 Just an example proxy metric. You can adjust this if `convert_logs` provides total clicks.
       };
 
