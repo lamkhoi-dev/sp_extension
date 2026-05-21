@@ -212,10 +212,19 @@ class ZaloCommands {
   }
 
   async _buildStatusText() {
+    const mode = process.env.LINK_MODE || 'direct';
     const extConnected = !!ShopeeAPI.sendToExtension;
-    const icon = extConnected ? '🟢' : '🔴';
+    let icon, extStatus;
+    if (mode === 'direct') {
+      icon = '🟢';
+      extStatus = 'Direct Mode (headless)';
+    } else {
+      icon = extConnected ? '🟢' : '🔴';
+      extStatus = extConnected ? 'Đã kết nối' : 'Chưa kết nối';
+    }
     let status = `📊 Trạng thái hệ thống\n\n`;
-    status += `${icon} Extension: ${extConnected ? 'Đã kết nối' : 'Chưa kết nối'}\n`;
+    status += `🔧 Mode: ${mode.toUpperCase()}\n`;
+    status += `${icon} Extension: ${extStatus}\n`;
     status += `🤖 Zalo Bot: 🟢 Online\n`;
     status += `📨 Hàng đợi: ${this.actions.limiter.pending} tin nhắn\n`;
     if (this.messageStore) {
@@ -323,8 +332,8 @@ class ZaloCommands {
       userId: senderUid,
       userName: senderName,
       originalLink: url,
-      affiliateLink: result.longLink || '',
-      shortLink: result.shortLink || '',
+      affiliateLink: result.longLink || result.affiliateLink || '',
+      shortLink: result.shortLink || result.affiliateLink || '',
       productName: result.productName || '',
       commissionRate: result.commission || 0,
       commissionAmount: result.commissionAmount || 0,
@@ -344,7 +353,8 @@ class ZaloCommands {
     if (result.commissionAmount > 0) {
       commissionText += ` (~${new Intl.NumberFormat('vi-VN').format(result.commissionAmount)}đ)`;
     }
-    const msg = `✅ ${mentionTag}\n🔗 ${result.shortLink}\n🏷️ Hoa hồng: ${commissionText}`;
+    const linkToShow = result.shortLink || result.affiliateLink;
+    const msg = `✅ ${mentionTag}\n🔗 ${linkToShow}\n🏷️ Hoa hồng: ${commissionText}`;
 
     const msgContent = {
       msg,

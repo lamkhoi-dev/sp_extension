@@ -397,6 +397,17 @@ async function executeConvertInMainWorld(tabId, payload, reqId) {
         console.warn('[BG] Direct API failed, falling back to content script:', result.error);
         const targetUrl = 'https://affiliate.shopee.vn/offer/custom_link';
         const currentTab = await chrome.tabs.get(tabId);
+        
+        // Auto-reload on cookie incorrect error
+        if (result.error && typeof result.error === 'string' && result.error.includes('cookie incorrect')) {
+          console.log('[BG] Detected cookie incorrect error, reloading tab...');
+          await chrome.tabs.reload(tabId);
+          // Wait briefly for reload to start
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          sendResult(reqId, { success: false, error: 'cookie incorrect - reloading tab' });
+          return;
+        }
+
         if (!currentTab.url.includes('/offer/custom_link')) {
           await navigateAndWait(tabId, targetUrl);
         }

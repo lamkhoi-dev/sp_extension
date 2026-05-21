@@ -1,12 +1,42 @@
 const fs = require('fs');
 const path = require('path');
 
+const LOG_DIR = path.join(__dirname, '..', 'logs');
+const MAX_LOG_DAYS = 7;
+
 class Logger {
   constructor() {
     this.logs = [];
     this.maxInMemory = 500;
-    this.logFile = path.join(__dirname, '..', 'logs', `app-${new Date().toISOString().slice(0, 10)}.log`);
     this.subscribers = new Set();
+    this._ensureLogDir();
+    this._rotateOldLogs();
+  }
+
+  _ensureLogDir() {
+    try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+  }
+
+  _getLogFile() {
+    return path.join(LOG_DIR, `app-${new Date().toISOString().slice(0, 10)}.log`);
+  }
+
+  _rotateOldLogs() {
+    try {
+      const files = fs.readdirSync(LOG_DIR).filter(f => f.startsWith('app-') && f.endsWith('.log'));
+      const cutoff = new Date(Date.now() - MAX_LOG_DAYS * 24 * 60 * 60 * 1000);
+
+      for (const file of files) {
+        const dateStr = file.replace('app-', '').replace('.log', '');
+        const fileDate = new Date(dateStr);
+        if (!isNaN(fileDate.getTime()) && fileDate < cutoff) {
+          fs.unlinkSync(path.join(LOG_DIR, file));
+        }
+      }
+    } catch {}
+
+    // Schedule next rotation in 6 hours
+    setTimeout(() => this._rotateOldLogs(), 6 * 60 * 60 * 1000).unref();
   }
 
   subscribe(callback) {
@@ -25,8 +55,14 @@ class Logger {
     if (this.logs.length > this.maxInMemory) {
       this.logs = this.logs.slice(-this.maxInMemory);
     }
+
     const line = `[${entry.timestamp}] [${entry.level}] ${entry.category}: ${entry.message}\n`;
-    fs.appendFileSync(this.logFile, line);
+
+    // Async write — non-blocking
+    fs.appendFile(this._getLogFile(), line, (err) => {
+      if (err) console.error('[Logger] Write failed:', err.message);
+    });
+
     this._broadcast(entry);
   }
 

@@ -1,19 +1,18 @@
-Mỗi user có UID chính là ID zalo của họ luôn, và sẽ fetch lại thông tin user đó sau 24 tiếng như bạn đã nói từ trước á
+- sửa lại nd khi capcha: Nghĩa là khi lỗi capcha hay mất tab hay bất kì lỗi nào khác, gửi lỗi chính xác về mail, còn lỗi gửi cho user trong tin nhắn sẽ là: Hệ thống hiện tại đang quá tải, vui lòng thử lại sau ít phút
+- fix nut copy sai link: liện tại nút copy ở tab Lịch sử Convert copy ko lấy đúng link
+- lich sử conver thêm ngày ( hiện chỉ có giờ), avatar user
+- hoa hồng giới thiêu thêm avatar của user: trang Hoàn tiền, ở mỗi user,  
+- thêm qr của user đre thanh toán
+- trang hoàn tiền tách 2 tab: hoàn tiền và lịch sử . (làm dạng table antd), phải có pagination
+- quản lí user  : pagination, thêm hình người mời, update qr, ngân hàng từng user
+- người bình thường ko dc edit thông số, người đặt biệt dc  edit 3 chiều. và hightlight user đó trên UI
+- update full tiếng việt cho hệ thống
+- chỉnh % refferal từ cha => con. thay vì con => cha
+- dashboard
+- đơn hàng: filter 7 ngạy, 30 ngày.. giống shopee
+- báo cáo gopoj chung dashboard => lam dashboard chi tiết nhất có thể, filter...
+- đổi mk admin, avatar admin
+- khi thanh toán chi loading chỗ user đó ko load toàn bộ trang
+- /thongke link đã gởi pagination
 
-
-+ Form subID:
-subId 1: ID zalo người mua
-subId 2: ID zalo người giới thiệu, cái này sẽ bắt event người A mời người B vào nhóm thì người A sẽ là ngừoi giới thiệu người B
-SubID 3: phần trăm hoa hồng của link đó
-
-
-+ trang http://localhost:5176/users
-- User table: thêm cột giới thiệu nhé ( display tên nguoời giới thiếu, đưa chuột vào toolip lên thông tin user đó)
-
-+ trang http://localhost:5176/convert-logs
-- bạn xem qua nhé, ghi lại đầy đủ người đó đã đổi link nào thành link nào, Tên user và cả ID của họ.... vâng vâng
-
-+ trang http://localhost:5176/orders
-- bắt chước lại table của  shopee, tôi có tải code về cho bạn xem trong folder test, kiểu bảng và thông tin tương tự, đồng thời tính toán và phân tích giúop tôi các cách lấy, fetch data đơn hàng này nhé ( https://affiliate.shopee.vn/report/conversion_report)
-
--- các trang khác cũng như cơ chế hoàn tiền sẽ bàn luận sau, sau khi thảo luận xong phần trước nhé
+- cb 2 account shoppe

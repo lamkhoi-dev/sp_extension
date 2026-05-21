@@ -34,6 +34,16 @@
         "content.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://shopee.vn/buyer/login*",
+        "*://banhang.shopee.vn/account/signin*"
+      ],
+      "js": [
+        "auto-login.js"
+      ],
+      "run_at": "document_idle"
     }
   ]
 }

@@ -59,12 +59,24 @@ async function handleCommand(input) {
 }
 
 function handleStatus() {
+  const mode = process.env.LINK_MODE || 'direct';
   const extConnected = !!ShopeeAPI.sendToExtension;
-  const icon = extConnected ? '🟢' : '🔴';
+
+  let icon, extStatus, hint;
+  if (mode === 'direct') {
+    icon = '🟢';
+    extStatus = 'Direct Mode (headless)';
+    hint = '💡 Đang dùng mode Direct — không cần Chrome Extension để tạo link.';
+  } else {
+    icon = extConnected ? '🟢' : '🔴';
+    extStatus = extConnected ? 'Đã kết nối' : 'Chưa kết nối';
+    hint = '💡 Tab Shopee Affiliate cần được mở trên Chrome.';
+  }
 
   let content = `**📊 Trạng thái hệ thống**\n\n`;
-  content += `${icon} Extension: **${extConnected ? 'Đã kết nối' : 'Chưa kết nối'}**\n`;
-  content += `\n💡 Extension hoạt động ở chế độ DOM Automation.\nTab Shopee Affiliate cần được mở trên Chrome.`;
+  content += `🔧 Mode: **${mode.toUpperCase()}**\n`;
+  content += `${icon} Extension: **${extStatus}**\n`;
+  content += `\n${hint}`;
 
   return { type: 'text', content };
 }
@@ -105,7 +117,9 @@ async function handleLink(url, subIds) {
   if (!result.success) {
     return { type: 'text', content: `❌ Lỗi convert: ${result.error}` };
   }
-  return { type: 'link_result', ...result, parsed };
+  // Normalize link field for UI consistency
+  const linkToShow = result.shortLink || result.affiliateLink;
+  return { type: 'link_result', ...result, shortLink: linkToShow, parsed };
 }
 
 function getWelcome() {

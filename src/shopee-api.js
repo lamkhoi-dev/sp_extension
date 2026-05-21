@@ -1,12 +1,22 @@
 const logger = require('./logger');
+const ShopeeDirectLink = require('./shopee-direct-link');
+
+const LINK_MODE = process.env.LINK_MODE || 'direct';
+const AFFILIATE_ID = process.env.SHOPEE_AFFILIATE_ID || '';
 
 class ShopeeAPI {
-  // Generate unique request ID
+  constructor() {
+    this.mode = LINK_MODE;
+    this.directLink = new ShopeeDirectLink(AFFILIATE_ID);
+    logger.info('ShopeeAPI', `Initialized in "${this.mode}" mode`);
+  }
+
   static genReqId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
   async searchProduct(keyword) {
+    // Search always uses extension — requires login session
     if (!ShopeeAPI.sendToExtension) {
       throw new Error('Extension chưa kết nối.');
     }
@@ -41,12 +51,26 @@ class ShopeeAPI {
   }
 
   async convertLink(originalLink, subIds = {}) {
+    // Direct mode: headless
+    if (this.mode === 'direct') {
+      const startTime = Date.now();
+      logger.info('ShopeeAPI', `[direct] Converting: ${originalLink.slice(0, 60)}...`);
+
+      const enrichedSubIds = { ...subIds, sub4: `from_${this.mode}` };
+      const result = this.directLink.generateLink(originalLink, enrichedSubIds);
+
+      const duration = Date.now() - startTime;
+      logger.info('ShopeeAPI', `[direct] Link converted in ${duration}ms`);
+      return result;
+    }
+
+    // GraphQL mode: via extension
     if (!ShopeeAPI.sendToExtension) {
       throw new Error('Extension chưa kết nối.');
     }
 
     const startTime = Date.now();
-    logger.info('ShopeeAPI', `Converting: ${originalLink.slice(0, 60)}...`);
+    logger.info('ShopeeAPI', `[graphql] Converting: ${originalLink.slice(0, 60)}...`);
 
     try {
       const reqId = ShopeeAPI.genReqId();
@@ -54,32 +78,53 @@ class ShopeeAPI {
         action: 'convert_link',
         payload: {
           url: originalLink,
-          subId1: subIds.subId1 || '',
-          subId2: subIds.subId2 || '',
+          subId1: subIds.subId1 || subIds.sub1 || '',
+          subId2: subIds.subId2 || subIds.sub2 || '',
         },
       });
 
       const duration = Date.now() - startTime;
-      logger.info('ShopeeAPI', `Link converted in ${duration}ms: ${result.shortLink}`);
+      logger.info('ShopeeAPI', `[graphql] Link converted in ${duration}ms: ${result.shortLink}`);
 
       return {
         success: true,
         shortLink: result.shortLink,
         originalLink,
+        source: 'graphql',
       };
     } catch (err) {
-      logger.error('ShopeeAPI', `Convert error: ${err.message}`);
+      logger.error('ShopeeAPI', `[graphql] Convert error: ${err.message}`);
       return { success: false, error: err.message };
     }
   }
 
   async checkAndConvert(originalLink, subIds = {}, productHint = null) {
+    // Direct mode: headless — no extension needed
+    if (this.mode === 'direct') {
+      const startTime = Date.now();
+      logger.info('ShopeeAPI', `[direct] Check & Convert: ${originalLink.slice(0, 60)}...`);
+
+      const enrichedSubIds = { ...subIds, sub4: `from_${this.mode}` };
+      const result = await this.directLink.checkAndGenerate(originalLink, enrichedSubIds);
+
+      const duration = Date.now() - startTime;
+
+      if (!result.success) {
+        logger.warn('ShopeeAPI', `[direct] Failed (${duration}ms): ${result.error}`);
+        return result;
+      }
+
+      logger.info('ShopeeAPI', `[direct] ✅ ${result.commission}% → ${(result.shortLink || result.affiliateLink || '').slice(0, 60)}... (${duration}ms)`);
+      return result;
+    }
+
+    // GraphQL mode: via extension
     if (!ShopeeAPI.sendToExtension) {
       throw new Error('Extension chưa kết nối.');
     }
 
     const startTime = Date.now();
-    logger.info('ShopeeAPI', `Check & Convert: ${originalLink.slice(0, 60)}...`);
+    logger.info('ShopeeAPI', `[graphql] Check & Convert: ${originalLink.slice(0, 60)}...`);
 
     try {
       const reqId = ShopeeAPI.genReqId();
@@ -92,6 +137,7 @@ class ShopeeAPI {
             sub1: subIds.sub1 || 'sub1',
             sub2: subIds.sub2 || 'sub2',
             sub3: subIds.sub3 || 'sub3',
+            sub4: `from_${this.mode}`,
           },
         },
       });
@@ -99,17 +145,17 @@ class ShopeeAPI {
       const duration = Date.now() - startTime;
 
       if (result.noCommission) {
-        logger.info('ShopeeAPI', `No commission for link (${duration}ms)`);
+        logger.info('ShopeeAPI', `[graphql] No commission for link (${duration}ms)`);
         return { success: false, noCommission: true };
       }
 
       if (!result.success) {
-        logger.warn('ShopeeAPI', `Check failed (${duration}ms): ${result.error}`);
+        logger.warn('ShopeeAPI', `[graphql] Check failed (${duration}ms): ${result.error}`);
         return { success: false, error: result.error };
       }
 
-      const src = result.source || 'shopee';
-      logger.info('ShopeeAPI', `✅ Commission found: ${result.commission}% [${src}] → ${result.shortLink} (${duration}ms)`);
+      const src = result.source || 'graphql';
+      logger.info('ShopeeAPI', `[graphql] ✅ ${result.commission}% [${src}] → ${result.shortLink} (${duration}ms)`);
       return {
         success: true,
         shortLink: result.shortLink,
@@ -123,7 +169,7 @@ class ShopeeAPI {
         shopId: result.shopId || '',
       };
     } catch (err) {
-      logger.error('ShopeeAPI', `Check & Convert error: ${err.message}`);
+      logger.error('ShopeeAPI', `[graphql] Check & Convert error: ${err.message}`);
       return { success: false, error: err.message };
     }
   }
@@ -157,6 +203,12 @@ class ShopeeAPI {
     const affiliateMatch = url.match(/affiliate\.shopee\.vn\/offer\/product_offer\/(\d+)/);
     if (affiliateMatch) {
       return { itemId: affiliateMatch[1], type: 'affiliate' };
+    }
+
+    // Format 6: https://shopee.vn/{encoded_path}/{shopId}/{itemId}
+    const genericPathMatch = url.match(/shopee\.vn\/[^/]+\/(\d{5,})\/(\d{5,})/);
+    if (genericPathMatch) {
+      return { shopId: genericPathMatch[1], itemId: genericPathMatch[2], type: 'generic_path' };
     }
 
     // Generic: any shopee.vn link (for Custom Link support)

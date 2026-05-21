@@ -25,6 +25,7 @@ const auditStore = require('./src/audit/audit-store');
 const reportGenerator = require('./src/stats/report-generator');
 const reportStore = require('./src/stats/report-store');
 const { renderReport } = require('./src/stats/report-template');
+const healthMonitor = require('./src/cron/health-monitor');
 
 const app = express();
 const server = http.createServer(app);
@@ -903,8 +904,72 @@ async function start() {
     setTimeout(() => {
       triggerImageFetch().catch(() => {});
     }, 30000);
+    
+    healthMonitor.startMonitor();
   });
 }
+
+// ─── Crash Protection ────────────────────────────────────
+process.on('uncaughtException', (err) => {
+  logger.error('FATAL', `Uncaught Exception: ${err.message}\n${err.stack}`);
+  console.error('[FATAL] Uncaught Exception:', err);
+  // Attempt to send email before exiting
+  const { sendMail } = require('./src/utils/mailer');
+  sendMail(
+    process.env.NOTIFY_EMAILS,
+    '💀 [Shopee Ext] Server CRASH - Uncaught Exception',
+    `Server bị crash do lỗi không xử lý được.\n\nLỗi: ${err.message}\n\nStack:\n${err.stack}\n\nThời gian: ${new Date().toLocaleString('vi-VN')}`
+  ).catch(() => {}).finally(() => process.exit(1));
+});
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : '';
+  logger.error('FATAL', `Unhandled Rejection: ${msg}`);
+  console.error('[FATAL] Unhandled Rejection:', reason);
+  // Don't exit — just log and notify so the server keeps running
+  const { sendMail } = require('./src/utils/mailer');
+  sendMail(
+    process.env.NOTIFY_EMAILS,
+    '⚠️ [Shopee Ext] Unhandled Promise Rejection',
+    `Server gặp lỗi Promise không được xử lý (server vẫn chạy).\n\nLỗi: ${msg}\n\nStack:\n${stack}\n\nThời gian: ${new Date().toLocaleString('vi-VN')}`
+  ).catch(() => {});
+});
+
+// ─── Graceful Shutdown ───────────────────────────────────
+async function gracefulShutdown(signal) {
+  logger.info('Server', `${signal} received. Shutting down gracefully...`);
+  console.log(`\n🛑 ${signal} — shutting down...`);
+
+  healthMonitor.stopMonitor();
+
+  // Close WebSocket connections
+  wss.clients.forEach((client) => {
+    try { client.close(1001, 'Server shutting down'); } catch {}
+  });
+
+  // Close HTTP server (stop accepting new connections)
+  server.close(() => {
+    logger.info('Server', 'HTTP server closed.');
+  });
+
+  // Close DB pool
+  try {
+    await db.close();
+    logger.info('Server', 'Database pool closed.');
+  } catch {}
+
+  // Force exit after 5 seconds if cleanup hangs
+  setTimeout(() => {
+    console.error('⚠️ Forced exit after 5s timeout');
+    process.exit(1);
+  }, 5000).unref();
+
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 start().catch((err) => {
   console.error('Fatal startup error:', err);
