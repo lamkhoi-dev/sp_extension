@@ -1,18 +1,20 @@
+Phần 1
 - sửa lại nd khi capcha: Nghĩa là khi lỗi capcha hay mất tab hay bất kì lỗi nào khác, gửi lỗi chính xác về mail, còn lỗi gửi cho user trong tin nhắn sẽ là: Hệ thống hiện tại đang quá tải, vui lòng thử lại sau ít phút
 - fix nut copy sai link: liện tại nút copy ở tab Lịch sử Convert copy ko lấy đúng link
 - lich sử conver thêm ngày ( hiện chỉ có giờ), avatar user
-- hoa hồng giới thiêu thêm avatar của user: trang Hoàn tiền, ở mỗi user,  
-- thêm qr của user đre thanh toán
-- trang hoàn tiền tách 2 tab: hoàn tiền và lịch sử . (làm dạng table antd), phải có pagination
-- quản lí user  : pagination, thêm hình người mời, update qr, ngân hàng từng user
-- người bình thường ko dc edit thông số, người đặt biệt dc  edit 3 chiều. và hightlight user đó trên UI
+- hoa hồng giới thiêu thêm avatar của user: trang Hoàn tiền, ở mỗi user, các phần Hoàn thành (0) và Đang xử lý (1), ở mục  Hoa hồng giới thiệu thêm avatar người giới thiệu tương ứng giúp tôi nhé
+- thêm qr của user đre thanh toán: mục user, khi xem chi tiết cho phép admin nhập số tài khoản và tên ngân hàng để tạo Việt QR được chứ?, bạn biết cái này chứ ?
+- trang hoàn tiền tách 2 tab: hoàn tiền và lịch sử hoàn tiền ( hiện là 2 section). (làm dạng table antdesign), phải có pagination cho dễ nhìn cũng như tránh việc nhiều record tránh quá dài xuống dưới
+- quản lí user  : pagination, thêm Avater chỗ người giới thiệu, update qr, ngân hàng từng user
 - update full tiếng việt cho hệ thống
-- chỉnh % refferal từ cha => con. thay vì con => cha
-- dashboard
-- đơn hàng: filter 7 ngạy, 30 ngày.. giống shopee
-- báo cáo gopoj chung dashboard => lam dashboard chi tiết nhất có thể, filter...
-- đổi mk admin, avatar admin
+- dashboard, thống kê nhiều thông số hơn fill data thật chứ ko còn là mock data
+- đơn hàng: filter 7 ngạy, 30 ngày.. giống shopee, như ảnh đính kèm
+- báo cáo gộp chung dashboard => lam dashboard chi tiết nhất có thể, filter...
+- cho phép đổi mk admin, avatar admin
 - khi thanh toán chi loading chỗ user đó ko load toàn bộ trang
-- /thongke link đã gởi pagination
+- /thongke link đã gởi pagination, hiện reocord hiện ra quá dài, scoll mất công
 
+Phần 2
+- người bình thường ko dc edit thông số, người đặt biệt dc  edit 3 chiều. và hightlight user đó trên UI
+- chỉnh % refferal từ cha => con. thay vì con => cha
 - cb 2 account shoppe
