@@ -4,6 +4,8 @@ const convertLogStore = require('../api/convert-log-store');
 const reportGenerator = require('../stats/report-generator');
 const reportStore = require('../stats/report-store');
 const { sendMail } = require('../utils/mailer');
+const linkRedirectStore = require('../api/link-redirect-store');
+
 
 const shopee = new ShopeeAPI();
 
@@ -352,9 +354,9 @@ class ZaloCommands {
         return errText;
       }
 
-      // Success — save convert log
+      // Save convert log first to get the ID
       const parsedIds = shopee.parseShopeeLink(result.originalLink || url);
-      await convertLogStore.save({
+      const logId = await convertLogStore.save({
         userId: senderUid,
         userName: senderName,
         originalLink: url,
@@ -373,13 +375,39 @@ class ZaloCommands {
         shopId: result.shopId || parsedIds?.shopId || '',
       });
 
+      // Build short redirect link (if SERVER_URL is configured)
+      const serverUrl = process.env.SERVER_URL || '';
+      let linkToShow = result.shortLink || result.affiliateLink;
+      if (serverUrl && (result.longLink || result.affiliateLink)) {
+        try {
+          const affiliateLink = result.longLink || result.affiliateLink;
+          const { token, shortUrl } = await linkRedirectStore.create({
+            affiliateLink,
+            userId: senderUid,
+            userName: senderName,
+            itemId: result.itemId || parsedIds?.itemId || '',
+            productName: result.productName || '',
+            convertLogId: logId || null,
+          });
+          linkToShow = shortUrl;
+          // Back-link token → convert_log (admin-only, non-blocking)
+          if (logId && token) {
+            setImmediate(() => {
+              convertLogStore.updateRedirectToken(logId, token).catch(() => {});
+            });
+          }
+        } catch (redirectErr) {
+          logger.warn('ZaloCommands', `Short link creation failed, using original: ${redirectErr.message}`);
+          // fallback — keep linkToShow as-is
+        }
+      }
+
       // Build reply with @mention
       const mentionTag = `@${senderName}`;
       let commissionText = `${result.commission}%`;
       if (result.commissionAmount > 0) {
         commissionText += ` (~${new Intl.NumberFormat('vi-VN').format(result.commissionAmount)}đ)`;
       }
-      const linkToShow = result.shortLink || result.affiliateLink;
       const msg = `✅ ${mentionTag}\n🔗 ${linkToShow}\n🏷️ Hoa hồng: ${commissionText}`;
 
       const msgContent = {

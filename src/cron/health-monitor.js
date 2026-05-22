@@ -2,6 +2,8 @@ const ShopeeAPI = require('../shopee-api');
 const ShopeeDirectLink = require('../shopee-direct-link');
 const logger = require('../logger');
 const { sendMail } = require('../utils/mailer');
+const linkRedirectStore = require('../api/link-redirect-store');
+
 
 const shopeeAPI = new ShopeeAPI();
 
@@ -10,9 +12,14 @@ const TEST_LINK = 'https://shopee.vn/product/235894867/22449738795';
 const PING_INTERVAL = 60 * 60 * 1000; // 1 hour
 const REMINDER_INTERVAL = 3; // Send reminder every N consecutive failures
 
+// Cleanup config
+const CLEANUP_HOUR = 3;           // 3:00 AM local time
+const CLEANUP_GRACE_DAYS = 7;     // Keep expired rows 7 days for debugging
+
 let isHealthy = true;
 let consecutiveFailures = 0;
 let monitorInterval = null;
+let cleanupTimeout = null;
 
 async function runHealthCheck() {
   const mode = process.env.LINK_MODE || 'direct';
@@ -207,6 +214,9 @@ function startMonitor() {
     monitorInterval = setInterval(runHealthCheck, PING_INTERVAL);
   }, 2 * 60 * 1000);
 
+  // Schedule first cleanup run at next 3:00 AM
+  scheduleNextCleanup();
+
   const mode = process.env.LINK_MODE || 'direct';
   logger.info('HealthMonitor', `Started (mode=${mode}). First check in 2 min, then every ${PING_INTERVAL / 60000} min.`);
 }
@@ -217,6 +227,43 @@ function stopMonitor() {
     monitorInterval = null;
     logger.info('HealthMonitor', 'Stopped.');
   }
+  if (cleanupTimeout) {
+    clearTimeout(cleanupTimeout);
+    cleanupTimeout = null;
+  }
 }
 
-module.exports = { startMonitor, stopMonitor, runHealthCheck };
+/**
+ * Schedule cleanup to run at exactly CLEANUP_HOUR:00:00 local time.
+ * After each run, schedules the next one 24h later.
+ */
+function scheduleNextCleanup() {
+  const now = new Date();
+  const next = new Date();
+  next.setHours(CLEANUP_HOUR, 0, 0, 0);
+
+  // If 3AM has already passed today, schedule for tomorrow
+  if (next <= now) next.setDate(next.getDate() + 1);
+
+  const msUntil = next.getTime() - now.getTime();
+  logger.info('HealthMonitor', `Cleanup scheduled in ${Math.round(msUntil / 3600000 * 10) / 10}h (${next.toLocaleString('vi-VN')})`);
+
+  cleanupTimeout = setTimeout(async () => {
+    await runCleanup();
+    // Re-schedule for next day
+    scheduleNextCleanup();
+  }, msUntil);
+}
+
+/** Delete expired redirect rows (grace period: 7 days after expiry) */
+async function runCleanup() {
+  try {
+    logger.info('HealthMonitor', `Running nightly cleanup (grace=${CLEANUP_GRACE_DAYS}d)...`);
+    const { deletedLinks, deletedClicks } = await linkRedirectStore.cleanupExpired(CLEANUP_GRACE_DAYS);
+    logger.info('HealthMonitor', `Cleanup done — removed ${deletedLinks} links, ${deletedClicks} click events`);
+  } catch (err) {
+    logger.error('HealthMonitor', `Cleanup failed: ${err.message}`);
+  }
+}
+
+module.exports = { startMonitor, stopMonitor, runHealthCheck, runCleanup };

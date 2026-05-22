@@ -26,6 +26,7 @@ const reportGenerator = require('./src/stats/report-generator');
 const reportStore = require('./src/stats/report-store');
 const { renderReport } = require('./src/stats/report-template');
 const healthMonitor = require('./src/cron/health-monitor');
+const linkRedirectStore = require('./src/api/link-redirect-store');
 
 const app = express();
 const server = http.createServer(app);
@@ -176,7 +177,59 @@ app.get('/s/:token', async (req, res) => {
   }
 });
 
-// ─── Auth Routes (login is public) ────────────────────
+// ─── Short Link Redirect (public) ─────────────────────────
+const EXPIRED_HTML = `<!DOCTYPE html>
+<html lang="vi">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Link đã hết hạn</title>
+<style>
+  body{background:#0f172a;color:#94a3b8;display:flex;align-items:center;justify-content:center;
+  height:100vh;font-family:system-ui,sans-serif;flex-direction:column;margin:0;text-align:center}
+  .card{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:40px 48px}
+  h1{font-size:48px;color:#f8fafc;margin:0 0 8px}svg{width:64px;height:64px;margin-bottom:20px}
+  p{margin:8px 0 0;font-size:16px}small{color:#64748b;margin-top:8px;display:block;font-size:13px}
+</style>
+</head>
+<body>
+<div class="card">
+  <svg viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2">
+    <circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/>
+  </svg>
+  <h1>🔗</h1>
+  <p>Link này đã hết hạn hoặc không tồn tại.</p>
+  <small>Vui lòng yêu cầu link mới từ bot.</small>
+</div>
+</body></html>`;
+
+app.get('/go/:token', async (req, res) => {
+  try {
+    const redirect = await linkRedirectStore.getByToken(req.params.token);
+    if (!redirect) return res.status(410).type('html').send(EXPIRED_HTML);
+
+    // ── Fire redirect FIRST, record click AFTER ──────────────
+    // setImmediate pushes DB writes to the next event-loop tick,
+    // so the 302 response reaches the user before any DB work starts.
+    const rawIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '';
+    const clickMeta = {
+      ip: rawIp,
+      userAgent: req.headers['user-agent'] || '',
+      referer: req.headers['referer'] || req.headers['referrer'] || '',
+      acceptLanguage: req.headers['accept-language'] || '',
+    };
+
+    res.redirect(302, redirect.affiliate_link);
+
+    setImmediate(() => {
+      linkRedirectStore.recordClick(req.params.token, redirect.id, clickMeta)
+        .catch(err => logger.warn('LinkRedirect', `recordClick failed: ${err.message}`));
+    });
+  } catch (err) {
+    logger.error('LinkRedirect', `Redirect error: ${err.message}`);
+    res.status(500).type('html').send(EXPIRED_HTML);
+  }
+});
+
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password, remember } = req.body;
@@ -549,6 +602,27 @@ app.patch('/api/users/:userId/bank-info', async (req, res) => {
   if (!ok) return res.status(500).json({ error: 'Failed to update bank info' });
   await auditStore.log(req.admin?.username || 'system', 'UPDATE_BANK_INFO', 'user', req.params.userId, { bankName, bankAccount }, req.ip);
   res.json({ success: true, qrCode });
+});
+
+// ─── Redirect Click Analytics API ──────────────────────
+app.get('/api/redirect-clicks/:token', async (req, res) => {
+  try {
+    const clicks = await linkRedirectStore.getClicksByToken(req.params.token, 200);
+    res.json({ ok: true, token: req.params.token, total: clicks.length, clicks });
+  } catch (err) {
+    logger.error('LinkRedirect', `getClicks failed: ${err.message}`);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/redirect-stats', async (req, res) => {
+  try {
+    const stats = await linkRedirectStore.getStats();
+    res.json({ ok: true, stats });
+  } catch (err) {
+    logger.error('LinkRedirect', `getStats failed: ${err.message}`);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // ─── Simulate Order API ─────────────────────────────────

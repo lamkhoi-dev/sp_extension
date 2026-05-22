@@ -224,6 +224,41 @@ const SQLITE_SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_report_token ON stat_reports(token);
   CREATE INDEX IF NOT EXISTS idx_report_expires ON stat_reports(expires_at);
+
+  -- New: Redirect short links
+  CREATE TABLE IF NOT EXISTS link_redirects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT UNIQUE NOT NULL,
+    convert_log_id INTEGER DEFAULT NULL,
+    affiliate_link TEXT NOT NULL,
+    user_id TEXT DEFAULT '',
+    user_name TEXT DEFAULT '',
+    item_id TEXT DEFAULT '',
+    product_name TEXT DEFAULT '',
+    click_count INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    expires_at TEXT NOT NULL
+  );
+  -- Composite index: covers the hot-path query WHERE token = ? AND expires_at > ?
+  CREATE INDEX IF NOT EXISTS idx_redirect_token_expiry ON link_redirects(token, expires_at);
+  CREATE INDEX IF NOT EXISTS idx_redirect_user ON link_redirects(user_id);
+
+  -- New: Click events for redirect tracking
+  CREATE TABLE IF NOT EXISTS link_click_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT NOT NULL,
+    redirect_id INTEGER DEFAULT NULL,
+    ip_address TEXT DEFAULT '',
+    user_agent TEXT DEFAULT '',
+    device_type TEXT DEFAULT '',
+    os_name TEXT DEFAULT '',
+    browser_name TEXT DEFAULT '',
+    referer TEXT DEFAULT '',
+    accept_language TEXT DEFAULT '',
+    clicked_at TEXT DEFAULT (datetime('now','localtime'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_clicks_token ON link_click_events(token);
+  CREATE INDEX IF NOT EXISTS idx_clicks_time ON link_click_events(clicked_at DESC);
 `;
 
 const PG_SCHEMA = `
@@ -441,6 +476,41 @@ const PG_SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_report_token ON stat_reports(token);
   CREATE INDEX IF NOT EXISTS idx_report_expires ON stat_reports(expires_at);
+
+  -- New: Redirect short links
+  CREATE TABLE IF NOT EXISTS link_redirects (
+    id SERIAL PRIMARY KEY,
+    token TEXT UNIQUE NOT NULL,
+    convert_log_id INTEGER DEFAULT NULL,
+    affiliate_link TEXT NOT NULL,
+    user_id TEXT DEFAULT '',
+    user_name TEXT DEFAULT '',
+    item_id TEXT DEFAULT '',
+    product_name TEXT DEFAULT '',
+    click_count INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL
+  );
+  -- Composite index: covers the hot-path query WHERE token = ? AND expires_at > ?
+  CREATE INDEX IF NOT EXISTS idx_redirect_token_expiry ON link_redirects(token, expires_at);
+  CREATE INDEX IF NOT EXISTS idx_redirect_user ON link_redirects(user_id);
+
+  -- New: Click events for redirect tracking
+  CREATE TABLE IF NOT EXISTS link_click_events (
+    id SERIAL PRIMARY KEY,
+    token TEXT NOT NULL,
+    redirect_id INTEGER DEFAULT NULL,
+    ip_address TEXT DEFAULT '',
+    user_agent TEXT DEFAULT '',
+    device_type TEXT DEFAULT '',
+    os_name TEXT DEFAULT '',
+    browser_name TEXT DEFAULT '',
+    referer TEXT DEFAULT '',
+    accept_language TEXT DEFAULT '',
+    clicked_at TIMESTAMPTZ DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_clicks_token ON link_click_events(token);
+  CREATE INDEX IF NOT EXISTS idx_clicks_time ON link_click_events(clicked_at DESC);
 `;
 
 async function runMigrations(db) {
@@ -508,9 +578,22 @@ async function runMigrations(db) {
     }
   }
 
+  // Safe migration: Add redirect_token column to convert_logs
+  try {
+    if (db.type === 'postgres') {
+      await db.exec(`ALTER TABLE convert_logs ADD COLUMN IF NOT EXISTS redirect_token TEXT DEFAULT '';`);
+    } else {
+      await db.exec(`ALTER TABLE convert_logs ADD COLUMN redirect_token TEXT DEFAULT '';`);
+    }
+  } catch (err) {
+    if (!err.message.toLowerCase().includes('duplicate column') && !err.message.toLowerCase().includes('already exists') && !err.message.toLowerCase().includes('duplicate column name')) {
+      logger.warn('Migrations', `Failed to add redirect_token column: ${err.message}`);
+    }
+  }
+
   // Safe: Resync PG sequences to prevent duplicate key errors after manual data imports
   if (db.type === 'postgres') {
-    const seqTables = ['convert_logs', 'payouts', 'orders'];
+    const seqTables = ['convert_logs', 'payouts', 'orders', 'link_redirects', 'link_click_events'];
     for (const table of seqTables) {
       try {
         await db.exec(`SELECT setval('${table}_id_seq', COALESCE((SELECT MAX(id) FROM ${table}), 0) + 1, false)`);

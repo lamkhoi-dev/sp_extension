@@ -154,6 +154,31 @@ export function useConvertLogs() {
   return { logs, stats, loading, search, setSearch, refresh: () => fetchLogs(search) };
 }
 
+// Click Events for redirect analytics
+export function useClickEvents() {
+  const [clicks, setClicks] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+  const fetchClicks = useCallback(async (token) => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const data = await apiFetch(`/redirect-clicks/${encodeURIComponent(token)}`);
+      setClicks(data.clicks || []);
+      setTotal(data.total || 0);
+    } catch (err) {
+      console.error('Click events error:', err);
+      setClicks([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { clicks, total, loading, fetchClicks, reset: () => { setClicks([]); setTotal(0); } };
+}
+
 // Orders
 export function useOrders() {
   const [orders, setOrders] = useState([]);

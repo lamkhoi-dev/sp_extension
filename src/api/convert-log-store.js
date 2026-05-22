@@ -49,23 +49,33 @@ const convertLogStore = {
 
   async getRecent(limit = 50, offset = 0) {
     return db.all(`
-      SELECT cl.*, u.avatar as user_avatar, r.avatar as referrer_avatar, r.display_name as referrer_name_db
-      FROM convert_logs cl 
-      LEFT JOIN users u ON cl.user_id = u.user_id 
+      SELECT cl.*,
+             u.avatar as user_avatar,
+             r.avatar as referrer_avatar,
+             r.display_name as referrer_name_db,
+             lr.click_count
+      FROM convert_logs cl
+      LEFT JOIN users u ON cl.user_id = u.user_id
       LEFT JOIN users r ON cl.sub_id2 = r.user_id
-      ORDER BY cl.created_at DESC 
+      LEFT JOIN link_redirects lr ON cl.redirect_token = lr.token
+      ORDER BY cl.created_at DESC
       LIMIT ? OFFSET ?
     `, [limit, offset]);
   },
 
   async getByUser(userId, limit = 20) {
     return db.all(`
-      SELECT cl.*, u.avatar as user_avatar, r.avatar as referrer_avatar, r.display_name as referrer_name_db
-      FROM convert_logs cl 
-      LEFT JOIN users u ON cl.user_id = u.user_id 
+      SELECT cl.*,
+             u.avatar as user_avatar,
+             r.avatar as referrer_avatar,
+             r.display_name as referrer_name_db,
+             lr.click_count
+      FROM convert_logs cl
+      LEFT JOIN users u ON cl.user_id = u.user_id
       LEFT JOIN users r ON cl.sub_id2 = r.user_id
-      WHERE cl.user_id = ? 
-      ORDER BY cl.created_at DESC 
+      LEFT JOIN link_redirects lr ON cl.redirect_token = lr.token
+      WHERE cl.user_id = ?
+      ORDER BY cl.created_at DESC
       LIMIT ?
     `, [userId, limit]);
   },
@@ -103,18 +113,27 @@ const convertLogStore = {
   async search(query, limit = 20) {
     const q = `%${query}%`;
     return db.all(`
-      SELECT cl.*, u.avatar as user_avatar, r.avatar as referrer_avatar, r.display_name as referrer_name_db
-      FROM convert_logs cl 
-      LEFT JOIN users u ON cl.user_id = u.user_id 
+      SELECT cl.*,
+             u.avatar as user_avatar,
+             r.avatar as referrer_avatar,
+             r.display_name as referrer_name_db,
+             lr.click_count
+      FROM convert_logs cl
+      LEFT JOIN users u ON cl.user_id = u.user_id
       LEFT JOIN users r ON cl.sub_id2 = r.user_id
-      WHERE cl.user_name LIKE ? OR cl.product_name LIKE ? OR cl.original_link LIKE ? 
-      ORDER BY cl.created_at DESC 
+      LEFT JOIN link_redirects lr ON cl.redirect_token = lr.token
+      WHERE cl.user_name LIKE ? OR cl.product_name LIKE ? OR cl.original_link LIKE ?
+      ORDER BY cl.created_at DESC
       LIMIT ?
     `, [q, q, q, limit]);
   },
 
   async getAllByUser(userId) {
     return db.all('SELECT * FROM convert_logs WHERE user_id = ? AND status = ? ORDER BY created_at DESC', [userId, 'success']);
+  },
+
+  async updateRedirectToken(id, token) {
+    await db.run('UPDATE convert_logs SET redirect_token = ? WHERE id = ?', [token, id]);
   },
 };
 
