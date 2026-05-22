@@ -8,6 +8,7 @@
 const path = require('path');
 process.env.DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'database.sqlite');
 
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const db = require('../src/db');
 
 async function run() {

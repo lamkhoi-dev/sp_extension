@@ -3,6 +3,7 @@
  * Reset all convert logs (link conversion history).
  * Usage: node scripts/reset-convert-logs.js
  */
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const db = require('../src/db');
 
 async function main() {

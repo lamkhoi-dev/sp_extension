@@ -3,6 +3,7 @@
  * Reset all orders data (including payouts).
  * Usage: node scripts/reset-orders.js
  */
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const db = require('../src/db');
 
 async function main() {
