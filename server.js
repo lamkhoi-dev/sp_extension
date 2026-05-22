@@ -528,12 +528,13 @@ app.post('/api/payouts/upload-bill', billUpload.single('bill'), async (req, res)
 });
 
 app.patch('/api/users/:userId/cashback-rates', async (req, res) => {
-  const { referrerRate } = req.body;
-  if (referrerRate == null) {
-    return res.status(400).json({ error: 'referrerRate is required' });
-  }
-  const result = await payoutStore.updateUserReferrerRate(req.params.userId, Number(referrerRate));
-  await auditStore.log(req.admin?.username || 'system', 'UPDATE_USER_RATES', 'user', req.params.userId, { referrerRate }, req.ip);
+  const { buyerRate, referrerEarnRate } = req.body;
+  const result = await payoutStore.updateUserReferrerRate(
+    req.params.userId,
+    buyerRate !== undefined ? Number(buyerRate) : undefined,
+    referrerEarnRate !== undefined ? Number(referrerEarnRate) : undefined
+  );
+  await auditStore.log(req.admin?.username || 'system', 'UPDATE_USER_RATES', 'user', req.params.userId, { buyerRate, referrerEarnRate }, req.ip);
   res.json(result);
 });
 
@@ -554,7 +555,7 @@ app.patch('/api/users/:userId/bank-info', async (req, res) => {
 app.get('/api/users/select', async (req, res) => {
   const users = await db.all(`
     SELECT user_id, display_name, zalo_name, avatar, referrer_id, referrer_name,
-           cashback_buyer_rate, cashback_referrer_rate
+           cashback_buyer_rate, cashback_referrer_rate, referrer_earn_rate, is_special
     FROM users ORDER BY display_name ASC
   `);
   res.json(users);

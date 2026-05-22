@@ -58,7 +58,9 @@ const SQLITE_SCHEMA = `
     total_commission REAL,
     total_refunded REAL,
     cashback_buyer_rate REAL DEFAULT 60,
-    cashback_referrer_rate REAL DEFAULT 20
+    cashback_referrer_rate REAL DEFAULT 20,
+    referrer_earn_rate REAL DEFAULT 20,
+    is_special INTEGER DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_users_msg_count ON users(message_count DESC);
   CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen DESC);
@@ -276,7 +278,9 @@ const PG_SCHEMA = `
     total_commission REAL,
     total_refunded REAL,
     cashback_buyer_rate REAL DEFAULT 60,
-    cashback_referrer_rate REAL DEFAULT 20
+    cashback_referrer_rate REAL DEFAULT 20,
+    referrer_earn_rate REAL DEFAULT 20,
+    is_special BOOLEAN DEFAULT FALSE
   );
   CREATE INDEX IF NOT EXISTS idx_users_msg_count ON users(message_count DESC);
   CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen DESC);
@@ -475,6 +479,32 @@ async function runMigrations(db) {
     // Ignore duplicate column errors
     if (!err.message.toLowerCase().includes('duplicate column') && !err.message.includes('already exists')) {
       logger.warn('Migrations', `Failed to add paid_orders column: ${err.message}`);
+    }
+  }
+
+  // Safe migration: Add referrer_earn_rate column if it doesn't exist
+  try {
+    if (db.type === 'postgres') {
+      await db.exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_earn_rate REAL DEFAULT 20;`);
+    } else {
+      await db.exec(`ALTER TABLE users ADD COLUMN referrer_earn_rate REAL DEFAULT 20;`);
+    }
+  } catch (err) {
+    if (!err.message.toLowerCase().includes('duplicate column') && !err.message.toLowerCase().includes('already exists') && !err.message.toLowerCase().includes('duplicate column name')) {
+      logger.warn('Migrations', `Failed to add referrer_earn_rate column: ${err.message}`);
+    }
+  }
+
+  // Safe migration: Add is_special column if it doesn't exist
+  try {
+    if (db.type === 'postgres') {
+      await db.exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_special BOOLEAN DEFAULT FALSE;`);
+    } else {
+      await db.exec(`ALTER TABLE users ADD COLUMN is_special INTEGER DEFAULT 0;`);
+    }
+  } catch (err) {
+    if (!err.message.toLowerCase().includes('duplicate column') && !err.message.toLowerCase().includes('already exists') && !err.message.toLowerCase().includes('duplicate column name')) {
+      logger.warn('Migrations', `Failed to add is_special column: ${err.message}`);
     }
   }
 

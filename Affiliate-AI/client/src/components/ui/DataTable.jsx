@@ -9,6 +9,7 @@ export default function DataTable({
   searchPlaceholder = 'Tìm kiếm...',
   pageSize = 10,
   onRowClick,
+  getRowClassName,
 }) {
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -111,7 +112,8 @@ export default function DataTable({
                     'bg-white dark:bg-slate-800/30',
                     'hover:bg-slate-50 dark:hover:bg-slate-700/50',
                     'transition-colors',
-                    onRowClick && 'cursor-pointer'
+                    onRowClick && 'cursor-pointer',
+                    getRowClassName?.(row)
                   )}
                 >
                   {columns.map((col) => (

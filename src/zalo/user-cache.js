@@ -167,6 +167,8 @@ class UserCache {
       totalRefunded: row.total_refunded || null,
       cashbackBuyerRate: row.cashback_buyer_rate ?? 60,
       cashbackReferrerRate: row.cashback_referrer_rate ?? 20,
+      referrerEarnRate: row.referrer_earn_rate ?? 20,
+      isSpecial: !!(row.is_special),
     };
   }
 

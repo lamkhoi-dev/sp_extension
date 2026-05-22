@@ -15,6 +15,5 @@ Phần 1
 - /thongke link đã gởi pagination, hiện reocord hiện ra quá dài, scoll mất công
 
 Phần 2
-- người bình thường ko dc edit thông số, người đặt biệt dc  edit 3 chiều. và hightlight user đó trên UI
-- chỉnh % refferal từ cha => con. thay vì con => cha
-- cb 2 account shoppe
+- đối với user, các user mặc định là 60 20 20, ko có referal là 60 40, nhưng đôi khi tôi muồn chinhr vài user đặc biệt, thì cho phép chỉnh cả 3 thông số, sau khi chỉnh sẽ đánh dấu họ là user đặc biệt, có 2 light vàng 
+- chỉnh % refferal: cần phân tích kĩ % mua hiện tại là thiết lâpj cho user đó đúng ko, còn % refer là thiết lập cho referer hay chính user đó luôn, cần làm rõ ở đây

@@ -1,7 +1,7 @@
 # 📋 Shopee Affiliate Bot — Tài liệu Nghiệp vụ
 
 > **Mục đích**: Mô tả chi tiết toàn bộ quy trình, luồng dữ liệu, và quy tắc tính toán của hệ thống Shopee Affiliate Cashback Bot.
-> **Cập nhật**: 2026-05-10
+> **Cập nhật**: 2026-05-22
 
 ---
 
@@ -217,27 +217,87 @@ Kết quả: Chỉ item "Xiaomi Band 10" được cashback.
 | **Admin** | **20%** | **40%** (nhận thêm phần referrer) |
 | **Tổng** | 100% | 100% |
 
-### 6.2 Tỷ lệ tuỳ chỉnh
+### 6.2 Cơ chế `referrer_earn_rate` (MỚI — 2026-05-22)
 
-- **Buyer rate (60%)**: Cài đặt **system-wide**, áp dụng cho TẤT CẢ user. Không chỉnh per-user.
-- **Referrer rate (20%)**: Có thể **override per-user** (trên bảng buyer). Ví dụ: buyer A có referrer rate = 25% → referrer nhận 25%, admin nhận 15%.
-- Admin rate = 100 - buyer_rate - referrer_rate (luôn auto-calculate)
-- DB: `users.cashback_buyer_rate` (default 60, system-wide), `users.cashback_referrer_rate` (default 20, adjustable per-user)
-- Khi không có referrer: buyer vẫn nhận 60%, admin nhận 40% (KHÔNG cộng dồn cho buyer)
+> **⚠️ THAY ĐỔI QUAN TRỌNG**: Tỷ lệ referrer nhận được giờ nằm trên **row của Referrer** (parent),
+> KHÔNG phải trên row của Buyer (child) như trước.
 
-### 6.3 Công thức tính Cashback
+#### Nguyên tắc
+
+- **Buyer rate (60%)**: System-wide, không chỉnh per-user. Cột: `users.cashback_buyer_rate`
+- **Referrer earn rate (20%)**: Chỉnh **per-referrer** (trên row người giới thiệu). Cột: `users.referrer_earn_rate`
+- **Admin rate**: Tự tính = `100 - buyer_rate - referrer_earn_rate`
+- Cột cũ `users.cashback_referrer_rate` vẫn giữ lại (backward compatibility) nhưng **KHÔNG dùng để tính tiền nữa**
+
+#### Ưu điểm so với cách cũ
+
+```
+CÁCH CŨ (sai):
+  cashback_referrer_rate nằm trên row BUYER
+  → A mời B, C, D, E, F
+  → Muốn A nhận 30% → phải sửa B, C, D, E, F (5 record!)
+  → Dễ sai, tốn công
+
+CÁCH MỚI (đúng):
+  referrer_earn_rate nằm trên row REFERRER (A)
+  → Vào A, chỉnh referrer_earn_rate = 30
+  → Tất cả B, C, D, E, F mua hàng → A tự động nhận 30%
+  → Chỉ sửa 1 record!
+```
+
+#### Luồng tính toán khi có đơn hàng
+
+```
+1. Buyer B mua hàng → có đơn (net_commission = 100đ)
+2. Hệ thống tra cứu: B có referrer_id → tìm ra Referrer A
+3. Đọc referrer_earn_rate từ ROW CỦA A (không phải row B)
+4. Tính:
+   buyer_cashback    = 100 × buyer_rate (60%) = 60đ   ← đọc từ row B
+   referrer_cashback = 100 × referrer_earn_rate (20%) = 20đ  ← đọc từ row A
+   admin_profit      = 100 × (100 - 60 - 20)% = 20đ
+```
+
+#### Ví dụ: Admin chỉnh rate cho Referrer A
+
+```
+A mời B, C, D vào nhóm
+Admin vào user A → chỉnh referrer_earn_rate = 30%
+
+B mua đơn 100đ net_commission:
+  buyer B nhận  = 100 × 60% = 60đ
+  referrer A nhận = 100 × 30% = 30đ  ← đọc từ row A
+  admin giữ     = 100 × 10% = 10đ
+
+C mua đơn 200đ net_commission:
+  buyer C nhận  = 200 × 60% = 120đ
+  referrer A nhận = 200 × 30% = 60đ  ← cùng rate, đọc từ row A
+  admin giữ     = 200 × 10% = 20đ
+
+D mua đơn 50đ net_commission:
+  buyer D nhận  = 50 × 60% = 30đ
+  referrer A nhận = 50 × 30% = 15đ  ← cùng rate, đọc từ row A
+  admin giữ     = 50 × 10% = 5đ
+```
+
+### 6.3 User đặc biệt (`is_special`)
+
+- Khi Admin override `referrer_earn_rate` khác default (20%), hệ thống tự đánh dấu `is_special = true`
+- Trên giao diện Users: row có `is_special = true` → nền vàng nhạt (#FFFDE7) để dễ nhận biết
+- Mục đích: Admin nhanh chóng nhận ra user nào đang có rate đặc biệt
+
+### 6.4 Công thức tính Cashback (cập nhật)
 
 ```
 Đầu vào:
   net_commission = 59,670đ (từ orders)
-  buyer_rate = 60% (system-wide)
-  referrer_rate = 20% (per-user, default)
+  buyer_rate = 60% (system-wide, đọc từ row BUYER)
+  referrer_earn_rate = 20% (đọc từ row REFERRER, default)
   has_referrer = true (sub_id2 != '')
 
 Tính toán:
   CÓ referrer:
     buyer_cashback    = 59,670 × 60% = 35,802đ
-    referrer_cashback = 59,670 × 20% = 11,934đ
+    referrer_cashback = 59,670 × 20% = 11,934đ   ← đọc từ ROW REFERRER
     admin_profit      = 59,670 × 20% = 11,934đ
 
   KHÔNG có referrer:
@@ -246,10 +306,10 @@ Tính toán:
     admin_profit      = 59,670 × 40% = 23,868đ
 ```
 
-### 6.4 Snapshot tỷ lệ
+### 6.5 Snapshot tỷ lệ
 
 > **Quy tắc**: Tỷ lệ được lấy **tại thời điểm tính cashback** (khi admin mở trang Payouts).
-> Nếu admin thay đổi referrer rate sau đó → các đơn chưa thanh toán sẽ tính theo rate mới.
+> Nếu admin thay đổi `referrer_earn_rate` sau đó → các đơn chưa thanh toán sẽ tính theo rate mới.
 > Các đơn **đã thanh toán** (payouts record) → giữ nguyên số tiền đã trả.
 
 ---
@@ -308,14 +368,16 @@ Tính toán:
 ### 8.1 users (mở rộng)
 
 ```sql
--- Các cột mới cho cashback:
-cashback_buyer_rate REAL DEFAULT 60    -- % buyer nhận (system-wide, chỉ đổi qua Settings)
-cashback_referrer_rate REAL DEFAULT 20 -- % referrer nhận (adjustable per-user)
--- Admin rate = 100 - buyer - referrer (auto)
+-- Các cột cho cashback:
+cashback_buyer_rate REAL DEFAULT 60       -- % buyer nhận (system-wide, chỉ đổi qua Settings)
+cashback_referrer_rate REAL DEFAULT 20    -- [DEPRECATED] Giữ lại cho backward compatibility
+referrer_earn_rate REAL DEFAULT 20        -- [MỚI] % referrer NHẬN khi con mua (đọc từ row referrer)
+is_special BOOLEAN DEFAULT FALSE          -- [MỚI] Đánh dấu user có rate đặc biệt (admin override)
+-- Admin rate = 100 - buyer_rate - referrer_earn_rate (auto)
 
 -- Tracking quan hệ giới thiệu:
-referrer_id TEXT DEFAULT ''            -- Zalo ID người giới thiệu
-referrer_name TEXT DEFAULT ''          -- Tên người giới thiệu
+referrer_id TEXT DEFAULT ''               -- Zalo ID người giới thiệu
+referrer_name TEXT DEFAULT ''             -- Tên người giới thiệu
 
 -- Thông tin thanh toán:
 bank_name TEXT
@@ -360,7 +422,7 @@ CREATE TABLE payouts (
 | `GET` | `/api/payouts/user/:userId` | Chi tiết eligible items cho 1 user |
 | `POST` | `/api/payouts/create` | Tạo payout mới |
 | `POST` | `/api/payouts/upload-bill` | Upload ảnh bill |
-| `PATCH` | `/api/users/:userId/cashback-rates` | Cập nhật tỷ lệ referrer rate per-user (chỉ referrerRate) |
+| `PATCH` | `/api/users/:userId/cashback-rates` | Cập nhật `referrer_earn_rate` + `is_special` trên row referrer |
 
 ---
 
@@ -377,3 +439,6 @@ CREATE TABLE payouts (
 | 7 | convert_logs cũ không có item_id | Fallback match bằng product_name |
 | 8 | Admin đổi tỷ lệ user | Áp dụng cho đơn chưa thanh toán |
 | 9 | Admin đã trả 1 phần | Số pending = total eligible - SUM(payouts đã trả) |
+| 10 | Referrer A mời B,C,D — admin chỉnh A earn_rate=30 | B,C,D mua → A nhận 30% (đọc từ row A, không cần sửa B,C,D) |
+| 11 | User có is_special=true | Hiển thị nền vàng nhạt trên bảng Users |
+| 12 | User mới chưa có referrer_earn_rate | Dùng default 20%, is_special = false |

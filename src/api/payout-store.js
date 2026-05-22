@@ -44,7 +44,7 @@ const REFERRER_ORDERS_BY_USER_SQL = `
 
 const USERS_WITH_ORDERS_SQL = `
   SELECT DISTINCT u.user_id, u.display_name, u.zalo_name, u.avatar,
-         u.cashback_buyer_rate, u.cashback_referrer_rate,
+         u.cashback_buyer_rate, u.cashback_referrer_rate, u.referrer_earn_rate, u.is_special,
          u.referrer_id, u.referrer_name,
          u.bank_name, u.bank_account
   FROM users u
@@ -103,8 +103,20 @@ const payoutStore = {
         if (orders.length === 0) continue;
 
         const buyerRate = user.cashback_buyer_rate ?? 60;
-        const referrerRate = user.cashback_referrer_rate ?? 20;
         const hasReferrer = !!(user.referrer_id && user.referrer_id !== '');
+        
+        let referrerRate = 0;
+        if (hasReferrer) {
+          const refId = user.referrer_id;
+          let refUser = users.find(u => u.user_id === refId);
+          if (!refUser) {
+            refUser = await db.get('SELECT referrer_earn_rate FROM users WHERE user_id = ?', [refId]);
+          }
+          referrerRate = refUser?.referrer_earn_rate ?? 20;
+        }
+
+        const referrerEarnRate = user.referrer_earn_rate ?? 20;
+        const isSpecial = !!(user.is_special);
 
         // Collect paid order IDs from snapshots (immutable)
         const paidOrderIds = await _getPaidOrderIds(uid, 'buyer');
@@ -149,6 +161,8 @@ const payoutStore = {
           hasReferrer,
           buyerRate,
           referrerRate,
+          referrerEarnRate,
+          isSpecial,
           adminRate: 100 - buyerRate - referrerRate,
           totalNetCommission: Math.round(totalNetCommission),
           completedNetCommission: Math.round(completedNetCommission),
@@ -181,6 +195,8 @@ const payoutStore = {
             bankName: r.bankName || '', bankAccount: r.bankAccount || '',
             referrerId: '', referrerName: '', hasReferrer: false,
             buyerRate: 0, referrerRate: 0, adminRate: 0,
+            referrerEarnRate: r.referrerEarnRate ?? 20,
+            isSpecial: !!(r.isSpecial),
             totalNetCommission: 0, completedNetCommission: 0, pendingNetCommission: 0,
             totalBuyerCashback: 0, completedBuyerCashback: 0,
             totalPaid: r.totalPaid,
@@ -220,14 +236,19 @@ const payoutStore = {
       // Collect paid order IDs from referrer snapshots
       const paidOrderIds = await _getPaidOrderIds(refId, 'referrer');
 
+      // Fetch the referrer user details and their referrer_earn_rate
+      let refUser = userMap[refId];
+      if (!refUser) {
+        refUser = await db.get('SELECT user_id, display_name, zalo_name, avatar, bank_name, bank_account, referrer_earn_rate, is_special FROM users WHERE user_id = ?', [refId]);
+      }
+      const refRate = refUser?.referrer_earn_rate ?? 20;
+
       let totalRef = 0;
       let completedRef = 0;
       let unpaidCompletedRef = 0;
       let completedCount = 0;
 
       for (const o of orders) {
-        const buyerUser = userMap[o.sub_id1];
-        const refRate = buyerUser?.cashback_referrer_rate ?? 20;
         const nc = o.net_commission || 0;
         const cb = Math.round(nc * refRate / 100);
         totalRef += cb;
@@ -243,13 +264,6 @@ const payoutStore = {
       const paidRow = await db.get('SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts WHERE user_id = ? AND role = ?', [refId, 'referrer']);
       const paidAsReferrer = paidRow.total_paid;
 
-      // Fix Bug #4: If referrer is not a buyer, they won't be in userMap.
-      // Do a separate lookup.
-      let refUser = userMap[refId];
-      if (!refUser) {
-        refUser = await db.get('SELECT user_id, display_name, zalo_name, avatar, bank_name, bank_account FROM users WHERE user_id = ?', [refId]);
-      }
-
       summaries.push({
         userId: refId,
         displayName: refUser?.display_name || refUser?.zalo_name || refId,
@@ -259,10 +273,11 @@ const payoutStore = {
         totalReferrerCashback: totalRef,
         completedReferrerCashback: completedRef,
         totalPaid: paidAsReferrer,
-        // pendingPayment = only UNPAID completed referrer orders × current rate
         pendingPayment: unpaidCompletedRef,
         completedCount,
         orderCount: orders.length,
+        referrerEarnRate: refRate,
+        isSpecial: !!(refUser?.is_special),
       });
     }
 
@@ -275,13 +290,19 @@ const payoutStore = {
       const buyerOrders = await db.all(MATCHED_ORDERS_BY_USER_SQL, [userId]);
       const userRow = await db.get(`
         SELECT user_id, display_name, cashback_buyer_rate, cashback_referrer_rate,
-               referrer_id, referrer_name
+               referrer_earn_rate, is_special, referrer_id, referrer_name
         FROM users WHERE user_id = ?
       `, [userId]);
 
       const buyerRate = userRow?.cashback_buyer_rate ?? 60;
       const referrerRate = userRow?.cashback_referrer_rate ?? 20;
       const hasReferrer = !!(userRow?.referrer_id && userRow.referrer_id !== '');
+
+      let referrerEarnRateOfReferrer = 20;
+      if (hasReferrer) {
+        const refRow = await db.get('SELECT referrer_earn_rate FROM users WHERE user_id = ?', [userRow.referrer_id]);
+        referrerEarnRateOfReferrer = refRow?.referrer_earn_rate ?? 20;
+      }
 
       const completed = [];
       const pending = [];
@@ -302,8 +323,8 @@ const payoutStore = {
           completeTime: o.complete_time,
           netCommission: nc,
           buyerCashback: Math.round(nc * buyerRate / 100),
-          referrerCashback: hasReferrer ? Math.round(nc * referrerRate / 100) : 0,
-          adminProfit: Math.round(nc * (100 - buyerRate - (hasReferrer ? referrerRate : 0)) / 100),
+          referrerCashback: hasReferrer ? Math.round(nc * referrerEarnRateOfReferrer / 100) : 0,
+          adminProfit: Math.round(nc * (100 - buyerRate - (hasReferrer ? referrerEarnRateOfReferrer : 0)) / 100),
           type: 'buyer',
         };
 
@@ -335,11 +356,12 @@ const payoutStore = {
       const pendingReferrer = [];
 
       const paidReferrerIds = await _getPaidOrderIds(userId, 'referrer');
+      const currentUserReferrerEarnRate = userRow?.referrer_earn_rate ?? 20;
 
       for (const o of refOrders) {
         const nc = o.net_commission || 0;
         const buyerUser = buyerMap[o.sub_id1];
-        const refRate = buyerUser?.cashback_referrer_rate ?? 20;
+        const refRate = currentUserReferrerEarnRate;
         const buyerDisplayName = buyerUser?.display_name || o.sub_id1;
 
         const item = {
@@ -387,6 +409,8 @@ const payoutStore = {
         displayName: userRow?.display_name || userId,
         buyerRate,
         referrerRate,
+        referrerEarnRate: userRow?.referrer_earn_rate ?? 20,
+        isSpecial: !!(userRow?.is_special),
         hasReferrer,
         referrerId: userRow?.referrer_id || '',
         referrerName: userRow?.referrer_name || '',
@@ -411,7 +435,7 @@ const payoutStore = {
     try {
       return await db.transaction(async (tx) => {
         const userRow = await tx.get(
-          'SELECT display_name, zalo_name, cashback_buyer_rate FROM users WHERE user_id = $1',
+          'SELECT display_name, zalo_name, cashback_buyer_rate, referrer_earn_rate FROM users WHERE user_id = $1',
           [userId]
         );
         const userName = userRow?.display_name || userRow?.zalo_name || userId;
@@ -458,19 +482,12 @@ const payoutStore = {
               (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
             ) WHERE cl.status = 'success' AND cl.sub_id2 = $1 ORDER BY o.order_time ASC
           `, [userId]);
-          const buyerIds = [...new Set(refOrders.map(o => o.sub_id1).filter(Boolean))];
-          const rateMap = {};
-          if (buyerIds.length > 0) {
-            const ph = buyerIds.map((_, i) => `$${i + 1}`).join(',');
-            const rows = await tx.all(`SELECT user_id, cashback_referrer_rate FROM users WHERE user_id IN (${ph})`, buyerIds);
-            rows.forEach(b => rateMap[b.user_id] = b.cashback_referrer_rate ?? 20);
-          }
+          const refRate = userRow?.referrer_earn_rate ?? 20;
           const unpaid = [];
           for (const o of refOrders) {
             if (!COMPLETED_STATUSES.has(o.order_status) || paidIds.has(o.order_id)) continue;
             const nc = o.net_commission || 0;
-            const rate = rateMap[o.sub_id1] ?? 20;
-            unpaid.push({ orderId: o.order_id, itemName: o.item_name, shopName: o.shop_name, netCommission: nc, cashback: Math.round(nc * rate / 100), appliedRate: rate, role: 'referrer', buyerId: o.sub_id1 });
+            unpaid.push({ orderId: o.order_id, itemName: o.item_name, shopName: o.shop_name, netCommission: nc, cashback: Math.round(nc * refRate / 100), appliedRate: refRate, role: 'referrer', buyerId: o.sub_id1 });
           }
           return unpaid;
         };
@@ -549,17 +566,36 @@ const payoutStore = {
     return db.all('SELECT * FROM payouts ORDER BY paid_at DESC LIMIT ? OFFSET ?', [limit, offset]);
   },
 
-  async updateUserReferrerRate(userId, referrerRate) {
+  async updateUserReferrerRate(userId, buyerRate, referrerRate) {
     try {
-      if (referrerRate < 0 || referrerRate > 40) {
-        return { success: false, error: 'Referrer rate must be between 0% and 40%' };
+      // If either is undefined, load the current values first
+      if (buyerRate === undefined || referrerRate === undefined) {
+        const userRow = await db.get('SELECT cashback_buyer_rate, referrer_earn_rate FROM users WHERE user_id = ?', [userId]);
+        if (buyerRate === undefined) buyerRate = userRow?.cashback_buyer_rate ?? 60;
+        if (referrerRate === undefined) referrerRate = userRow?.referrer_earn_rate ?? 20;
       }
-      await db.run('UPDATE users SET cashback_referrer_rate = ? WHERE user_id = ?', [referrerRate, userId]);
-      // Buyer rate is system-wide (from users.cashback_buyer_rate default), not changed per-user here
-      const userRow = await db.get('SELECT cashback_buyer_rate FROM users WHERE user_id = ?', [userId]);
-      const buyerRate = userRow?.cashback_buyer_rate ?? 60;
+
+      if (buyerRate < 0 || buyerRate > 100) {
+        return { success: false, error: 'Buyer rate must be between 0% and 100%' };
+      }
+      if (referrerRate < 0 || referrerRate > 100) {
+        return { success: false, error: 'Referrer rate must be between 0% and 100%' };
+      }
+      if (buyerRate + referrerRate > 100) {
+        return { success: false, error: 'Total rates (Buyer + Referrer) cannot exceed 100%' };
+      }
+
+      const isSpecial = (buyerRate !== 60 || referrerRate !== 20) ? 1 : 0;
+
+      await db.run(
+        `UPDATE users 
+         SET cashback_buyer_rate = ?, referrer_earn_rate = ?, is_special = ? 
+         WHERE user_id = ?`,
+        [buyerRate, referrerRate, isSpecial, userId]
+      );
+      
       const adminRate = 100 - buyerRate - referrerRate;
-      return { success: true, buyerRate, referrerRate, adminRate };
+      return { success: true, buyerRate, referrerRate, adminRate, isSpecial: !!isSpecial };
     } catch (err) {
       logger.error('PayoutStore', `updateUserReferrerRate failed: ${err.message}`);
       return { success: false, error: err.message };

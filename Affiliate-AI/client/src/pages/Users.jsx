@@ -213,6 +213,7 @@ export default function UsersPage() {
             columns={columns}
             data={users}
             searchPlaceholder="Tìm kiếm user..."
+            getRowClassName={(row) => row.is_special ? 'bg-[#FFFDE7] dark:bg-yellow-900/20' : ''}
           />
         )}
       </div>
@@ -232,7 +233,12 @@ export default function UsersPage() {
                 className="w-16 h-16 rounded-xl bg-slate-200 object-cover"
               />
               <div>
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white">{selectedUser.display_name || '--'}</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">{selectedUser.display_name || '--'}</h3>
+                  {selectedUser.is_special && (
+                    <Badge variant="warning" className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50">⭐ Đặc biệt</Badge>
+                  )}
+                </div>
                 <p className="text-sm text-slate-500 mb-2">{selectedUser.user_id}</p>
                 <Badge variant="success" dot>Active</Badge>
               </div>
@@ -304,7 +310,7 @@ export default function UsersPage() {
                   </div>
                 </div>
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 border border-blue-100 dark:border-blue-800/30">
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mb-2">Referrer nhận</p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mb-2">Tỷ lệ nhận khi con mua</p>
                   <div className="flex items-center gap-1">
                     <input
                       type="number" min="0" max="100" step="5"
