@@ -174,6 +174,42 @@ class ShopeeAPI {
     }
   }
 
+  async extractFull(originalLink) {
+    if (!ShopeeAPI.sendToExtension) {
+      throw new Error('Extension chưa kết nối. Vui lòng mở Chrome có cài đặt Extension.');
+    }
+
+    const startTime = Date.now();
+    logger.info('ShopeeAPI', `[extract_full] Extracting: ${originalLink.slice(0, 60)}...`);
+
+    try {
+      const reqId = ShopeeAPI.genReqId();
+      const result = await ShopeeAPI.sendToExtension(reqId, {
+        action: 'extract_full',
+        payload: {
+          url: originalLink,
+        },
+      });
+
+      const duration = Date.now() - startTime;
+      
+      if (!result.success) {
+        logger.warn('ShopeeAPI', `[extract_full] Failed (${duration}ms): ${result.error}`);
+        return { success: false, error: result.error };
+      }
+
+      logger.info('ShopeeAPI', `[extract_full] ✅ Extracted full data in ${duration}ms`);
+      return {
+        success: true,
+        data: result.data,
+        originalLink,
+      };
+    } catch (err) {
+      logger.error('ShopeeAPI', `[extract_full] Error: ${err.message}`);
+      return { success: false, error: err.message };
+    }
+  }
+
   parseShopeeLink(url) {
     // Format 1: https://shopee.vn/product/{shopId}/{itemId}?...
     const productMatch = url.match(/shopee\.vn\/product\/(\d+)\/(\d+)/);

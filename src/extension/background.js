@@ -193,8 +193,124 @@ async function handleAutomation(action, payload, reqId) {
     // Background fetch: get img_code from Shopee report API
     executeFetchProductImages(targetTab.id, payload, reqId);
 
+  } else if (action === 'extract_full') {
+    // Extract full product data via internal Shopee API
+    executeExtractFull(targetTab.id, payload, reqId);
+
   } else {
     sendResult(reqId, { success: false, error: `Unknown action: ${action}` });
+  }
+}
+
+// ─── Extract Full Product Data ─────────────────────────────────
+async function executeExtractFull(tabId, payload, reqId) {
+  try {
+    let url = payload.url;
+
+    // Step 1: Resolve short links via HTTP redirect
+    if (url.includes('s.shopee.vn/') || url.includes('vn.shp.ee/')) {
+      console.log('[BG] ExtractFull: Resolving short link:', url);
+      try {
+        const resp = await fetch(url, { method: 'GET', redirect: 'follow' });
+        const finalUrl = resp.url;
+        console.log('[BG] ExtractFull: Resolved to:', finalUrl);
+        if (finalUrl.includes('shopee.vn')) {
+          url = finalUrl;
+        }
+      } catch (err) {
+        console.warn('[BG] ExtractFull: Short link resolve failed:', err.message);
+      }
+    }
+
+    // Step 2: Parse product info from URL
+    let productInfo = parseProductInfo(url);
+    console.log('[BG] ExtractFull: Parsed product info:', JSON.stringify(productInfo));
+
+    if (!productInfo.itemId || !productInfo.shopId) {
+      sendResult(reqId, { success: false, error: 'Không thể phân tích shopId và itemId từ link.' });
+      return;
+    }
+
+    console.log('[BG] ExtractFull: fetching full data via shopee.vn tab...');
+    let tempTabId = null;
+    try {
+      // Try to find an existing shopee.vn tab first
+      const existingTabs = await chrome.tabs.query({ url: 'https://shopee.vn/*' });
+      
+      if (existingTabs.length > 0) {
+        tempTabId = existingTabs[0].id;
+        console.log('[BG] ExtractFull: Found existing shopee.vn tab:', tempTabId);
+      } else {
+        // Create a hidden tab
+        const tempTab = await chrome.tabs.create({
+          url: `https://shopee.vn/product/${productInfo.shopId}/${productInfo.itemId}`,
+          active: false,
+        });
+        tempTabId = tempTab.id;
+        console.log('[BG] ExtractFull: Created temp shopee.vn tab:', tempTabId);
+
+        // Wait for tab to finish loading
+        await new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }, 5000);
+
+          const listener = (tId, changeInfo) => {
+            if (tId === tempTabId && changeInfo.status === 'complete') {
+              chrome.tabs.onUpdated.removeListener(listener);
+              clearTimeout(timeout);
+              resolve();
+            }
+          };
+          chrome.tabs.onUpdated.addListener(listener);
+        });
+      }
+
+      // Inject script to fetch full item data
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tempTabId },
+        world: 'MAIN',
+        func: async (itemId, shopId) => {
+          try {
+            console.log('[SHOPEE-TAB] ExtractFull: Calling API for', itemId, shopId);
+            const resp = await fetch(`/api/v4/item/get?itemid=${itemId}&shopid=${shopId}`, {
+              method: 'GET',
+              headers: { 'accept': 'application/json' },
+              credentials: 'include',
+            });
+            const data = await resp.json();
+            if (data?.data) {
+              return { success: true, productData: data.data };
+            }
+            return { success: false, error: data?.error_msg || data?.error || 'Unknown API error' };
+          } catch (e) {
+            return { success: false, error: e.message };
+          }
+        },
+        args: [productInfo.itemId, productInfo.shopId],
+      });
+
+      // Close temp tab only if we created it
+      if (!existingTabs || existingTabs.length === 0) {
+        chrome.tabs.remove(tempTabId).catch(() => {});
+      }
+
+      const result = results?.[0]?.result;
+      if (result && result.success) {
+        sendResult(reqId, { success: true, data: result.productData });
+      } else {
+        sendResult(reqId, { success: false, error: result?.error || 'Failed to extract data' });
+      }
+
+    } catch (err) {
+      if (tempTabId) chrome.tabs.remove(tempTabId).catch(() => {});
+      sendResult(reqId, { success: false, error: err.message });
+    }
+
+  } catch (err) {
+    console.error('[BG] ExtractFull error:', err);
+    sendResult(reqId, { success: false, error: err.message });
   }
 }
 

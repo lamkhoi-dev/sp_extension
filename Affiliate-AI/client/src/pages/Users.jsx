@@ -15,6 +15,7 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [editingRates, setEditingRates] = useState({ buyer: 40, referrer: 30 });
   const [savingRates, setSavingRates] = useState(false);
+  const [rateSaved, setRateSaved] = useState(false);
 
   // Bank info edit state
   const [editingBank, setEditingBank] = useState({ bankName: '', bankAccount: '' });
@@ -25,13 +26,14 @@ export default function UsersPage() {
     setSelectedUser(row);
     setEditingRates({
       buyer: row.cashback_buyer_rate ?? 60,
-      referrer: row.cashback_referrer_rate ?? 20,
+      referrer: row.referrer_earn_rate ?? 20,
     });
     setEditingBank({
       bankName: row.bank_name || '',
       bankAccount: row.bank_account || '',
     });
     setBankSaved(false);
+    setRateSaved(false);
     setShowDetailModal(true);
   };
 
@@ -152,8 +154,17 @@ export default function UsersPage() {
   const handleSaveRates = async () => {
     setSavingRates(true);
     try {
-      await updateUserCashbackRates(selectedUser.user_id, editingRates.buyer, editingRates.referrer);
-      setShowDetailModal(false);
+      const result = await updateUserCashbackRates(selectedUser.user_id, editingRates.buyer, editingRates.referrer);
+      if (result && result.success === false) {
+        alert('Lỗi: ' + (result.error || 'Không thể cập nhật'));
+        return;
+      }
+      setRateSaved(true);
+      setSelectedUser(prev => ({
+        ...prev,
+        cashback_buyer_rate: editingRates.buyer,
+        referrer_earn_rate: editingRates.referrer,
+      }));
       refresh();
     } catch (err) {
       alert('Lỗi: ' + err.message);
@@ -303,7 +314,7 @@ export default function UsersPage() {
                     <input
                       type="number" min="0" max="100" step="5"
                       value={editingRates.buyer}
-                      onChange={(e) => setEditingRates(r => ({ ...r, buyer: Number(e.target.value) }))}
+                      onChange={(e) => { setEditingRates(r => ({ ...r, buyer: Number(e.target.value) })); setRateSaved(false); }}
                       className="w-full px-2 py-1 text-lg font-bold text-emerald-600 bg-white dark:bg-slate-800 rounded-lg border border-emerald-200 dark:border-emerald-700 text-center"
                     />
                     <span className="text-emerald-600 font-bold">%</span>
@@ -315,7 +326,7 @@ export default function UsersPage() {
                     <input
                       type="number" min="0" max="100" step="5"
                       value={editingRates.referrer}
-                      onChange={(e) => setEditingRates(r => ({ ...r, referrer: Number(e.target.value) }))}
+                      onChange={(e) => { setEditingRates(r => ({ ...r, referrer: Number(e.target.value) })); setRateSaved(false); }}
                       className="w-full px-2 py-1 text-lg font-bold text-blue-600 bg-white dark:bg-slate-800 rounded-lg border border-blue-200 dark:border-blue-700 text-center"
                     />
                     <span className="text-blue-600 font-bold">%</span>
@@ -448,11 +459,13 @@ export default function UsersPage() {
                 Đóng
               </Button>
               <Button
-                variant="primary" className="flex-1" icon={Edit2}
+                variant={rateSaved ? 'outline' : 'primary'}
+                className={`flex-1 ${rateSaved ? '!bg-emerald-50 dark:!bg-emerald-900/20 !text-emerald-600 !border-emerald-200' : ''}`}
+                icon={rateSaved ? Save : Edit2}
                 disabled={savingRates || (100 - editingRates.buyer - editingRates.referrer) < 0}
                 onClick={handleSaveRates}
               >
-                {savingRates ? 'Đang lưu...' : 'Lưu tỷ lệ'}
+                {savingRates ? 'Đang lưu...' : rateSaved ? '✓ Đã lưu thành công' : 'Lưu tỷ lệ'}
               </Button>
             </div>
           </div>

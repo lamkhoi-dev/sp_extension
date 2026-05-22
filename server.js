@@ -656,6 +656,20 @@ app.post('/api/shopee/extract', async (req, res) => {
   }
 });
 
+app.post('/api/shopee/extract-full', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  try {
+    const ShopeeAPI = require('./src/shopee-api');
+    const api = new ShopeeAPI();
+    const result = await api.extractFull(url);
+    if (!result.success) return res.json({ success: false, error: result.error || 'Không lấy được thông tin chi tiết' });
+    res.json(result);
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/orders/simulate', async (req, res) => {
   const { itemId, itemName, shopId, shopName, price, quantity, commissionRate, status, subId1, subId2, orderTime, completeTime } = req.body;
   if (!subId1) {

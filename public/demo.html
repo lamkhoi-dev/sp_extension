@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shopee Product Extractor Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <style>
+    /* Custom styles for Shopee-like feel */
+    .shopee-orange { background-color: #ee4d2d; }
+    .text-shopee { color: #ee4d2d; }
+    .bg-shopee-light { background-color: #f5f5f5; }
+    
+    .carousel-container {
+      position: relative;
+      width: 100%;
+      padding-top: 100%; /* 1:1 Aspect Ratio */
+    }
+    .carousel-image {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background-color: white;
+    }
+    
+    .thumbnail {
+      border: 2px solid transparent;
+      cursor: pointer;
+    }
+    .thumbnail.active {
+      border-color: #ee4d2d;
+    }
+    .thumbnail:hover {
+      border-color: #ee4d2d;
+    }
+
+    #rawJson {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body class="bg-shopee-light text-gray-800 font-sans min-h-screen">
+
+  <!-- Header -->
+  <header class="bg-white shadow-sm sticky top-0 z-50">
+    <div class="container mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center space-x-2 text-shopee">
+        <i class="fa-solid fa-bag-shopping text-3xl"></i>
+        <h1 class="text-2xl font-bold">Shopee Extractor</h1>
+      </div>
+      <div>
+        <a href="/admin" class="text-gray-500 hover:text-shopee font-medium">Dashboard</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="container mx-auto px-4 py-8">
+    
+    <!-- Input Section -->
+    <div class="bg-white rounded-lg shadow-sm p-6 mb-8 max-w-3xl mx-auto">
+      <h2 class="text-xl font-bold mb-4">Nhập Link Shopee Cần Lấy Dữ Liệu</h2>
+      <form id="extractForm" class="flex flex-col md:flex-row gap-4">
+        <input 
+          type="url" 
+          id="shopeeUrl" 
+          placeholder="https://shopee.vn/..." 
+          class="flex-1 px-4 py-3 border border-gray-300 rounded-sm focus:outline-none focus:border-[#ee4d2d] focus:ring-1 focus:ring-[#ee4d2d]"
+          required
+        >
+        <button 
+          type="submit" 
+          id="extractBtn"
+          class="shopee-orange text-white px-8 py-3 rounded-sm font-medium hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[120px]"
+        >
+          <span>Trích Xuất</span>
+          <i class="fa-solid fa-spinner fa-spin ml-2 hidden" id="loadingIcon"></i>
+        </button>
+      </form>
+      <div id="errorMsg" class="mt-4 text-red-500 hidden text-sm bg-red-50 p-3 border border-red-200 rounded"></div>
+    </div>
+
+    <!-- Results Section (Hidden initially) -->
+    <div id="resultsSection" class="hidden">
+      
+      <!-- Product Card -->
+      <div class="bg-white rounded-lg shadow-sm p-4 md:p-6 mb-8">
+        <div class="flex flex-col md:flex-row gap-8">
+          
+          <!-- Left: Images -->
+          <div class="w-full md:w-5/12">
+            <div class="carousel-container border border-gray-200 rounded-sm overflow-hidden mb-4 relative" id="mainImageContainer">
+              <img src="" alt="Product" id="mainImage" class="carousel-image">
+            </div>
+            <!-- Thumbnails -->
+            <div class="grid grid-cols-5 gap-2" id="thumbnailContainer">
+              <!-- Thumbnails will be injected here -->
+            </div>
+          </div>
+
+          <!-- Right: Details -->
+          <div class="w-full md:w-7/12 flex flex-col">
+            <div class="mb-4">
+              <span class="bg-[#ee4d2d] text-white text-xs font-bold px-1 py-0.5 rounded-sm mr-2 inline-block align-middle" id="mallBadge" style="display: none;">Mall</span>
+              <span class="bg-[#ee4d2d] text-white text-xs font-bold px-1 py-0.5 rounded-sm mr-2 inline-block align-middle" id="preferredBadge" style="display: none;">Yêu thích</span>
+              <h2 id="productTitle" class="text-xl md:text-2xl font-medium inline align-middle leading-snug">Đang tải...</h2>
+            </div>
+            
+            <div class="flex items-center text-sm mb-4 divide-x divide-gray-300">
+              <div class="pr-4 flex items-center text-shopee">
+                <span id="productRating" class="underline mr-1 font-bold">0</span>
+                <div class="flex text-xs space-x-0.5">
+                  <i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i>
+                </div>
+              </div>
+              <div class="px-4 text-gray-500">
+                <span id="productReviews" class="underline text-gray-800 font-bold">0</span> Đánh Giá
+              </div>
+              <div class="pl-4 text-gray-500">
+                <span id="productSold" class="text-gray-800 font-bold">0</span> Đã Bán
+              </div>
+            </div>
+
+            <div class="bg-gray-50 p-4 rounded-sm mb-6 flex items-center">
+              <div id="productPrice" class="text-3xl text-shopee font-medium">0đ</div>
+              <div id="productOriginalPrice" class="text-gray-400 line-through ml-4 text-lg hidden">0đ</div>
+              <div id="productDiscount" class="bg-red-100 text-red-500 text-xs font-bold px-1 ml-2 rounded-sm hidden">0% GIẢM</div>
+            </div>
+
+            <!-- Variations (if any) -->
+            <div id="variationsContainer" class="mb-6 space-y-4">
+              <!-- Models will go here -->
+            </div>
+
+            <!-- Meta info -->
+            <div class="mt-auto space-y-2 text-sm text-gray-600">
+              <div class="flex">
+                <div class="w-32 text-gray-400">Kho hàng</div>
+                <div id="productStock" class="font-medium">0</div>
+              </div>
+              <div class="flex">
+                <div class="w-32 text-gray-400">Gửi từ</div>
+                <div id="productLocation" class="font-medium">...</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Shop Info -->
+      <div class="bg-white rounded-lg shadow-sm p-6 mb-8 flex items-center gap-4">
+        <img id="shopAvatar" src="https://cf.shopee.vn/file/0" alt="Shop Avatar" class="w-20 h-20 rounded-full border border-gray-200 object-cover">
+        <div class="flex-1 flex justify-between items-center">
+          <div>
+            <h3 id="shopName" class="text-lg font-medium mb-1">Tên Shop</h3>
+            <div class="text-sm text-gray-500 flex gap-4">
+              <span>Sản phẩm: <span id="shopProducts" class="text-shopee">0</span></span>
+              <span>Đánh giá: <span id="shopRating" class="text-shopee">0</span></span>
+            </div>
+          </div>
+          <div>
+            <a id="shopLink" href="#" target="_blank" class="px-4 py-2 border border-[#ee4d2d] text-[#ee4d2d] rounded-sm bg-orange-50 hover:bg-orange-100 transition-colors flex items-center gap-2 text-sm">
+              <i class="fa-solid fa-shop"></i> Xem Shop
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Description -->
+      <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+        <h3 class="text-lg font-medium bg-gray-50 p-4 -mx-6 -mt-6 mb-6 border-b border-gray-100">CHI TIẾT SẢN PHẨM</h3>
+        <div id="productDescription" class="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed max-h-[500px] overflow-hidden relative">
+          <!-- Description text -->
+        </div>
+        <button id="toggleDescBtn" class="w-full text-shopee text-sm font-medium py-2 hover:bg-gray-50 mt-2 border-t border-gray-100 hidden">
+          Xem thêm <i class="fa-solid fa-angle-down ml-1"></i>
+        </button>
+      </div>
+
+      <!-- Raw JSON Data (Developer View) -->
+      <div class="bg-white rounded-lg shadow-sm p-6">
+        <div class="flex justify-between items-center bg-gray-50 p-4 -mx-6 -mt-6 mb-6 border-b border-gray-100">
+          <h3 class="text-lg font-medium">Dữ Liệu Raw JSON (Dành cho Developer)</h3>
+          <button id="copyJsonBtn" class="text-gray-500 hover:text-shopee text-sm"><i class="fa-regular fa-copy"></i> Copy</button>
+        </div>
+        <pre id="rawJson" class="bg-gray-800 text-green-400 p-4 rounded text-xs font-mono"></pre>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    const SHOPEE_IMG_BASE = 'https://cf.shopee.vn/file/';
+    let currentData = null;
+
+    document.getElementById('extractForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = document.getElementById('shopeeUrl').value.trim();
+      if (!url) return;
+
+      const btn = document.getElementById('extractBtn');
+      const loading = document.getElementById('loadingIcon');
+      const errorMsg = document.getElementById('errorMsg');
+      const resultsSection = document.getElementById('resultsSection');
+
+      // Reset state
+      btn.disabled = true;
+      loading.classList.remove('hidden');
+      errorMsg.classList.add('hidden');
+      resultsSection.classList.add('hidden');
+
+      try {
+        const response = await fetch('/api/shopee/extract-full', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+
+        const res = await response.json();
+
+        if (res.success && res.data) {
+          currentData = res.data;
+          renderProduct(res.data);
+          resultsSection.classList.remove('hidden');
+        } else {
+          showError(res.error || 'Failed to extract data. Ensure extension is running and connected.');
+        }
+      } catch (err) {
+        showError('Network error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        loading.classList.add('hidden');
+      }
+    });
+
+    function showError(msg) {
+      const errorMsg = document.getElementById('errorMsg');
+      errorMsg.textContent = msg;
+      errorMsg.classList.remove('hidden');
+    }
+
+    function formatPrice(priceNum) {
+      if (!priceNum) return '0đ';
+      // Shopee returns prices multiplied by 100000
+      const actual = parseInt(priceNum) / 100000;
+      return new Intl.NumberFormat('vi-VN').format(actual) + 'đ';
+    }
+
+    function renderProduct(data) {
+      // Raw JSON
+      document.getElementById('rawJson').textContent = JSON.stringify(data, null, 2);
+
+      // Title & Badges
+      document.getElementById('productTitle').textContent = data.name || 'No title';
+      document.getElementById('mallBadge').style.display = data.shopee_verified || data.is_official_shop ? 'inline-block' : 'none';
+      document.getElementById('preferredBadge').style.display = data.show_official_shop_label_in_title ? 'inline-block' : 'none';
+
+      // Stats
+      const rating = data.item_rating?.rating_star || 0;
+      document.getElementById('productRating').textContent = rating.toFixed(1);
+      
+      const stars = document.querySelectorAll('#productRating + div i');
+      stars.forEach((star, index) => {
+        star.className = index < Math.round(rating) ? 'fa-solid fa-star text-shopee' : 'fa-regular fa-star text-gray-300';
+      });
+
+      document.getElementById('productReviews').textContent = formatNumber(data.item_rating?.rating_count?.[0] || 0);
+      document.getElementById('productSold').textContent = formatNumber(data.historical_sold || 0);
+
+      // Price
+      let priceDisplay = formatPrice(data.price);
+      if (data.price_min && data.price_max && data.price_min !== data.price_max) {
+        priceDisplay = `${formatPrice(data.price_min)} - ${formatPrice(data.price_max)}`;
+      }
+      document.getElementById('productPrice').textContent = priceDisplay;
+
+      const origPriceEl = document.getElementById('productOriginalPrice');
+      const discountEl = document.getElementById('productDiscount');
+      if (data.price_before_discount && data.price_before_discount > data.price) {
+        origPriceEl.textContent = formatPrice(data.price_before_discount);
+        origPriceEl.classList.remove('hidden');
+        if (data.show_discount) {
+          discountEl.textContent = `${data.show_discount}% GIẢM`;
+          discountEl.classList.remove('hidden');
+        } else {
+          discountEl.classList.add('hidden');
+        }
+      } else {
+        origPriceEl.classList.add('hidden');
+        discountEl.classList.add('hidden');
+      }
+
+      // Meta
+      document.getElementById('productStock').textContent = formatNumber(data.stock || 0);
+      document.getElementById('productLocation').textContent = data.shop_location || 'Đang cập nhật';
+
+      // Images
+      const images = data.images || [];
+      if (images.length > 0) {
+        setMainImage(images[0]);
+        renderThumbnails(images);
+      }
+
+      // Variations (Tier Variations)
+      renderVariations(data.tier_variations, data.models);
+
+      // Description
+      const descEl = document.getElementById('productDescription');
+      descEl.textContent = data.description || '';
+      descEl.style.maxHeight = '500px';
+      
+      const toggleBtn = document.getElementById('toggleDescBtn');
+      if (descEl.scrollHeight > 500) {
+        toggleBtn.classList.remove('hidden');
+        toggleBtn.innerHTML = 'Xem thêm <i class="fa-solid fa-angle-down ml-1"></i>';
+        toggleBtn.onclick = () => {
+          if (descEl.style.maxHeight === '500px') {
+            descEl.style.maxHeight = 'none';
+            toggleBtn.innerHTML = 'Thu gọn <i class="fa-solid fa-angle-up ml-1"></i>';
+          } else {
+            descEl.style.maxHeight = '500px';
+            toggleBtn.innerHTML = 'Xem thêm <i class="fa-solid fa-angle-down ml-1"></i>';
+          }
+        };
+      } else {
+        toggleBtn.classList.add('hidden');
+      }
+
+      // Shop Info
+      const shopId = data.shopid;
+      document.getElementById('shopName').textContent = `Shop ID: ${shopId}`; // Usually we'd need another API call for shop details, fallback to ID
+      if (data.shop_name) document.getElementById('shopName').textContent = data.shop_name; // If available
+      document.getElementById('shopLink').href = `https://shopee.vn/shop/${shopId}`;
+      // Just some placeholders since full shop info isn't in item/get usually
+      document.getElementById('shopProducts').textContent = 'N/A';
+      document.getElementById('shopRating').textContent = 'N/A';
+    }
+
+    function setMainImage(imageId) {
+      const imgUrl = imageId.includes('http') ? imageId : SHOPEE_IMG_BASE + imageId;
+      document.getElementById('mainImage').src = imgUrl;
+    }
+
+    function renderThumbnails(images) {
+      const container = document.getElementById('thumbnailContainer');
+      container.innerHTML = '';
+      
+      const toShow = images.slice(0, 5); // Show max 5 thumbnails
+      toShow.forEach((img, idx) => {
+        const div = document.createElement('div');
+        div.className = `thumbnail aspect-square rounded-sm overflow-hidden ${idx === 0 ? 'active' : ''}`;
+        
+        const imgEl = document.createElement('img');
+        imgEl.src = img.includes('http') ? img : SHOPEE_IMG_BASE + img + '_tn'; // use _tn for thumbnail
+        imgEl.className = 'w-full h-full object-cover';
+        
+        div.appendChild(imgEl);
+        
+        div.onclick = () => {
+          document.querySelectorAll('.thumbnail').forEach(t => t.classList.remove('active'));
+          div.classList.add('active');
+          setMainImage(images[idx]);
+        };
+        
+        container.appendChild(div);
+      });
+    }
+
+    function renderVariations(tierVariations, models) {
+      const container = document.getElementById('variationsContainer');
+      container.innerHTML = '';
+
+      if (!tierVariations || tierVariations.length === 0) return;
+
+      tierVariations.forEach(tier => {
+        const row = document.createElement('div');
+        row.className = 'flex items-baseline';
+        
+        const label = document.createElement('div');
+        label.className = 'w-32 text-gray-400 text-sm';
+        label.textContent = tier.name;
+        
+        const options = document.createElement('div');
+        options.className = 'flex-1 flex flex-wrap gap-2';
+        
+        tier.options.forEach((opt, idx) => {
+          const btn = document.createElement('button');
+          btn.className = 'px-4 py-2 border border-gray-200 rounded-sm text-sm hover:border-[#ee4d2d] hover:text-[#ee4d2d] transition-colors bg-white';
+          btn.textContent = opt;
+          
+          // Try to find image for this option
+          if (tier.images && tier.images[idx]) {
+            btn.className += ' flex items-center gap-2 pl-2';
+            const img = document.createElement('img');
+            img.src = SHOPEE_IMG_BASE + tier.images[idx] + '_tn';
+            img.className = 'w-6 h-6 object-cover rounded-sm';
+            btn.prepend(img);
+          }
+
+          options.appendChild(btn);
+        });
+
+        row.appendChild(label);
+        row.appendChild(options);
+        container.appendChild(row);
+      });
+    }
+
+    function formatNumber(num) {
+      if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'k';
+      }
+      return num;
+    }
+
+    document.getElementById('copyJsonBtn').addEventListener('click', () => {
+      if (currentData) {
+        navigator.clipboard.writeText(JSON.stringify(currentData, null, 2));
+        const btn = document.getElementById('copyJsonBtn');
+        const origText = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> Copied!';
+        btn.classList.add('text-green-500');
+        setTimeout(() => {
+          btn.innerHTML = origText;
+          btn.classList.remove('text-green-500');
+        }, 2000);
+      }
+    });
+
+  </script>
+</body>
+</html>
