@@ -43,11 +43,16 @@ export default function UsersPage() {
       label: 'User',
       render: (value, row) => (
         <div className="flex items-center gap-2">
-          <img
-            src={row.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${row.user_id || value}`}
-            alt={value}
-            className="w-8 h-8 rounded-lg bg-slate-200 flex-shrink-0 object-cover"
-          />
+          <div className="relative flex-shrink-0">
+            <img
+              src={row.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${row.user_id || value}`}
+              alt={value}
+              className={`w-8 h-8 rounded-lg bg-slate-200 object-cover ${row.is_special ? 'ring-2 ring-amber-400 ring-offset-1' : ''}`}
+            />
+            {row.is_special ? (
+              <span className="absolute -top-1 -right-1 text-[10px]" title="Tỷ lệ đặc biệt">⭐</span>
+            ) : null}
+          </div>
           <div className="min-w-0">
             <p className="font-medium text-slate-900 dark:text-white text-sm truncate">{value || '--'}</p>
             <p className="text-[10px] text-slate-500">{row.user_id ? String(row.user_id).slice(0, 12) + '...' : '--'}</p>
@@ -224,7 +229,7 @@ export default function UsersPage() {
             columns={columns}
             data={users}
             searchPlaceholder="Tìm kiếm user..."
-            getRowClassName={(row) => row.is_special ? 'bg-[#FFFDE7] dark:bg-yellow-900/20' : ''}
+            getRowClassName={(row) => row.is_special ? '!bg-amber-50/80 dark:!bg-amber-900/15 border-l-[3px] border-l-amber-400' : ''}
           />
         )}
       </div>

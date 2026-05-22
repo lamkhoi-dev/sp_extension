@@ -109,11 +109,10 @@ export default function DataTable({
                   key={row.id || idx}
                   onClick={() => onRowClick?.(row)}
                   className={clsx(
-                    'bg-white dark:bg-slate-800/30',
+                    getRowClassName?.(row) || 'bg-white dark:bg-slate-800/30',
                     'hover:bg-slate-50 dark:hover:bg-slate-700/50',
                     'transition-colors',
                     onRowClick && 'cursor-pointer',
-                    getRowClassName?.(row)
                   )}
                 >
                   {columns.map((col) => (
