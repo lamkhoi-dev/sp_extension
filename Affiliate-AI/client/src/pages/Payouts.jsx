@@ -67,7 +67,7 @@ export default function PayoutsPage() {
   }, [expandedUser, getUserDetail]);
 
   const handlePay = useCallback(async () => {
-    if (!payTarget || !selectedMethod) return;
+    if (!payTarget) return;
     setPaying(true);
     setPayingUserId(payTarget.userId);
     try {
@@ -87,7 +87,6 @@ export default function PayoutsPage() {
       setPayTarget(null);
       setBillFile(null);
       setAdminNote('');
-      setSelectedBank('');
       refresh();
       if (expandedUser === payTarget.userId) {
         const updatedDetail = await getUserDetail(payTarget.userId);

@@ -32,7 +32,7 @@ class PgAdapter {
         .replace(/[?&]sslmode=require/i, '')
         .replace(/[?&]sslmode=no-verify/i, '')
         .replace(/[?&]ssl=true/i, '');
-      
+
       // Clean up trailing '?' if any query params were removed
       if (finalConnectionString.endsWith('?')) {
         finalConnectionString = finalConnectionString.slice(0, -1);
