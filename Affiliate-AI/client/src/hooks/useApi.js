@@ -77,6 +77,30 @@ export function useDashboardStats(refreshInterval = 30000) {
   return { stats, loading, refresh };
 }
 
+// Dashboard reports (charts)
+export function useDashboardReports(days = 30) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchReports = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await apiFetch(`/reports/dashboard?days=${days}`);
+      setData(result);
+    } catch (err) {
+      console.error('Dashboard reports error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [days]);
+
+  useEffect(() => {
+    fetchReports();
+  }, [fetchReports]);
+
+  return { data, loading, refresh: fetchReports };
+}
+
 // Users
 export function useUsers() {
   const [users, setUsers] = useState([]);
@@ -332,6 +356,14 @@ export async function updateUserCashbackRates(userId, buyerRate, referrerRate) {
   return apiFetch(`/users/${userId}/cashback-rates`, {
     method: 'PATCH',
     body: JSON.stringify({ buyerRate, referrerRate }),
+  });
+}
+
+// Update user bank info (generates VietQR on server side)
+export async function updateUserBankInfo(userId, bankName, bankAccount) {
+  return apiFetch(`/users/${userId}/bank-info`, {
+    method: 'PATCH',
+    body: JSON.stringify({ bankName, bankAccount }),
   });
 }
 

@@ -48,11 +48,26 @@ const convertLogStore = {
   },
 
   async getRecent(limit = 50, offset = 0) {
-    return db.all('SELECT * FROM convert_logs ORDER BY created_at DESC LIMIT ? OFFSET ?', [limit, offset]);
+    return db.all(`
+      SELECT cl.*, u.avatar as user_avatar, r.avatar as referrer_avatar, r.display_name as referrer_name_db
+      FROM convert_logs cl 
+      LEFT JOIN users u ON cl.user_id = u.user_id 
+      LEFT JOIN users r ON cl.sub_id2 = r.user_id
+      ORDER BY cl.created_at DESC 
+      LIMIT ? OFFSET ?
+    `, [limit, offset]);
   },
 
   async getByUser(userId, limit = 20) {
-    return db.all('SELECT * FROM convert_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?', [userId, limit]);
+    return db.all(`
+      SELECT cl.*, u.avatar as user_avatar, r.avatar as referrer_avatar, r.display_name as referrer_name_db
+      FROM convert_logs cl 
+      LEFT JOIN users u ON cl.user_id = u.user_id 
+      LEFT JOIN users r ON cl.sub_id2 = r.user_id
+      WHERE cl.user_id = ? 
+      ORDER BY cl.created_at DESC 
+      LIMIT ?
+    `, [userId, limit]);
   },
 
   async getCount() {
@@ -66,9 +81,9 @@ const convertLogStore = {
         COUNT(*) as total,
         SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
         SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed,
-        SUM(commission_amount) as totalCommission,
-        AVG(commission_rate) as avgRate,
-        COUNT(DISTINCT user_id) as uniqueUsers
+        SUM(commission_amount) as "totalCommission",
+        AVG(commission_rate) as "avgRate",
+        COUNT(DISTINCT user_id) as "uniqueUsers"
       FROM convert_logs
     `);
   },
@@ -87,10 +102,15 @@ const convertLogStore = {
 
   async search(query, limit = 20) {
     const q = `%${query}%`;
-    return db.all(
-      'SELECT * FROM convert_logs WHERE user_name LIKE ? OR product_name LIKE ? OR original_link LIKE ? ORDER BY created_at DESC LIMIT ?',
-      [q, q, q, limit]
-    );
+    return db.all(`
+      SELECT cl.*, u.avatar as user_avatar, r.avatar as referrer_avatar, r.display_name as referrer_name_db
+      FROM convert_logs cl 
+      LEFT JOIN users u ON cl.user_id = u.user_id 
+      LEFT JOIN users r ON cl.sub_id2 = r.user_id
+      WHERE cl.user_name LIKE ? OR cl.product_name LIKE ? OR cl.original_link LIKE ? 
+      ORDER BY cl.created_at DESC 
+      LIMIT ?
+    `, [q, q, q, limit]);
   },
 
   async getAllByUser(userId) {

@@ -204,15 +204,15 @@ const orderStore = {
   async getStats() {
     return db.get(`
       SELECT
-        COUNT(*) as totalOrders,
-        COUNT(DISTINCT order_id) as uniqueOrders,
-        SUM(order_value) as totalOrderValue,
-        SUM(total_product_commission) as totalCommission,
-        SUM(net_commission) as totalCommissionNew,
-        SUM(order_commission) as totalOrderCommission,
-        SUM(order_bonus) as totalOrderBonus,
-        COUNT(DISTINCT shop_id) as uniqueShops,
-        COUNT(DISTINCT sub_id1) as uniqueBuyers
+        COUNT(*) as "totalOrders",
+        COUNT(DISTINCT order_id) as "uniqueOrders",
+        SUM(order_value) as "totalOrderValue",
+        SUM(total_product_commission) as "totalCommission",
+        SUM(net_commission) as "totalCommissionNew",
+        SUM(order_commission) as "totalOrderCommission",
+        SUM(order_bonus) as "totalOrderBonus",
+        COUNT(DISTINCT shop_id) as "uniqueShops",
+        COUNT(DISTINCT sub_id1) as "uniqueBuyers"
       FROM orders
     `);
   },

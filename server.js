@@ -376,12 +376,27 @@ app.get('/api/dashboard-stats', async (req, res) => {
 
 // Users API (paginated + search)
 app.get('/api/users', async (req, res) => {
-  const { search, limit = 50, offset = 0 } = req.query;
+  const { search, limit = 100, offset = 0 } = req.query;
+  const lim = Math.min(parseInt(limit) || 100, 500);
+  const off = parseInt(offset) || 0;
   if (search) {
-    res.json(await userCache.search(search, parseInt(limit)));
-  } else {
-    res.json(await userCache.getAllPaginated(parseInt(limit), parseInt(offset)));
+    const q = `%${search}%`;
+    const rows = await db.all(`
+      SELECT u.*, r.avatar as referrer_avatar
+      FROM users u
+      LEFT JOIN users r ON u.referrer_id = r.user_id
+      WHERE u.display_name LIKE ? OR u.zalo_name LIKE ? OR u.user_id LIKE ?
+      ORDER BY u.last_seen DESC LIMIT ?
+    `, [q, q, q, lim]);
+    return res.json(rows);
   }
+  const rows = await db.all(`
+    SELECT u.*, r.avatar as referrer_avatar
+    FROM users u
+    LEFT JOIN users r ON u.referrer_id = r.user_id
+    ORDER BY u.last_seen DESC LIMIT ? OFFSET ?
+  `, [lim, off]);
+  res.json(rows);
 });
 
 // Convert Logs API
@@ -520,6 +535,19 @@ app.patch('/api/users/:userId/cashback-rates', async (req, res) => {
   const result = await payoutStore.updateUserReferrerRate(req.params.userId, Number(referrerRate));
   await auditStore.log(req.admin?.username || 'system', 'UPDATE_USER_RATES', 'user', req.params.userId, { referrerRate }, req.ip);
   res.json(result);
+});
+
+app.patch('/api/users/:userId/bank-info', async (req, res) => {
+  const { bankName, bankAccount } = req.body;
+  if (!bankName || !bankAccount) {
+    return res.status(400).json({ error: 'bankName and bankAccount are required' });
+  }
+  // Generate VietQR URL
+  const qrCode = `https://img.vietqr.io/image/${encodeURIComponent(bankName)}-${encodeURIComponent(bankAccount)}-compact2.jpg`;
+  const ok = await userCache.updateBankInfo(req.params.userId, bankName, bankAccount, qrCode);
+  if (!ok) return res.status(500).json({ error: 'Failed to update bank info' });
+  await auditStore.log(req.admin?.username || 'system', 'UPDATE_BANK_INFO', 'user', req.params.userId, { bankName, bankAccount }, req.ip);
+  res.json({ success: true, qrCode });
 });
 
 // ─── Simulate Order API ─────────────────────────────────

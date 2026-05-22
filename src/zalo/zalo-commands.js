@@ -3,6 +3,7 @@ const ShopeeAPI = require('../shopee-api');
 const convertLogStore = require('../api/convert-log-store');
 const reportGenerator = require('../stats/report-generator');
 const reportStore = require('../stats/report-store');
+const { sendMail } = require('../utils/mailer');
 
 const shopee = new ShopeeAPI();
 
@@ -162,8 +163,19 @@ class ZaloCommands {
       if (msgId && this.messageStore) {
         await this.messageStore.markFailed(msgId, err.message, elapsed);
       }
+      // Send error log to administrator emails via sendMail
+      const emails = process.env.NOTIFY_EMAILS;
+      if (emails) {
+        const subject = `[Lỗi Hệ Thống] Bot Shopee Affiliate - ${message.data?.fromUid || message.data?.uidFrom || 'Unknown'}`;
+        const mailBody = `Thông tin lỗi xử lý tin nhắn:
+- User ID: ${message.data?.fromUid || message.data?.uidFrom || 'Unknown'}
+- Nội dung tin nhắn: ${text || 'N/A'}
+- Lỗi chi tiết: ${err.stack || err.message}
+- Thời gian: ${new Date().toLocaleString('vi-VN')}`;
+        sendMail(emails, subject, mailBody).catch(e => logger.error(`[Mailer] Error notifying error: ${e.message}`));
+      }
       try {
-        await this.actions.sendText(`❌ Lỗi xử lý: ${err.message}`, message.threadId, message.type);
+        await this.actions.sendText(`Hệ thống hiện tại đang quá tải, vui lòng thử lại sau ít phút`, message.threadId, message.type);
       } catch {}
     }
   }
@@ -292,81 +304,120 @@ class ZaloCommands {
     this.actions.fireTyping(message.threadId, message.type);
 
     // Build SubIDs: sub1=buyer, sub2=referrer, sub3=commission rate
-    const referrer = await this.userCache?.getReferrer?.(senderUid);
-    const enrichedSubIds = {
-      sub1: senderUid,
-      sub2: referrer?.referrerId || subIds.subId2 || '',
-      sub3: subIds.subId3 || '',
-      ...subIds,
-    };
+    try {
+      const referrer = await this.userCache?.getReferrer?.(senderUid);
+      const enrichedSubIds = {
+        sub1: senderUid,
+        sub2: referrer?.referrerId || subIds.subId2 || '',
+        sub3: subIds.subId3 || '',
+        ...subIds,
+      };
 
-    const result = await shopee.checkAndConvert(url, enrichedSubIds, productHint);
+      const result = await shopee.checkAndConvert(url, enrichedSubIds, productHint);
 
-    // No commission
-    if (result.noCommission) {
+      // No commission
+      if (result.noCommission) {
+        await convertLogStore.save({
+          userId: senderUid, userName: senderName,
+          originalLink: url, status: 'no_commission',
+          subId1: senderUid, subId2: enrichedSubIds.sub2,
+        });
+        const noCommText = '❌ Sản phẩm không có hoàn tiền.';
+        await this.actions.sendText(noCommText, message.threadId, message.type);
+        return noCommText;
+      }
+
+      // Error
+      if (!result.success) {
+        await convertLogStore.save({
+          userId: senderUid, userName: senderName,
+          originalLink: url, status: 'error', errorMessage: result.error,
+          subId1: senderUid, subId2: enrichedSubIds.sub2,
+        });
+
+        // Send error log to administrator emails via sendMail
+        const emails = process.env.NOTIFY_EMAILS;
+        if (emails) {
+          const subject = `[Lỗi Hệ Thống] Bot Shopee Affiliate - ${senderName || senderUid}`;
+          const mailBody = `Thông tin lỗi convert link Shopee:
+- User: ${senderName} (ID: ${senderUid})
+- Link gốc: ${url}
+- Lỗi chi tiết: ${result.error}
+- Thời gian: ${new Date().toLocaleString('vi-VN')}`;
+          sendMail(emails, subject, mailBody).catch(e => logger.error(`[Mailer] Error notifying error: ${e.message}`));
+        }
+
+        const errText = `Hệ thống hiện tại đang quá tải, vui lòng thử lại sau ít phút`;
+        await this.actions.sendText(errText, message.threadId, message.type);
+        return errText;
+      }
+
+      // Success — save convert log
+      const parsedIds = shopee.parseShopeeLink(result.originalLink || url);
+      await convertLogStore.save({
+        userId: senderUid,
+        userName: senderName,
+        originalLink: url,
+        affiliateLink: result.longLink || result.affiliateLink || '',
+        shortLink: result.shortLink || result.affiliateLink || '',
+        productName: result.productName || '',
+        commissionRate: result.commission || 0,
+        commissionAmount: result.commissionAmount || 0,
+        price: result.price || 0,
+        source: result.source || 'shopee',
+        subId1: senderUid,
+        subId2: enrichedSubIds.sub2,
+        subId3: String(result.commission || ''),
+        status: 'success',
+        itemId: result.itemId || parsedIds?.itemId || '',
+        shopId: result.shopId || parsedIds?.shopId || '',
+      });
+
+      // Build reply with @mention
+      const mentionTag = `@${senderName}`;
+      let commissionText = `${result.commission}%`;
+      if (result.commissionAmount > 0) {
+        commissionText += ` (~${new Intl.NumberFormat('vi-VN').format(result.commissionAmount)}đ)`;
+      }
+      const linkToShow = result.shortLink || result.affiliateLink;
+      const msg = `✅ ${mentionTag}\n🔗 ${linkToShow}\n🏷️ Hoa hồng: ${commissionText}`;
+
+      const msgContent = {
+        msg,
+        mentions: [{
+          pos: 2, // after "✅ "
+          uid: senderUid,
+          len: mentionTag.length,
+        }],
+      };
+
+      await this.actions.sendStyled(msgContent, message.threadId, message.type);
+      return msg;
+    } catch (err) {
+      logger.error('ZaloCommands', `Error converting link for ${senderUid}: ${err.message}`);
+      
       await convertLogStore.save({
         userId: senderUid, userName: senderName,
-        originalLink: url, status: 'no_commission',
-        subId1: senderUid, subId2: enrichedSubIds.sub2,
-      });
-      const noCommText = '❌ Sản phẩm không có hoàn tiền.';
-      await this.actions.sendText(noCommText, message.threadId, message.type);
-      return noCommText;
-    }
+        originalLink: url, status: 'error', errorMessage: err.message,
+        subId1: senderUid,
+      }).catch(e => logger.error(`[DB] Error saving error log: ${e.message}`));
 
-    // Error
-    if (!result.success) {
-      await convertLogStore.save({
-        userId: senderUid, userName: senderName,
-        originalLink: url, status: 'error', errorMessage: result.error,
-        subId1: senderUid, subId2: enrichedSubIds.sub2,
-      });
-      const errText = `❌ Lỗi: ${result.error}`;
+      // Send error log to administrator emails via sendMail
+      const emails = process.env.NOTIFY_EMAILS;
+      if (emails) {
+        const subject = `[Lỗi Hệ Thống] Bot Shopee Affiliate - ${senderName || senderUid}`;
+        const mailBody = `Thông tin lỗi convert link Shopee (Exception):
+- User: ${senderName} (ID: ${senderUid})
+- Link gốc: ${url}
+- Lỗi chi tiết: ${err.stack || err.message}
+- Thời gian: ${new Date().toLocaleString('vi-VN')}`;
+        sendMail(emails, subject, mailBody).catch(e => logger.error(`[Mailer] Error notifying error: ${e.message}`));
+      }
+
+      const errText = `Hệ thống hiện tại đang quá tải, vui lòng thử lại sau ít phút`;
       await this.actions.sendText(errText, message.threadId, message.type);
       return errText;
     }
-
-    // Success — save convert log
-    const parsedIds = shopee.parseShopeeLink(result.originalLink || url);
-    await convertLogStore.save({
-      userId: senderUid,
-      userName: senderName,
-      originalLink: url,
-      affiliateLink: result.longLink || result.affiliateLink || '',
-      shortLink: result.shortLink || result.affiliateLink || '',
-      productName: result.productName || '',
-      commissionRate: result.commission || 0,
-      commissionAmount: result.commissionAmount || 0,
-      price: result.price || 0,
-      source: result.source || 'shopee',
-      subId1: senderUid,
-      subId2: enrichedSubIds.sub2,
-      subId3: String(result.commission || ''),
-      status: 'success',
-      itemId: result.itemId || parsedIds?.itemId || '',
-      shopId: result.shopId || parsedIds?.shopId || '',
-    });
-
-    // Build reply with @mention
-    const mentionTag = `@${senderName}`;
-    let commissionText = `${result.commission}%`;
-    if (result.commissionAmount > 0) {
-      commissionText += ` (~${new Intl.NumberFormat('vi-VN').format(result.commissionAmount)}đ)`;
-    }
-    const linkToShow = result.shortLink || result.affiliateLink;
-    const msg = `✅ ${mentionTag}\n🔗 ${linkToShow}\n🏷️ Hoa hồng: ${commissionText}`;
-
-    const msgContent = {
-      msg,
-      mentions: [{
-        pos: 2, // after "✅ "
-        uid: senderUid,
-        len: mentionTag.length,
-      }],
-    };
-
-    await this.actions.sendStyled(msgContent, message.threadId, message.type);
-    return msg;
   }
 }
 

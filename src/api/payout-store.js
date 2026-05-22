@@ -45,7 +45,8 @@ const REFERRER_ORDERS_BY_USER_SQL = `
 const USERS_WITH_ORDERS_SQL = `
   SELECT DISTINCT u.user_id, u.display_name, u.zalo_name, u.avatar,
          u.cashback_buyer_rate, u.cashback_referrer_rate,
-         u.referrer_id, u.referrer_name
+         u.referrer_id, u.referrer_name,
+         u.bank_name, u.bank_account
   FROM users u
   INNER JOIN orders o ON o.sub_id1 = u.user_id
   INNER JOIN convert_logs cl ON (
@@ -141,6 +142,8 @@ const payoutStore = {
           userId: uid,
           displayName: user.display_name || user.zalo_name || uid,
           avatar: user.avatar || '',
+          bankName: user.bank_name || '',
+          bankAccount: user.bank_account || '',
           referrerId: user.referrer_id || '',
           referrerName: user.referrer_name || '',
           hasReferrer,
@@ -175,6 +178,7 @@ const payoutStore = {
         } else {
           userMap[r.userId] = {
             userId: r.userId, displayName: r.displayName, avatar: r.avatar,
+            bankName: r.bankName || '', bankAccount: r.bankAccount || '',
             referrerId: '', referrerName: '', hasReferrer: false,
             buyerRate: 0, referrerRate: 0, adminRate: 0,
             totalNetCommission: 0, completedNetCommission: 0, pendingNetCommission: 0,
@@ -243,13 +247,15 @@ const payoutStore = {
       // Do a separate lookup.
       let refUser = userMap[refId];
       if (!refUser) {
-        refUser = await db.get('SELECT user_id, display_name, zalo_name, avatar FROM users WHERE user_id = ?', [refId]);
+        refUser = await db.get('SELECT user_id, display_name, zalo_name, avatar, bank_name, bank_account FROM users WHERE user_id = ?', [refId]);
       }
 
       summaries.push({
         userId: refId,
         displayName: refUser?.display_name || refUser?.zalo_name || refId,
         avatar: refUser?.avatar || '',
+        bankName: refUser?.bank_name || '',
+        bankAccount: refUser?.bank_account || '',
         totalReferrerCashback: totalRef,
         completedReferrerCashback: completedRef,
         totalPaid: paidAsReferrer,
@@ -319,7 +325,7 @@ const payoutStore = {
       if (buyerIds.length > 0) {
         const placeholders = buyerIds.map((_, i) => `$${i + 1}`).join(',');
         const buyerRows = await db.all(
-          `SELECT user_id, display_name, cashback_referrer_rate FROM users WHERE user_id IN (${placeholders})`,
+          `SELECT user_id, display_name, avatar, cashback_referrer_rate FROM users WHERE user_id IN (${placeholders})`,
           buyerIds
         );
         for (const b of buyerRows) buyerMap[b.user_id] = b;
@@ -350,6 +356,7 @@ const payoutStore = {
           referrerCashback: Math.round(nc * refRate / 100),
           buyerName: buyerDisplayName,
           buyerId: o.sub_id1,
+          buyerAvatar: buyerUser?.avatar || '',
           type: 'referrer',
         };
 

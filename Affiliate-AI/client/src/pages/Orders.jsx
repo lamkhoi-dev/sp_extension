@@ -2,10 +2,11 @@ import { useState, useRef, useMemo } from 'react';
 import {
   RefreshCw, ShoppingCart, CheckCircle, DollarSign, Percent,
   Download, Upload, AlertCircle, ChevronDown, ChevronRight,
-  Search, X, CalendarDays,
+  Search, X,
 } from 'lucide-react';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import DateRangePicker from '../components/ui/DateRangePicker';
 import { useOrders, formatVND, formatShortVND, useProductImages } from '../hooks/useApi';
 
 // ─── Status Config ──────────────────────────────────────
@@ -78,9 +79,9 @@ const inputCls = 'w-full px-2.5 py-1.5 text-[13px] rounded border border-slate-2
 const selectCls = `${inputCls} appearance-none cursor-pointer pr-7`;
 const labelCls = 'text-[12px] font-medium text-slate-500 dark:text-slate-400 mb-1 block whitespace-nowrap';
 
-function FilterSelect({ label, value, onChange, options }) {
+function FilterSelect({ label, value, onChange, options, className = '' }) {
   return (
-    <div>
+    <div className={`min-w-[160px] ${className}`}>
       <label className={labelCls}>{label}</label>
       <div className="relative">
         <select value={value} onChange={e => onChange(e.target.value)} className={selectCls}>
@@ -95,9 +96,9 @@ function FilterSelect({ label, value, onChange, options }) {
   );
 }
 
-function FilterInput({ label, value, onChange, placeholder }) {
+function FilterInput({ label, value, onChange, placeholder, className = '' }) {
   return (
-    <div>
+    <div className={`min-w-[160px] ${className}`}>
       <label className={labelCls}>{label}</label>
       <input
         type="text"
@@ -123,6 +124,15 @@ export default function OrdersPage() {
 
   const updateFilter = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  const applyDatePreset = (days) => {
+    const now = new Date();
+    const from = new Date();
+    from.setDate(now.getDate() - days + 1);
+    const toStr = now.toISOString().slice(0, 10);
+    const fromStr = from.toISOString().slice(0, 10);
+    setFilters(prev => ({ ...prev, dateFrom: fromStr, dateTo: toStr }));
   };
 
   const toggleExpand = (key) => {
@@ -207,38 +217,21 @@ export default function OrdersPage() {
 
       {/* ═══ Shopee-style Filter Panel ═══ */}
       <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4" onKeyDown={handleKeyDown}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-3">
-          {/* Row 1 */}
-          <FilterSelect
-            label="Loại thời gian"
-            value={filters.timeField}
-            onChange={v => updateFilter('timeField', v)}
-            options={TIME_FIELD_OPTIONS}
-          />
-          <div>
-            <label className={labelCls}>Khoảng thời gian</label>
-            <div className="flex items-center gap-1.5">
-              <div className="relative flex-1">
-                <input
-                  type="date"
-                  value={filters.dateFrom}
-                  onChange={e => updateFilter('dateFrom', e.target.value)}
-                  className={`${inputCls} pr-2`}
-                  placeholder="Ngày bắt đầu"
-                />
-              </div>
-              <span className="text-slate-400 text-xs">~</span>
-              <div className="relative flex-1">
-                <input
-                  type="date"
-                  value={filters.dateTo}
-                  onChange={e => updateFilter('dateTo', e.target.value)}
-                  className={`${inputCls} pr-2`}
-                  placeholder="Ngày kết thúc"
-                />
-              </div>
-            </div>
+
+        {/* Row 1: Time field + Date range + Status */}
+        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-3">
+          <div className="flex flex-col gap-1">
+            <label className={labelCls}>Thời Gian Đặt Hàng</label>
+            <DateRangePicker
+              from={filters.dateFrom}
+              to={filters.dateTo}
+              onChange={({ from, to }) => setFilters(prev => ({ ...prev, dateFrom: from, dateTo: to }))}
+              timeField={filters.timeField}
+              timeOptions={TIME_FIELD_OPTIONS}
+              onTimeFieldChange={v => updateFilter('timeField', v)}
+            />
           </div>
+
           <FilterSelect
             label="Trạng thái đơn hàng"
             value={filters.status}
@@ -246,13 +239,16 @@ export default function OrdersPage() {
             options={['Tất cả', ...STATUS_OPTIONS.slice(1)]}
           />
 
-          {/* Row 2 */}
           <FilterInput
-            label="Order ID"
+            label="Order id"
             value={filters.orderId}
             onChange={v => updateFilter('orderId', v)}
             placeholder="Tìm kiếm ID đơn hàng"
           />
+        </div>
+
+        {/* Row 2: Shop name + Shop type + Product type */}
+        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-3">
           <FilterInput
             label="Tên Shop"
             value={filters.shopName}
@@ -265,44 +261,45 @@ export default function OrdersPage() {
             onChange={v => updateFilter('shopType', v)}
             options={['Tất cả', ...(filterOptions.shopTypes || [])]}
           />
-
-          {/* Row 3 */}
-          <FilterInput
-            label="Tên sản phẩm"
-            value={filters.productName}
-            onChange={v => updateFilter('productName', v)}
-            placeholder="Tìm kiếm theo tên SP"
-          />
           <FilterSelect
-            label="Loại Hoa hồng"
+            label="Loại sản phẩm"
             value={filters.commissionType}
             onChange={v => updateFilter('commissionType', v)}
             options={['Tất cả', ...(filterOptions.commissionTypes || [])]}
           />
+        </div>
+
+        {/* Row 3: Product name + Category + Actions */}
+        <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
+          <FilterInput
+            label="Tên sản phẩm"
+            value={filters.productName}
+            onChange={v => updateFilter('productName', v)}
+            placeholder="Tìm kiếm theo tên sản phẩm"
+          />
           <FilterSelect
-            label="Kênh"
+            label="Ngành hàng toàn cầu"
             value={filters.channel}
             onChange={v => updateFilter('channel', v)}
             options={['Tất cả', ...(filterOptions.channels || [])]}
           />
-        </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/50">
-          <button
-            onClick={resetFilters}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-md border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-            Xóa bộ lọc
-          </button>
-          <button
-            onClick={applyFilters}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 text-[13px] font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-md shadow-sm transition-colors"
-          >
-            <Search className="w-3.5 h-3.5" />
-            Tìm kiếm
-          </button>
+          {/* Action buttons aligned to bottom-right */}
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={resetFilters}
+              className="inline-flex items-center gap-1.5 px-3 py-[7px] text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+            >
+              Thiết lập lại
+            </button>
+            <button
+              onClick={applyFilters}
+              className="inline-flex items-center gap-1.5 px-5 py-[7px] text-[13px] font-semibold text-white bg-orange-500 hover:bg-orange-600 rounded-lg shadow-sm transition-colors"
+            >
+              <Search className="w-3.5 h-3.5" />
+              Tìm kiếm
+            </button>
+          </div>
         </div>
       </div>
 

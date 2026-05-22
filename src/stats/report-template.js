@@ -31,8 +31,8 @@ function statusBadge(status) {
 function renderReport(data) {
   const { user, summary, links, matchedOrders, payouts, generatedAt, expiresAt } = data;
 
-  const linksHtml = links.map(l => `
-    <tr>
+  const linksHtml = links.map((l, i) => `
+    <tr data-row-links="${i}" style="display:none">
       <td>
         <a href="${l.short_link || l.affiliate_link || l.original_link}" target="_blank" class="link-primary" title="${l.product_name || l.original_link}">
           <span class="truncate">${l.product_name || l.original_link}</span>
@@ -43,8 +43,8 @@ function renderReport(data) {
     </tr>
   `).join('');
 
-  const ordersHtml = matchedOrders.map(o => `
-    <tr>
+  const ordersHtml = matchedOrders.map((o, i) => `
+    <tr data-row-orders="${i}" style="display:none">
       <td>
         <div class="item-name truncate">${(o.item_name || '')}</div>
         <div class="item-meta">Mã ĐH: ${o.order_id?.slice(-8) || '--'} • Shop: ${o.shop_name || '--'}</div>
@@ -55,8 +55,8 @@ function renderReport(data) {
     </tr>
   `).join('');
 
-  const payoutsHtml = payouts.map(p => `
-    <tr>
+  const payoutsHtml = payouts.map((p, i) => `
+    <tr data-row-payouts="${i}" style="display:none">
       <td>${formatDate(p.paid_at)}</td>
       <td class="text-right font-semibold" style="color: #34d399">+${formatVND(p.amount)}</td>
       <td>
@@ -400,6 +400,29 @@ function renderReport(data) {
     }
     .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
 
+    /* Pagination */
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      border-top: 1px solid var(--glass-border);
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .pagination-info { font-size: 12px; color: var(--text-muted); }
+    .pagination-controls { display: flex; align-items: center; gap: 6px; }
+    .page-btn {
+      min-width: 32px; height: 32px; padding: 0 8px;
+      border-radius: 8px; border: 1px solid var(--glass-border);
+      background: transparent; color: var(--text-muted);
+      font-size: 12px; cursor: pointer; transition: background 0.2s, color 0.2s;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .page-btn:hover:not(:disabled) { background: rgba(255,255,255,0.06); color: var(--text-main); }
+    .page-btn:disabled { opacity: 0.35; cursor: default; }
+    .page-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; font-weight: 600; }
+
     /* Footer */
     .footer {
       text-align: center;
@@ -493,7 +516,7 @@ function renderReport(data) {
         </div>
         ${links.length > 0 ? `
         <div class="table-container">
-          <table>
+          <table id="tbl-links">
             <thead>
               <tr>
                 <th>Sản phẩm / Link</th>
@@ -503,6 +526,10 @@ function renderReport(data) {
             </thead>
             <tbody>${linksHtml}</tbody>
           </table>
+        </div>
+        <div class="pagination-bar" id="pg-links">
+          <span class="pagination-info" id="pg-links-info"></span>
+          <div class="pagination-controls" id="pg-links-ctrl"></div>
         </div>` : `
         <div class="empty-state">
           <div class="empty-icon">🔗</div>
@@ -518,7 +545,7 @@ function renderReport(data) {
         </div>
         ${matchedOrders.length > 0 ? `
         <div class="table-container">
-          <table>
+          <table id="tbl-orders">
             <thead>
               <tr>
                 <th>Thông tin đơn hàng</th>
@@ -529,6 +556,10 @@ function renderReport(data) {
             </thead>
             <tbody>${ordersHtml}</tbody>
           </table>
+        </div>
+        <div class="pagination-bar" id="pg-orders">
+          <span class="pagination-info" id="pg-orders-info"></span>
+          <div class="pagination-controls" id="pg-orders-ctrl"></div>
         </div>` : `
         <div class="empty-state">
           <div class="empty-icon">🛒</div>
@@ -544,7 +575,7 @@ function renderReport(data) {
         </div>
         ${payouts.length > 0 ? `
         <div class="table-container">
-          <table>
+          <table id="tbl-payouts">
             <thead>
               <tr>
                 <th>Ngày nhận</th>
@@ -555,6 +586,10 @@ function renderReport(data) {
             </thead>
             <tbody>${payoutsHtml}</tbody>
           </table>
+        </div>
+        <div class="pagination-bar" id="pg-payouts">
+          <span class="pagination-info" id="pg-payouts-info"></span>
+          <div class="pagination-controls" id="pg-payouts-ctrl"></div>
         </div>` : `
         <div class="empty-state">
           <div class="empty-icon">💳</div>
@@ -573,6 +608,66 @@ function renderReport(data) {
       </footer>
     </main>
   </div>
+
+  <script>
+    function paginateTable(attrName, infoId, ctrlId, pageSize) {
+      const rows = Array.from(document.querySelectorAll('[data-row-' + attrName + ']'));
+      const total = rows.length;
+      if (total === 0) return;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      let cur = 1;
+
+      function render(page) {
+        cur = page;
+        const start = (page - 1) * pageSize;
+        rows.forEach((r, i) => { r.style.display = (i >= start && i < start + pageSize) ? '' : 'none'; });
+        // info
+        const infoEl = document.getElementById(infoId);
+        if (infoEl) infoEl.textContent = (total === 0 ? '0' : start + 1) + '–' + Math.min(start + pageSize, total) + ' / ' + total + ' bản ghi';
+        // controls
+        const ctrlEl = document.getElementById(ctrlId);
+        if (!ctrlEl) return;
+        ctrlEl.innerHTML = '';
+        // prev
+        const prev = document.createElement('button');
+        prev.className = 'page-btn'; prev.textContent = '‹'; prev.disabled = page === 1;
+        prev.onclick = () => render(cur - 1);
+        ctrlEl.appendChild(prev);
+        // page buttons
+        const pages = [];
+        for (let p = 1; p <= totalPages; p++) {
+          if (p === 1 || p === totalPages || Math.abs(p - page) <= 1) pages.push(p);
+        }
+        let last = 0;
+        pages.forEach(p => {
+          if (last && p - last > 1) {
+            const dots = document.createElement('span');
+            dots.textContent = '...'; dots.style.cssText = 'color:var(--text-muted);font-size:12px;padding:0 4px';
+            ctrlEl.appendChild(dots);
+          }
+          const btn = document.createElement('button');
+          btn.className = 'page-btn' + (p === page ? ' active' : '');
+          btn.textContent = p;
+          btn.onclick = () => render(p);
+          ctrlEl.appendChild(btn);
+          last = p;
+        });
+        // next
+        const next = document.createElement('button');
+        next.className = 'page-btn'; next.textContent = '›'; next.disabled = page === totalPages;
+        next.onclick = () => render(cur + 1);
+        ctrlEl.appendChild(next);
+      }
+
+      render(1);
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      paginateTable('links',   'pg-links-info',   'pg-links-ctrl',   10);
+      paginateTable('orders',  'pg-orders-info',  'pg-orders-ctrl',  10);
+      paginateTable('payouts', 'pg-payouts-info', 'pg-payouts-ctrl', 10);
+    });
+  </script>
 </body>
 </html>`;
 }

@@ -33,13 +33,13 @@ const reportDashboardStore = {
         ${whereClause}
       `, params);
 
-      const totalOrders = summaryRow.totalOrders || summaryRow.totalorders || 0;
-      const uniqueBuyers = buyersRow.uniqueBuyers || buyersRow.uniquebuyers || 0;
+      const totalOrders = Number(summaryRow.totalOrders || summaryRow.totalorders || 0);
+      const uniqueBuyers = Number(buyersRow.uniqueBuyers || buyersRow.uniquebuyers || 0);
 
       const summary = {
-        totalRevenue: summaryRow.totalRevenue || summaryRow.totalrevenue || 0,
-        receivedCommission: summaryRow.receivedCommission || summaryRow.receivedcommission || 0,
-        totalOrderValue: summaryRow.totalOrderValue || summaryRow.totalordervalue || 0,
+        totalRevenue: Number(summaryRow.totalRevenue || summaryRow.totalrevenue || 0),
+        receivedCommission: Number(summaryRow.receivedCommission || summaryRow.receivedcommission || 0),
+        totalOrderValue: Number(summaryRow.totalOrderValue || summaryRow.totalordervalue || 0),
         totalOrders: totalOrders,
         conversionRate: uniqueBuyers ? ((totalOrders / uniqueBuyers) * 100).toFixed(2) : 0, 
         // 👆 Just an example proxy metric. You can adjust this if `convert_logs` provides total clicks.
@@ -91,10 +91,18 @@ const reportDashboardStore = {
         LIMIT 10
       `, params);
 
+      const formattedTopProducts = topProducts.map(p => ({
+        id: p.id,
+        name: p.name,
+        sold: Number(p.sold || 0),
+        revenue: Number(p.revenue || 0),
+        commission: Number(p.commission || 0)
+      }));
+
       return {
         summary,
         chartData,
-        topProducts
+        topProducts: formattedTopProducts
       };
 
     } catch (error) {
@@ -109,7 +117,7 @@ function fillMissingDates(dbData, days, startDate) {
   const dataMap = {};
   for (const row of dbData) {
     if (row.date) {
-      dataMap[row.date] = row.commission || 0;
+      dataMap[row.date] = Number(row.commission) || 0;
     }
   }
 
@@ -121,10 +129,10 @@ function fillMissingDates(dbData, days, startDate) {
     // Format YYYY-MM-DD
     const isoStr = d.toISOString().split('T')[0];
     
-    // Format DD/MM for chart display
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const displayDate = `${dd}/${mm}`;
+    // Format DD/MM for chart display using the exact parts from the UTC isoStr 
+    // to match the date string produced by PostgreSQL's SUBSTRING
+    const [, month, day] = isoStr.split('-');
+    const displayDate = `${day}/${month}`;
 
     result.push({
       date: displayDate,

@@ -57,14 +57,14 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
         <KPICard
           title="Tổng hoa hồng"
-          value={formatShortVND(stats.orders?.totalCommission || 0)}
+          value={formatShortVND(stats.orders?.totalCommissionNew || 0)}
           icon={DollarSign}
           iconBg="bg-gradient-to-br from-emerald-500 to-emerald-600"
           delay={0}
         />
         <KPICard
-          title="HH mới (ước tính)"
-          value={formatShortVND(stats.orders?.totalCommissionNew || 0)}
+          title="Hoa hồng User"
+          value={formatShortVND(stats.converts?.totalCommission || 0)}
           icon={Percent}
           iconBg="bg-gradient-to-br from-amber-500 to-orange-500"
           delay={0.1}
