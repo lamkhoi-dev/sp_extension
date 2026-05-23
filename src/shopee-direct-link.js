@@ -44,7 +44,19 @@ class ShopeeDirectLink {
     const genericPathMatch = url.match(/shopee\.vn\/[^/]+\/(\d{5,})\/(\d{5,})/);
     if (genericPathMatch) return { shopId: genericPathMatch[1], itemId: genericPathMatch[2] };
 
+    // Format: /{shop_slug}/{itemId} — slug may contain letters (e.g. /ecoshop6868/24189784914)
+    // This is what s.shopee.vn short links resolve to for shop-branded URLs
+    const shopSlugMatch = url.match(/shopee\.vn\/[^/?\s]+\/(\d{8,})/);
+    if (shopSlugMatch) return { itemId: shopSlugMatch[1] };
+
+    // Fallback: item_id in query string (e.g. ?item_id=123)
+    try {
+      const itemIdParam = new URL(url).searchParams.get('item_id');
+      if (itemIdParam && /^\d+$/.test(itemIdParam)) return { itemId: itemIdParam };
+    } catch {}
+
     return null;
+
   }
 
   /**

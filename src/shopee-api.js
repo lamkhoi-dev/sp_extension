@@ -247,6 +247,12 @@ class ShopeeAPI {
       return { shopId: genericPathMatch[1], itemId: genericPathMatch[2], type: 'generic_path' };
     }
 
+    // Format 7: https://shopee.vn/{shop_slug}/{itemId} (slug with letters, e.g. /ecoshop6868/24189784914)
+    const shopSlugMatch = url.match(/shopee\.vn\/[^/?\\s]+\/(\d{8,})/);
+    if (shopSlugMatch) {
+      return { itemId: shopSlugMatch[1], type: 'shop_slug' };
+    }
+
     // Generic: any shopee.vn link (for Custom Link support)
     if (url.includes('shopee.vn') || url.includes('shp.ee')) {
       return { type: 'generic' };
