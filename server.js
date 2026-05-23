@@ -27,6 +27,8 @@ const reportStore = require('./src/stats/report-store');
 const { renderReport } = require('./src/stats/report-template');
 const healthMonitor = require('./src/cron/health-monitor');
 const linkRedirectStore = require('./src/api/link-redirect-store');
+const ShopeeAPI = require('./src/shopee-api');
+
 
 const app = express();
 const server = http.createServer(app);
@@ -59,9 +61,9 @@ app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// CORS for Dashboard dev server
 app.use((req, res, next) => {
   const origin = req.headers.origin || '*';
+  // Allow ngrok and any origin for CORS (demo page shareable via ngrok)
   res.header('Access-Control-Allow-Origin', origin);
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
@@ -229,6 +231,75 @@ app.get('/go/:token', async (req, res) => {
   }
 });
 
+
+// ─── Public Shopee Extract API (no auth — used by demo.html) ─────────────
+
+// Helper: resolve any Shopee URL to a canonical product URL before sending to extension
+async function resolveShopeeUrl(url) {
+  if (!url) return url;
+  // Already a full product URL with -i. pattern → no need to resolve
+  if (/shopee\.vn\/.+-i\.\d+\.\d+/.test(url)) return url;
+  // an_redir → extract origin_link
+  if (url.includes('an_redir')) {
+    try {
+      const u = new URL(url);
+      const origin = u.searchParams.get('origin_link');
+      if (origin) return decodeURIComponent(origin);
+    } catch {}
+  }
+  // Short link → follow redirect
+  if (url.includes('s.shopee.vn/') || url.includes('vn.shp.ee/')) {
+    try {
+      const resp = await fetch(url, {
+        method: 'GET', redirect: 'follow',
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (resp.url && resp.url.includes('shopee.vn')) return resp.url;
+    } catch (e) {
+      logger.warn('Server', `Short link resolve failed: ${e.message}`);
+    }
+  }
+  return url;
+}
+
+app.post('/api/shopee/extract', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  try {
+    const api = new ShopeeAPI();
+    const result = await api.checkAndConvert(url, { sub1: 'sim', sub2: 'sim', sub3: 'sim' });
+    if (!result.success) return res.json({ success: false, error: result.error || 'Không lấy được thông tin' });
+    res.json({
+      success: true,
+      productName: result.productName || '',
+      price: result.price || 0,
+      commissionRate: result.commission || 0,
+      itemId: result.itemId || '',
+      shopId: result.shopId || '',
+    });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/shopee/extract-full', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  try {
+    // Resolve short links & shop-slug URLs before passing to extension
+    const resolvedUrl = await resolveShopeeUrl(url);
+    if (resolvedUrl !== url) {
+      logger.info('Server', `extract-full resolved: ${url.slice(0, 60)} → ${resolvedUrl.slice(0, 60)}`);
+    }
+    const api = new ShopeeAPI();
+    const result = await api.extractFull(resolvedUrl);
+    if (!result.success) return res.json({ success: false, error: result.error || 'Không lấy được thông tin chi tiết' });
+    res.json(result);
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
 
 app.post('/api/auth/login', async (req, res) => {
   try {
@@ -635,40 +706,7 @@ app.get('/api/users/select', async (req, res) => {
   res.json(users);
 });
 
-app.post('/api/shopee/extract', async (req, res) => {
-  const { url } = req.body;
-  if (!url) return res.status(400).json({ error: 'url required' });
-  try {
-    const ShopeeAPI = require('./src/shopee-api');
-    const api = new ShopeeAPI();
-    const result = await api.checkAndConvert(url, { sub1: 'sim', sub2: 'sim', sub3: 'sim' });
-    if (!result.success) return res.json({ success: false, error: result.error || 'Không lấy được thông tin' });
-    res.json({
-      success: true,
-      productName: result.productName || '',
-      price: result.price || 0,
-      commissionRate: result.commission || 0,
-      itemId: result.itemId || '',
-      shopId: result.shopId || '',
-    });
-  } catch (err) {
-    res.json({ success: false, error: err.message });
-  }
-});
 
-app.post('/api/shopee/extract-full', async (req, res) => {
-  const { url } = req.body;
-  if (!url) return res.status(400).json({ error: 'url required' });
-  try {
-    const ShopeeAPI = require('./src/shopee-api');
-    const api = new ShopeeAPI();
-    const result = await api.extractFull(url);
-    if (!result.success) return res.json({ success: false, error: result.error || 'Không lấy được thông tin chi tiết' });
-    res.json(result);
-  } catch (err) {
-    res.json({ success: false, error: err.message });
-  }
-});
 
 app.post('/api/orders/simulate', async (req, res) => {
   const { itemId, itemName, shopId, shopName, price, quantity, commissionRate, status, subId1, subId2, orderTime, completeTime } = req.body;
@@ -771,7 +809,7 @@ app.post('/api/orders/import-csv', async (req, res) => {
 });
 
 // Expose extension router globally for shopee-api
-const ShopeeAPI = require('./src/shopee-api');
+// sendToExtension already wired to ShopeeAPI above
 ShopeeAPI.sendToExtension = sendToExtension;
 
 // WebSocket handling

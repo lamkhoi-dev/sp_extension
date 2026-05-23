@@ -226,6 +226,24 @@ async function executeExtractFull(tabId, payload, reqId) {
     let productInfo = parseProductInfo(url);
     console.log('[BG] ExtractFull: Parsed product info:', JSON.stringify(productInfo));
 
+    // If shopId is missing but itemId exists, try to resolve shopId via addlivetag
+    if (productInfo.itemId && !productInfo.shopId) {
+      console.log('[BG] ExtractFull: shopId missing, attempting lookup via addlivetag for itemId:', productInfo.itemId);
+      try {
+        const resp = await fetch(
+          `https://data.addlivetag.com/product-data/product-data.php?item_id=${productInfo.itemId}`,
+          { method: 'GET', signal: AbortSignal.timeout(8000) }
+        );
+        const data = await resp.json();
+        if (data.status === 'success' && data.productInfo?.shopId) {
+          productInfo.shopId = String(data.productInfo.shopId);
+          console.log('[BG] ExtractFull: Resolved shopId from addlivetag:', productInfo.shopId);
+        }
+      } catch (e) {
+        console.warn('[BG] ExtractFull: addlivetag shopId lookup failed:', e.message);
+      }
+    }
+
     if (!productInfo.itemId || !productInfo.shopId) {
       sendResult(reqId, { success: false, error: 'Không thể phân tích shopId và itemId từ link.' });
       return;
@@ -926,9 +944,16 @@ function parseProductInfo(url) {
   }
 
   // Format 5: shopee.vn/{word}/{shopId}/{itemId} (resolved short links → e.g. /opaanlp/123/456)
-  const resolvedMatch = url.match(/shopee\.vn\/([a-zA-Z]+)\/(\d+)\/(\d+)/);
+  const resolvedMatch = url.match(/shopee\.vn\/([a-zA-Z0-9]+)\/(\d+)\/(\d+)/);
   if (resolvedMatch && resolvedMatch[1] !== 'product') {
     return { searchKeyword: null, shopId: resolvedMatch[2], itemId: resolvedMatch[3] };
+  }
+
+  // Format 6: shopee.vn/{shop_slug}/{itemId} (shop-branded URL, e.g. /ecoshop6868/24189784914)
+  // Slug contains letters AND digits, itemId must be 8+ digits
+  const shopSlugMatch = url.match(/shopee\.vn\/([a-zA-Z0-9][a-zA-Z0-9_-]*)\/(\d{8,})/);
+  if (shopSlugMatch && shopSlugMatch[1] !== 'product' && shopSlugMatch[1] !== 'universal-link') {
+    return { searchKeyword: null, shopId: null, itemId: shopSlugMatch[2] };
   }
 
   // Fallback: try to extract any product-like slug from shopee.vn

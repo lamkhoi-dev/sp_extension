@@ -174,6 +174,10 @@ class ShopeeAPI {
     }
   }
 
+  /**
+   * Extract full product data via extension (for demo page)
+   * Requires extension to be connected.
+   */
   async extractFull(originalLink) {
     if (!ShopeeAPI.sendToExtension) {
       throw new Error('Extension chưa kết nối. Vui lòng mở Chrome có cài đặt Extension.');
@@ -186,24 +190,18 @@ class ShopeeAPI {
       const reqId = ShopeeAPI.genReqId();
       const result = await ShopeeAPI.sendToExtension(reqId, {
         action: 'extract_full',
-        payload: {
-          url: originalLink,
-        },
+        payload: { url: originalLink },
       });
 
       const duration = Date.now() - startTime;
-      
+
       if (!result.success) {
         logger.warn('ShopeeAPI', `[extract_full] Failed (${duration}ms): ${result.error}`);
         return { success: false, error: result.error };
       }
 
       logger.info('ShopeeAPI', `[extract_full] ✅ Extracted full data in ${duration}ms`);
-      return {
-        success: true,
-        data: result.data,
-        originalLink,
-      };
+      return { success: true, data: result.data, originalLink };
     } catch (err) {
       logger.error('ShopeeAPI', `[extract_full] Error: ${err.message}`);
       return { success: false, error: err.message };
@@ -245,12 +243,6 @@ class ShopeeAPI {
     const genericPathMatch = url.match(/shopee\.vn\/[^/]+\/(\d{5,})\/(\d{5,})/);
     if (genericPathMatch) {
       return { shopId: genericPathMatch[1], itemId: genericPathMatch[2], type: 'generic_path' };
-    }
-
-    // Format 7: https://shopee.vn/{shop_slug}/{itemId} (slug with letters, e.g. /ecoshop6868/24189784914)
-    const shopSlugMatch = url.match(/shopee\.vn\/[^/?\\s]+\/(\d{8,})/);
-    if (shopSlugMatch) {
-      return { itemId: shopSlugMatch[1], type: 'shop_slug' };
     }
 
     // Generic: any shopee.vn link (for Custom Link support)

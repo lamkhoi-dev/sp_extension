@@ -1,10 +1,1160 @@
-importScripts("idb.js");importScripts("server-config.js");importScripts("user-manager.js");importScripts("notification-manager.js");var te="pollShopeeEvery5m",re="syncShopeeData",ne="checkNotifications",V="notified_date",z="loginRequired",J="yesterdayHasData",Z=!1,x=!1,X=!1;async function ae(){let{lastSyncTime:t}=await chrome.storage.local.get("lastSyncTime");if(!t)return!0;let o=3*60*60*1e3,n=Date.now()-t;if(n>=o)return console.log(`shouldAutoSync: \u0110\xE3 qua ${Math.floor(n/(60*60*1e3))} gi\u1EDD, cho ph\xE9p sync`),!0;{let e=Math.ceil((o-n)/6e4);return console.log(`shouldAutoSync: Ch\u01B0a \u0111\u1EE7 3 gi\u1EDD, c\xF2n ${e} ph\xFAt n\u1EEFa`),!1}}chrome.runtime.onInstalled.addListener(async t=>{if(chrome.alarms.create(te,{periodInMinutes:5}),chrome.alarms.create(re,{periodInMinutes:360}),chrome.alarms.create(ne,{periodInMinutes:10}),chrome.contextMenus.create({id:"calculateCommission",title:"T\xEDnh to\xE1n hoa h\u1ED3ng trang hi\u1EC7n t\u1EA1i",contexts:["page"],documentUrlPatterns:["https://affiliate.shopee.vn/*"]}),chrome.contextMenus.create({id:"openOrderHistory",title:"M\u1EDF l\u1ECBch s\u1EED \u0111\u01A1n h\xE0ng",contexts:["page"],documentUrlPatterns:["*://*.shopee.vn/*"]}),chrome.contextMenus.create({id:"viewProductDetails",title:"Xem chi ti\u1EBFt s\u1EA3n ph\u1EA9m",contexts:["page"],documentUrlPatterns:["*://*.shopee.vn/*"]}),t.reason==="install"){try{let o=await userManager.getOrCreateUserId();console.log("Extension installed, User ID:",o),await notificationManager.createInternalNotification("Ch\xE0o m\u1EEBng!","C\u1EA3m \u01A1n b\u1EA1n \u0111\xE3 c\xE0i \u0111\u1EB7t ti\u1EC7n \xEDch. Ch\xFAc b\u1EA1n s\u1EED d\u1EE5ng hi\u1EC7u qu\u1EA3!",{url:"https://addlivetag.com/extension/thank-you.html"})}catch(o){console.error("Error in onInstalled handler:",o)}chrome.tabs.create({url:"https://addlivetag.com/extension/thank-you.html"})}setupNotificationClickHandler(),setTimeout(async()=>{await ae()?B():console.log("onInstalled: B\u1ECF qua auto sync v\xEC ch\u01B0a \u0111\u1EE7 3 gi\u1EDD k\u1EC3 t\u1EEB l\u1EA7n sync cu\u1ED1i")},2e3),setTimeout(async()=>{try{await notificationManager.checkAndShowNotifications()}catch(o){console.error("Error checking notifications on install:",o)}},5e3)});chrome.runtime.onStartup.addListener(()=>{chrome.alarms.create(te,{periodInMinutes:5}),chrome.alarms.create(re,{periodInMinutes:360}),chrome.alarms.create(ne,{periodInMinutes:360}),setupNotificationClickHandler(),setTimeout(async()=>{await ae()?B():console.log("onStartup: B\u1ECF qua auto sync v\xEC ch\u01B0a \u0111\u1EE7 3 gi\u1EDD k\u1EC3 t\u1EEB l\u1EA7n sync cu\u1ED1i")},2e3),setTimeout(async()=>{try{await notificationManager.checkAndShowNotifications()}catch(t){console.error("Error checking notifications on startup:",t)}},3e3)});function H(t){return t.toISOString().split("T")[0]}function Q(){let t=new Date,o=new Date(t.getFullYear(),t.getMonth(),t.getDate()),n=new Date(o.getTime()-864e5),e=new Date(o.getTime()-1e3);return{s:Math.floor(n.getTime()/1e3),e:Math.floor(e.getTime()/1e3)}}async function ue(){let t=H(new Date),{[V]:o}=await chrome.storage.local.get(V);o&&o!==t&&await chrome.storage.local.remove(V)}async function Y(){let t=await chrome.notifications.getAll();t&&t[z]||chrome.notifications.create(z,{type:"basic",iconUrl:"/icon/icon128.png",title:"C\xF4ng c\u1EE5 t\xEDnh hoa h\u1ED3ng Shopee",message:`Phi\xEAn \u0111\u0103ng nh\u1EADp Shopee Affiliate \u0111\xE3 h\u1EBFt h\u1EA1n.
-Nh\u1EA5p \u0111\u1EC3 m\u1EDF Shopee Affiliate v\xE0 \u0111\u0103ng nh\u1EADp l\u1EA1i.`})}async function de(t){let o=await chrome.notifications.getAll();if(o&&o[J])return;let n=Number(t).toLocaleString("vi-VN");chrome.notifications.create(J,{type:"basic",iconUrl:"/icon/icon128.png",title:"C\xF4ng c\u1EE5 t\xEDnh hoa h\u1ED3ng Shopee",message:`\u0110ang b\u1EAFt \u0111\u1EA7u l\xEAn \u0111\u01A1n h\xF4m qua, \u0111\xE3 hi\u1EC7n: ${n} \u0111\u01A1n.`})}chrome.notifications.onClicked.addListener(t=>{t===z?(chrome.tabs.create({url:"https://affiliate.shopee.vn/"}),chrome.notifications.clear(z)):t===J&&(chrome.tabs.create({url:"https://affiliate.shopee.vn/report/conversion_report"}),chrome.notifications.clear(J))});async function me(){var t;if(!Z){Z=!0;try{let o=H(new Date),{[V]:n}=await chrome.storage.local.get(V);if(n===o){console.debug("pollShopee: \u0111\xE3 th\xF4ng b\xE1o h\xF4m nay");return}let{s:e,e:r}=Q(),h=`https://affiliate.shopee.vn/api/v3/report/list?page_size=500&page_num=1&purchase_time_s=${e}&purchase_time_e=${r}&version=1`,i=await fetch(h,{credentials:"include"});if(i.status===401){await Y();return}if(!i.ok){console.warn("pollShopee: HTTP",i.status);return}let l=null;try{l=await i.json()}catch(a){console.warn("pollShopee: bad JSON",a);return}if(await new Promise(a=>setTimeout(a,100)),l&&l.code===0){let a=((t=l.data)==null?void 0:t.total_count)||0;a>0&&(await de(a),await chrome.storage.local.set({[V]:o}),console.log(`pollShopee: ph\xE1t hi\u1EC7n ${a} \u0111\u01A1n h\xE0ng m\u1EDBi, b\u1EAFt \u0111\u1EA7u \u0111\u1ED3ng b\u1ED9...`),B().catch(m=>{console.error("pollShopee: l\u1ED7i khi \u0111\u1ED3ng b\u1ED9 t\u1EF1 \u0111\u1ED9ng:",m)}))}}catch(o){console.error("pollShopee error:",o)}finally{Z=!1}}}chrome.alarms.onAlarm.addListener(async t=>{if(t.name===te)try{await ue();let{enableNotif:o}=await chrome.storage.local.get("enableNotif");if(o===!1){console.debug("[alarm] notifications disabled by user");return}let n=new Date().getHours();if(n<5||n>=17)return;Promise.resolve().then(()=>me()).catch(e=>{console.warn("[alarm] pollShopee error:",e)})}catch(o){console.error("[alarm] handler error:",o)}else t.name===re?B().catch(o=>{console.error("[alarm] syncShopeeData error:",o)}):t.name===ne&&notificationManager.checkAndShowNotifications().catch(o=>{console.error("[alarm] checkAndShowNotifications error:",o)})});function oe(t,o,n=5){let e=[],r=new Date(t),h=new Date(o),i=24*60*60*1e3,l=new Date(r);for(;l<h;){let a=new Date(Math.min(l.getTime()+n*i,h.getTime()));e.push({start:new Date(l),end:new Date(a)}),l=new Date(a.getTime()+1e3)}return e}function fe(t,o){let n=[],e=new Date(t),r=new Date(o),h=60*60*1e3,i=new Date(e);for(;i<r;){let l=new Date(Math.min(i.getTime()+h,r.getTime()));n.push({start:new Date(i),end:new Date(l)}),i=new Date(l.getTime()+1e3)}return n}async function G(t,o="orders",n=500,e=4500){var l,a,m,I;let r=Math.floor(t.start.getTime()/1e3),h=Math.floor(t.end.getTime()/1e3),i=o==="orders"?`https://affiliate.shopee.vn/api/v3/report/list?page_size=${n}&page_num=1&purchase_time_s=${r}&purchase_time_e=${h}&version=1`:`https://affiliate.shopee.vn/api/v1/click_report/list?click_time_s=${r}&click_time_e=${h}&page_num=1&page_size=${n}`;try{let k=await fetch(i,{credentials:"include"});if(!k.ok||k.status===401)return{chunks:[t],page1Data:null};let $=await k.json(),T=((l=$==null?void 0:$.data)==null?void 0:l.total_count)||0,u=((a=$==null?void 0:$.data)==null?void 0:a.list)||[];if(await new Promise(d=>setTimeout(d,100)),T<=e)return{chunks:[t],page1Data:u};let s=oe(t.start,t.end,1),S=[],c=new Map;for(let d of s){let y=Math.floor(d.start.getTime()/1e3),g=Math.floor(d.end.getTime()/1e3),D=o==="orders"?`https://affiliate.shopee.vn/api/v3/report/list?page_size=${n}&page_num=1&purchase_time_s=${y}&purchase_time_e=${g}&version=1`:`https://affiliate.shopee.vn/api/v1/click_report/list?click_time_s=${y}&click_time_e=${g}&page_num=1&page_size=${n}`;try{let P=await fetch(D,{credentials:"include"});if(!P.ok||P.status===401){S.push(d);continue}let C=await P.json(),A=((m=C==null?void 0:C.data)==null?void 0:m.total_count)||0,N=((I=C==null?void 0:C.data)==null?void 0:I.list)||[];if(await new Promise(b=>setTimeout(b,100)),A>e){let b=fe(d.start,d.end);S.push(...b)}else{S.push(d);let b=`${y}_${g}`;c.set(b,N)}await new Promise(b=>setTimeout(b,200))}catch(P){console.warn("splitDateRangeDynamic: l\u1ED7i khi ki\u1EC3m tra chunk ng\xE0y:",P),S.push(d)}}return{chunks:S,page1Data:c}}catch(k){return console.warn("splitDateRangeDynamic: l\u1ED7i khi ki\u1EC3m tra chunk:",k),{chunks:[t],page1Data:null}}}async function B(){if(x){console.debug("syncShopeeData: \u0111ang sync, b\u1ECF qua");return}x=!0;try{await chrome.storage.local.set({syncStatus:"in_progress",lastSyncTime:Date.now()});let{syncDays:t=30}=await chrome.storage.local.get("syncDays"),o=new Date,n=new Date(o.getTime()-t*24*60*60*1e3),e=new Date(o);await ie(n,e)}catch(t){console.error("syncShopeeData error:",t),await chrome.storage.local.set({syncStatus:"error",syncError:t.message||"UNKNOWN_ERROR"})}finally{x=!1}}async function ge(t,o){if(x){console.debug("syncShopeeDataForDateRange: \u0111ang sync, b\u1ECF qua");return}x=!0;try{await chrome.storage.local.set({syncStatus:"in_progress",lastSyncTime:Date.now()}),await ie(t,o)}catch(n){throw console.error("syncShopeeDataForDateRange error:",n),await chrome.storage.local.set({syncStatus:"error",syncError:n.message||"UNKNOWN_ERROR"}),n}finally{x=!1}}async function ie(t,o){var $,T;let n=oe(t,o,5);n.sort((u,s)=>s.end.getTime()-u.end.getTime());let e=[],r=new Map;for(let u=0;u<n.length;u++){let s=n[u];console.log(`syncShopeeData: \u0111ang ki\u1EC3m tra chunk ${u+1}/${n.length} (${H(s.start)} - ${H(s.end)})`);let S=await G(s,"orders");if(S.page1Data&&Array.isArray(S.page1Data)){let c=`${Math.floor(s.start.getTime()/1e3)}_${Math.floor(s.end.getTime()/1e3)}`;r.set(c,S.page1Data)}else S.page1Data instanceof Map&&S.page1Data.forEach((c,d)=>{r.set(d,c)});e=e.concat(S.chunks),u<n.length-1&&await new Promise(c=>setTimeout(c,100))}e.sort((u,s)=>s.end.getTime()-u.end.getTime());let h=500,i=9,l=3,a=await idb.getAllOrders(),m=0,I=null;for(let u=0;u<e.length;u++){u>0&&await new Promise(N=>setTimeout(N,100));let s=e[u],S=Math.floor(s.start.getTime()/1e3),c=Math.floor(s.end.getTime()/1e3),d=`${S}_${c}`;console.log(`syncShopeeData: \u0111ang \u0111\u1ED3ng b\u1ED9 chunk ${u+1}/${e.length} (${H(s.start)} - ${H(s.end)})`);let y=r.get(d),g=1,D=!0,P=0,C=3,A=[];for(y&&y.length>0?(console.log(`syncShopeeData: t\xE1i s\u1EED d\u1EE5ng d\u1EEF li\u1EC7u page 1 (${y.length} items) cho chunk key: ${d}`),A=A.concat(y),g=2):console.log(`syncShopeeData: kh\xF4ng c\xF3 cache cho chunk key: ${d}, s\u1EBD g\u1ECDi API t\u1EEB page 1`);D&&g<=i;){let N=`https://affiliate.shopee.vn/api/v3/report/list?page_size=${h}&page_num=${g}&purchase_time_s=${S}&purchase_time_e=${c}&version=1`;try{let b=await fetch(N,{credentials:"include"});if(b.status===401)throw await chrome.storage.local.set({syncStatus:"error",syncError:"UNAUTHORIZED"}),await Y(),new Error("UNAUTHORIZED");if(!b.ok){if((b.status===413||b.status===429)&&g===1){console.warn(`syncShopeeData: chunk ${u+1} g\u1EB7p l\u1ED7i ${b.status}, \u0111ang chia nh\u1ECF l\u1EA1i...`);let E=await G(s,"orders");E.chunks.sort((w,O)=>O.end.getTime()-w.end.getTime()),e=[...e.slice(0,u),...E.chunks,...e.slice(u+1)],e.sort((w,O)=>O.end.getTime()-w.end.getTime()),D=!1;break}throw new Error(`HTTP ${b.status}`)}let p=null;try{p=await b.json()}catch{throw new Error("BAD_JSON")}if(await new Promise(E=>setTimeout(E,100)),p&&p.code===0){let E=(($=p.data)==null?void 0:$.list)||[],w=((T=p.data)==null?void 0:T.total_count)||0;if(w>i*h&&g===1){console.warn(`syncShopeeData: chunk ${u+1} c\xF3 ${w} items (${Math.ceil(w/h)} trang), v\u01B0\u1EE3t qu\xE1 gi\u1EDBi h\u1EA1n. \u0110ang chia nh\u1ECF l\u1EA1i...`);let f=await G(s,"orders");f.chunks.sort((_,v)=>v.end.getTime()-_.end.getTime()),e=[...e.slice(0,u),...f.chunks,...e.slice(u+1)],e.sort((_,v)=>v.end.getTime()-_.end.getTime()),D=!1;break}A=A.concat(E),(g%l===0||E.length===0||g*h>=w||g>=i)&&A.length>0&&(a=await idb.getAllOrders(),A.forEach(f=>{f.affiliate_id&&!I&&(I=f.affiliate_id,idb.setCurrentAffiliateId(f.affiliate_id).catch(()=>{}));let _=null;if(f.orders&&f.orders.length>0){let v=f.orders[0];v.order_id&&(_=`order_${v.order_id}`)}else f.checkout_id&&(_=`checkout_${f.checkout_id}`);_&&!a[_]?(a[_]={...f,storedAt:Date.now()},m++):_&&(a[_]={...a[_],...f,updatedAt:Date.now()})}),await idb.saveOrders(a),console.log(`syncShopeeData: \u0111\xE3 l\u01B0u ${A.length} orders t\u1EEB chunk ${u+1}, t\u1ED5ng ${m} orders m\u1EDBi`),A=[]),E.length===0||g*h>=w?D=!1:g>=i?(console.warn(`syncShopeeData: chunk ${u+1} \u0111\xE3 \u0111\u1EA1t gi\u1EDBi h\u1EA1n ${i} trang, c\xF3 th\u1EC3 c\xF2n d\u1EEF li\u1EC7u ch\u01B0a l\u1EA5y h\u1EBFt`),D=!1):(g++,await new Promise(f=>setTimeout(f,400)))}else throw new Error((p==null?void 0:p.msg)||"API_ERROR")}catch(b){if(console.error(`syncShopeeData: l\u1ED7i khi l\u1EA5y trang ${g} c\u1EE7a chunk ${u+1}:`,b),P++,P>=C)throw A.length>0&&(a=await idb.getAllOrders(),A.forEach(p=>{p.affiliate_id&&!I&&(I=p.affiliate_id,idb.setCurrentAffiliateId(p.affiliate_id).catch(()=>{}));let E=null;if(p.orders&&p.orders.length>0){let w=p.orders[0];w.order_id&&(E=`order_${w.order_id}`)}else p.checkout_id&&(E=`checkout_${p.checkout_id}`);E&&!a[E]?(a[E]={...p,storedAt:Date.now()},m++):E&&(a[E]={...a[E],...p,updatedAt:Date.now()})}),await idb.saveOrders(a),console.log(`syncShopeeData: \u0111\xE3 l\u01B0u ${A.length} orders tr\u01B0\u1EDBc khi g\u1EB7p l\u1ED7i`)),await chrome.storage.local.set({syncStatus:"error",syncError:b.message||"UNKNOWN_ERROR"}),b;await new Promise(p=>setTimeout(p,1e3*P))}}A.length>0&&(a=await idb.getAllOrders(),A.forEach(N=>{N.affiliate_id&&!I&&(I=N.affiliate_id,idb.setCurrentAffiliateId(N.affiliate_id).catch(()=>{}));let b=null;if(N.orders&&N.orders.length>0){let p=N.orders[0];p.order_id&&(b=`order_${p.order_id}`)}else N.checkout_id&&(b=`checkout_${N.checkout_id}`);b&&!a[b]?(a[b]={...N,storedAt:Date.now()},m++):b&&(a[b]={...a[b],...N,updatedAt:Date.now()})}),await idb.saveOrders(a),console.log(`syncShopeeData: \u0111\xE3 l\u01B0u ${A.length} orders c\xF2n l\u1EA1i t\u1EEB chunk ${u+1}`))}a=await idb.getAllOrders(),await chrome.storage.local.set({syncStatus:"success",lastSyncTime:Date.now(),lastSyncCount:m,totalOrdersCount:Object.keys(a).length}),console.log(`syncShopeeDataForDateRangeInternal: th\xE0nh c\xF4ng, ${m} orders m\u1EDBi, t\u1ED5ng ${Object.keys(a).length} orders`),Math.abs(o.getTime()-t.getTime())>2*24*60*60*1e3&&ee(t,o).catch(u=>{console.error("syncShopeeDataForDateRangeInternal: l\u1ED7i khi \u0111\u1ED3ng b\u1ED9 click t\u1EF1 \u0111\u1ED9ng:",u)})}async function ee(t,o){var n,e;if(X){console.debug("syncShopeeClicks: \u0111ang sync, b\u1ECF qua");return}X=!0;try{await chrome.storage.local.set({clickSyncStatus:"in_progress",lastClickSyncTime:Date.now()});let{maxClicksLimit:r=5e4}=await chrome.storage.local.get("maxClicksLimit"),h=oe(t,o,5);h.sort((c,d)=>d.end.getTime()-c.end.getTime());let i=[],l=new Map;for(let c=0;c<h.length;c++){let d=h[c];console.log(`syncShopeeClicks: \u0111ang ki\u1EC3m tra chunk ${c+1}/${h.length} (${H(d.start)} - ${H(d.end)})`);let y=await G(d,"clicks");if(y.page1Data&&Array.isArray(y.page1Data)){let g=`${Math.floor(d.start.getTime()/1e3)}_${Math.floor(d.end.getTime()/1e3)}`;l.set(g,y.page1Data),console.log(`syncShopeeClicks: \u0111\xE3 l\u01B0u cache page 1 cho chunk key: ${g} (${y.page1Data.length} clicks)`)}else y.page1Data instanceof Map?y.page1Data.forEach((g,D)=>{l.set(D,g),console.log(`syncShopeeClicks: \u0111\xE3 l\u01B0u cache page 1 cho chunk key: ${D} (${g.length} clicks)`)}):console.log(`syncShopeeClicks: chunk ${c+1} kh\xF4ng c\xF3 page1Data (c\xF3 th\u1EC3 b\u1ECB l\u1ED7i ho\u1EB7c kh\xF4ng c\xF3 d\u1EEF li\u1EC7u)`);i=i.concat(y.chunks),c<h.length-1&&await new Promise(g=>setTimeout(g,100))}i.sort((c,d)=>d.end.getTime()-c.end.getTime());let a=500,m=9,I=3,k=0,$=0,T=null,s={...await idb.getAllClicks()},S=Object.keys(s).length;if(S>r){console.log(`syncShopeeClicks: \u0111\xE3 c\xF3 ${S} clicks, v\u01B0\u1EE3t gi\u1EDBi h\u1EA1n ${r}, \u0111ang x\xF3a clicks c\u0169 tr\u01B0\u1EDBc khi sync...`);let c=Object.entries(s);c.sort((y,g)=>{let D=y[1].storedAt||y[1].updatedAt||0,P=g[1].storedAt||g[1].updatedAt||0;return D-P});let d=c.slice(-r);s={},d.forEach(([y,g])=>{s[y]=g}),console.log(`syncShopeeClicks: \u0111\xE3 x\xF3a ${S-r} clicks c\u0169, gi\u1EEF l\u1EA1i ${Object.keys(s).length} clicks`)}for(let c=0;c<i.length;c++){if(k>=r){console.warn(`syncShopeeClicks: \u0111\xE3 \u0111\u1EA1t gi\u1EDBi h\u1EA1n ${r} clicks, d\u1EEBng \u0111\u1ED3ng b\u1ED9`);break}c>0&&await new Promise(E=>setTimeout(E,100));let d=i[c],y=Math.floor(d.start.getTime()/1e3),g=Math.floor(d.end.getTime()/1e3),D=`${y}_${g}`;console.log(`syncShopeeClicks: \u0111ang \u0111\u1ED3ng b\u1ED9 chunk ${c+1}/${i.length} (${H(d.start)} - ${H(d.end)})`);let P=l.get(D),C=1,A=!0,N=0,b=3,p=[];if(P&&P.length>0){console.log(`syncShopeeClicks: t\xE1i s\u1EED d\u1EE5ng d\u1EEF li\u1EC7u page 1 (${P.length} clicks) cho chunk key: ${D}`);let E=r-k,w=P;P.length>E&&(w=P.slice(0,E),console.warn(`syncShopeeClicks: ch\u1EC9 l\u1EA5y ${E} clicks t\u1EEB cache \u0111\u1EC3 kh\xF4ng v\u01B0\u1EE3t gi\u1EDBi h\u1EA1n`)),p=p.concat(w),k+=w.length,C=2}else console.log(`syncShopeeClicks: kh\xF4ng c\xF3 cache cho chunk key: ${D}, s\u1EBD g\u1ECDi API t\u1EEB page 1`);for(;A&&C<=m&&k<r;){let E=`https://affiliate.shopee.vn/api/v1/click_report/list?click_time_s=${y}&click_time_e=${g}&page_num=${C}&page_size=${a}`;try{let w=await fetch(E,{credentials:"include"});if(w.status===401){await chrome.storage.local.set({clickSyncStatus:"error",clickSyncError:"UNAUTHORIZED"}),await Y();return}if(!w.ok){if((w.status===413||w.status===429)&&C===1){console.warn(`syncShopeeClicks: chunk ${c+1} g\u1EB7p l\u1ED7i ${w.status}, \u0111ang chia nh\u1ECF l\u1EA1i...`);let f=await G(d,"clicks");f.chunks.sort((_,v)=>v.end.getTime()-_.end.getTime()),i=[...i.slice(0,c),...f.chunks,...i.slice(c+1)],i.sort((_,v)=>v.end.getTime()-_.end.getTime()),A=!1;break}throw new Error(`HTTP ${w.status}`)}let O=null;try{O=await w.json()}catch{throw new Error("BAD_JSON")}if(await new Promise(f=>setTimeout(f,100)),O&&O.code===0){let f=((n=O.data)==null?void 0:n.list)||[],_=((e=O.data)==null?void 0:e.total_count)||0;if(_>m*a&&C===1){console.warn(`syncShopeeClicks: chunk ${c+1} c\xF3 ${_} clicks (${Math.ceil(_/a)} trang), v\u01B0\u1EE3t qu\xE1 gi\u1EDBi h\u1EA1n. \u0110ang chia nh\u1ECF l\u1EA1i...`);let F=await G(d,"clicks");F.chunks.sort((R,j)=>j.end.getTime()-R.end.getTime()),i=[...i.slice(0,c),...F.chunks,...i.slice(c+1)],i.sort((R,j)=>j.end.getTime()-R.end.getTime()),A=!1;break}let v=r-k,U=f;if(f.length>v&&(U=f.slice(0,v),console.warn(`syncShopeeClicks: ch\u1EC9 l\u1EA5y ${v} clicks c\xF2n l\u1EA1i \u0111\u1EC3 kh\xF4ng v\u01B0\u1EE3t gi\u1EDBi h\u1EA1n`)),p=p.concat(U),k+=U.length,(C%I===0||f.length===0||C*a>=_||C>=m||k>=r)&&p.length>0){if(s=await idb.getAllClicks(),p.forEach(R=>{R.affiliate_id&&!T&&(T=R.affiliate_id,idb.setCurrentAffiliateId(R.affiliate_id).catch(()=>{}));let j=`click_${R.click_id}`;s[j]?s[j]={...s[j],...R,updatedAt:Date.now()}:(s[j]={...R,storedAt:Date.now()},$++)}),Object.keys(s).length>r){let R=Object.entries(s);R.sort((W,q)=>{let le=W[1].storedAt||W[1].updatedAt||0,he=q[1].storedAt||q[1].updatedAt||0;return le-he});let j=R.slice(-r),se={};j.forEach(([W,q])=>{se[W]=q}),s=se}await idb.saveClicks(s),console.log(`syncShopeeClicks: \u0111\xE3 l\u01B0u ${p.length} clicks t\u1EEB chunk ${c+1}, t\u1ED5ng ${$} clicks m\u1EDBi`),p=[]}f.length===0||C*a>=_?A=!1:C>=m?(console.warn(`syncShopeeClicks: chunk ${c+1} \u0111\xE3 \u0111\u1EA1t gi\u1EDBi h\u1EA1n ${m} trang nh\u01B0ng c\xF2n ${_-C*a} clicks ch\u01B0a l\u1EA5y`),A=!1):k>=r?A=!1:(C++,await new Promise(F=>setTimeout(F,400)))}else throw new Error((O==null?void 0:O.msg)||"API_ERROR")}catch(w){if(console.error(`syncShopeeClicks: l\u1ED7i khi l\u1EA5y trang ${C} c\u1EE7a chunk ${c+1}:`,w),N++,N>=b){if(p.length>0){if(s=await idb.getAllClicks(),p.forEach(f=>{f.affiliate_id&&!T&&(T=f.affiliate_id,idb.setCurrentAffiliateId(f.affiliate_id).catch(()=>{}));let _=`click_${f.click_id}`;s[_]?s[_]={...s[_],...f,updatedAt:Date.now()}:(s[_]={...f,storedAt:Date.now()},$++)}),Object.keys(s).length>r){let f=Object.entries(s);f.sort((U,K)=>{let F=U[1].storedAt||U[1].updatedAt||0,R=K[1].storedAt||K[1].updatedAt||0;return F-R});let _=f.slice(-r),v={};_.forEach(([U,K])=>{v[U]=K}),s=v}await idb.saveClicks(s),console.log(`syncShopeeClicks: \u0111\xE3 l\u01B0u ${p.length} clicks tr\u01B0\u1EDBc khi g\u1EB7p l\u1ED7i`)}await chrome.storage.local.set({clickSyncStatus:"error",clickSyncError:w.message||"UNKNOWN_ERROR"});return}await new Promise(O=>setTimeout(O,1e3*N))}}if(p.length>0){if(s=await idb.getAllClicks(),p.forEach(w=>{w.affiliate_id&&!T&&(T=w.affiliate_id,idb.setCurrentAffiliateId(w.affiliate_id).catch(()=>{}));let O=`click_${w.click_id}`;s[O]?s[O]={...s[O],...w,updatedAt:Date.now()}:(s[O]={...w,storedAt:Date.now()},$++)}),Object.keys(s).length>r){let w=Object.entries(s);w.sort((_,v)=>{let U=_[1].storedAt||_[1].updatedAt||0,K=v[1].storedAt||v[1].updatedAt||0;return U-K});let O=w.slice(-r),f={};O.forEach(([_,v])=>{f[_]=v}),s=f}await idb.saveClicks(s),console.log(`syncShopeeClicks: \u0111\xE3 l\u01B0u ${p.length} clicks c\xF2n l\u1EA1i t\u1EEB chunk ${c+1}`)}}s=await idb.getAllClicks(),await chrome.storage.local.set({clickSyncStatus:"success",lastClickSyncTime:Date.now(),lastClickSyncCount:$,totalClicksCount:Object.keys(s).length}),console.log(`syncShopeeClicks: th\xE0nh c\xF4ng, ${$} clicks m\u1EDBi, t\u1ED5ng ${Object.keys(s).length} clicks`)}catch(r){console.error("syncShopeeClicks error:",r),await chrome.storage.local.set({clickSyncStatus:"error",clickSyncError:r.message||"UNKNOWN_ERROR"})}finally{X=!1}}chrome.contextMenus.onClicked.addListener(async(t,o)=>{if(t.menuItemId==="calculateCommission")chrome.action.openPopup();else if(t.menuItemId==="viewProductDetails"){let n=new URL(o.url),e=null,r=n.pathname.match(/\/product\/(\d+)/);if(r)e=r[1];else{let h=n.searchParams.get("i");h&&(e=h)}if(e)try{await chrome.tabs.sendMessage(o.id,{type:"SHOW_PRODUCT_STATS",productId:e})}catch{chrome.scripting.executeScript({target:{tabId:o.id},files:["js/content.js"]}).then(()=>{chrome.tabs.sendMessage(o.id,{type:"SHOW_PRODUCT_STATS",productId:e})})}else chrome.notifications.create({type:"basic",iconUrl:"/icon/icon128.png",title:"C\xF4ng c\u1EE5 t\xEDnh hoa h\u1ED3ng Shopee",message:"Kh\xF4ng t\xECm th\u1EA5y ID s\u1EA3n ph\u1EA9m trong URL n\xE0y."})}else t.menuItemId==="openOrderHistory"&&chrome.tabs.create({url:chrome.runtime.getURL("order-history.html")})});function M(t,o){try{if(typeof t=="function")return t(o),!0}catch(n){console.error("[Background] Error in safeSendResponse:",n)}return!1}chrome.runtime.onMessage.addListener((t,o,n)=>{if(t.type==="CALCULATE_PRODUCT_STATS")return pe(t.productId).then(e=>{M(n,{success:!0,stats:e})}).catch(e=>{M(n,{success:!1,error:e.message})}),!0;if(t.type==="SYNC_NOW")return M(n,{success:!0}),B().catch(e=>{console.error("SYNC_NOW error:",e)}),!0;if(t.type==="SYNC_YESTERDAY")return M(n,{success:!0}),(async()=>{try{let{s:e,e:r}=Q(),h=new Date(e*1e3),i=new Date(r*1e3);await ge(h,i)}catch(e){console.error("SYNC_YESTERDAY error:",e)}})(),!0;if(t.type==="CREATE_AFFILIATE_LINK")return(async()=>{try{let e=await _e(t.originalLink,t.subIds);M(n,{success:!0,...e})}catch(e){M(n,{success:!1,error:e.message||"Unknown error"})}})(),!0;if(t.type==="BATCH_CUSTOM_LINK_RESULT"){let{requestId:e,success:r,data:h,error:i}=t;if(L.has(e)){let{resolve:l,reject:a}=L.get(e);L.delete(e),r?l({success:!0,data:h}):a(new Error(i||"Unknown error"))}return!0}else{if(t.type==="PROCEED_BATCH_CUSTOM_LINK")return(async()=>{try{let{requestId:e}=t;if(!L.has(e))return;let r=await ce();if(L.has(e)){let{reject:h}=L.get(e);L.delete(e),h(new Error("PROCEED_BATCH_CUSTOM_LINK handler needs to be implemented with linkParams storage"))}}catch(e){console.error("PROCEED_BATCH_CUSTOM_LINK error:",e)}})(),!0;if(t.type==="LOGIN_REQUIRED")return(async()=>{let{requestId:e}=t;if(L.has(e)){let{reject:r}=L.get(e);L.delete(e),r(new Error("Ch\u01B0a \u0111\u0103ng nh\u1EADp Shopee Affiliate. Vui l\xF2ng \u0111\u0103ng nh\u1EADp t\u1EA1i https://affiliate.shopee.vn"))}chrome.tabs.create({url:"https://affiliate.shopee.vn/"}),await Y()})(),!0;if(t.type==="OPEN_ORDER_HISTORY")return chrome.tabs.create({url:chrome.runtime.getURL("order-history.html")}),n({success:!0}),!0;if(t.type==="OPEN_CLICK_OVERVIEW")return chrome.tabs.create({url:chrome.runtime.getURL("click-overview.html")}),n({success:!0}),!0;if(t.type==="OPEN_MCN_MANAGER")return(async()=>{try{let e=await chrome.tabs.query({url:"https://affiliate.shopee.vn/dashboard*"}),r=null;e.length>0?(r=e[0].id,await chrome.tabs.update(r,{active:!0})):(r=(await chrome.tabs.create({url:"https://affiliate.shopee.vn/dashboard",active:!0})).id,await new Promise(i=>{let l=(a,m)=>{a===r&&m.status==="complete"&&(chrome.tabs.onUpdated.removeListener(l),i())};chrome.tabs.onUpdated.addListener(l),setTimeout(()=>{chrome.tabs.onUpdated.removeListener(l),i()},1e4)})),await chrome.scripting.executeScript({target:{tabId:r},world:"MAIN",files:["js/mcn-manager.js"]}),M(n,{success:!0})}catch(e){console.error("OPEN_MCN_MANAGER error:",e),M(n,{success:!1,error:e.message||"Unknown error"})}})(),!0;if(t.type==="OPEN_OPTIONS_PAGE")return chrome.tabs.create({url:chrome.runtime.getURL("options.html")}),n({success:!0}),!0;if(t.type==="SYNC_CLICKS_NOW")return M(n,{success:!0}),(async()=>{try{let{clickSyncDays:e=14}=await chrome.storage.local.get("clickSyncDays"),r=new Date,h=new Date(r.getTime()-e*24*60*60*1e3),i=new Date(r);await ee(h,i)}catch(e){console.error("SYNC_CLICKS_NOW error:",e)}})(),!0;if(t.type==="SYNC_CLICKS_YESTERDAY")return M(n,{success:!0}),(async()=>{try{let{s:e,e:r}=Q(),h=new Date(e*1e3),i=new Date(r*1e3);await ee(h,i)}catch(e){console.error("SYNC_CLICKS_YESTERDAY error:",e)}})(),!0;if(t.type==="CLEAR_CLICK_DATA")return(async()=>{try{await idb.clearClicks(),await chrome.storage.local.remove(["clickSyncStatus","lastClickSyncTime","totalClicksCount","lastClickSyncCount","clickSyncError"]),M(n,{success:!0})}catch(e){M(n,{success:!1,error:e.message})}})(),!0;if(t.type==="FETCH_PRICE_TRACKING")return(async()=>{try{let{itemId:e,days:r=90,currency:h="VND",productData:i=null}=t,l=await ye(e,r,h,i);M(n,{success:!0,data:l})}catch(e){M(n,{success:!1,error:e.message})}})(),!0;if(t.type==="GET_PRODUCT_COMMISSION")return(async()=>{try{let{itemId:e}=t,r=await we(e);M(n,{success:!0,data:r})}catch(e){M(n,{success:!1,error:e.message})}})(),!0}});async function pe(t){try{let o=await idb.getAllOrders(),n=[],e=String(t).trim();if(console.log("Searching for productId:",e,"in orderHistory with",Object.keys(o).length,"orders"),Object.values(o).forEach(T=>{(T.orders||(T.list?T.list.flatMap(s=>s.orders||[]):[])).forEach(s=>{(s.items||[]).forEach(c=>{let d=String(c.item_id||"").trim(),y=String(c.model_id||"").trim();(d===e||y===e)&&(console.log("Found matching item:",{item_id:d,model_id:y,productId:e,item_name:c.item_name}),n.push({...T,item:c,order:s}))})})}),console.log("Found",n.length,"matching orders for productId:",e),n.length===0)return{totalOrders:0,totalGMV:0,totalCommission:0,lastOrderDate:null,lastOrderAmount:0,channels:{video:0,live:0,social:0}};n.sort((T,u)=>{let s=T.purchase_time||T.checkout_complete_time||0;return(u.purchase_time||u.checkout_complete_time||0)-s});let r=new Map;n.forEach(T=>{let u=T.item,s=T.order&&T.order.order_id||T.checkout_id||`order_${T.purchase_time}`;r.has(s)||r.set(s,{orderData:T,items:[]}),r.get(s).items.push(u)});let h=0,i=0,l=0,a=0,m=0,I=null,k=0;r.forEach(T=>{let u=T.orderData,s=T.items,S=s[0],c=parseFloat(S.item_gmv||S.actual_amount||S.item_price||0),d=s.every(C=>parseFloat(C.item_gmv||C.actual_amount||C.item_price||0)===c),y=0,g=0;d&&S.item_gmv?(y=c,g=parseFloat(S.item_commission||0)):(s.forEach(C=>{let A=parseFloat(C.item_gmv||C.actual_amount||C.item_price||0);y+=A}),u.affiliate_net_commission!==void 0?g=parseFloat(u.affiliate_net_commission||u.estimated_total_commission||0):s.forEach(C=>{let A=parseFloat((C.item_commission||0)+(C.capped_brand_commission||0));g+=A}));let D=S.referrer||u.referrer||"MXH";y=y/1e5,g=g/1e5,h+=y,i+=g,D.includes("Shopeevideo")||D.includes("Shopeevideo-Shopee")?l++:D.includes("Shopeelive")||D.includes("Shopeelive-Shopee")?a++:m++;let P=u.purchase_time||u.checkout_complete_time||0;P>k&&(k=P,I={...u,item:S,orderGMV:y})});let $=null;return I&&k>0&&($=new Date(k*1e3).toLocaleDateString("vi-VN")),{totalOrders:r.size,totalGMV:h,totalCommission:i,lastOrderDate:$,lastOrderAmount:I?I.orderGMV||parseFloat((I.item.item_gmv||I.item.actual_amount||I.item.item_price||0)/1e5):0,channels:{video:l,live:a,social:m},formatted:{totalGMV:h.toLocaleString("vi-VN",{style:"currency",currency:"VND"}),totalCommission:i.toLocaleString("vi-VN",{style:"currency",currency:"VND"}),lastOrderAmount:I?(I.orderGMV||parseFloat((I.item.item_gmv||I.item.actual_amount||I.item.item_price||0)/1e5)).toLocaleString("vi-VN",{style:"currency",currency:"VND"}):"0 \u20AB"}}}catch(o){throw console.error("Error calculating product stats:",o),o}}async function ye(t,o=90,n="VND",e=null){var h;if(!((h=SERVER_CONFIG==null?void 0:SERVER_CONFIG.priceTracking)!=null&&h.endpoint))throw new Error("Ch\u01B0a c\u1EA5u h\xECnh API endpoint");let r=new URL(SERVER_CONFIG.priceTracking.endpoint);try{let i;if(e){let a={item_id:t,day:o,currency:n,product_data:e};i=await fetch(r.toString(),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(a)})}else r.searchParams.set("item_id",t),r.searchParams.set("day",o),r.searchParams.set("currency",n),i=await fetch(r.toString());if(!i.ok){if(i.status===404)return{prices:[],stats:{}};throw new Error(`API error: ${i.status}`)}let l=await i.json();return l&&l.success&&l.data?l.data:l&&(l.prices||l.stats)?l:{prices:[],stats:{}}}catch(i){throw console.error("[Price Tracking] Error:",i),i}}async function we(t){try{let o=`https://data.addlivetag.com/product-data/product-data.php?item_id=${t}`,n=await fetch(o);if(!n.ok)throw new Error(`API error: ${n.status}`);return await n.json()}catch(o){throw console.error("[Commission Check] Error:",o),o}}async function ce(){try{let t=await chrome.tabs.query({url:"https://affiliate.shopee.vn/*"});if(t.length>0){let n=t[0];return n.status==="complete"||await new Promise(e=>setTimeout(e,500)),n.id}let o=await chrome.tabs.create({url:"https://affiliate.shopee.vn/dashboard",active:!1});return await new Promise(n=>{let e=(r,h)=>{r===o.id&&h.status==="complete"&&(chrome.tabs.onUpdated.removeListener(e),n())};chrome.tabs.onUpdated.addListener(e),setTimeout(()=>{chrome.tabs.onUpdated.removeListener(e),n()},1e4)}),o.id}catch(t){throw console.error("findOrCreateAffiliateTab error:",t),t}}var L=new Map;async function ke(t,o,n={}){if(!t||typeof t!="string")return t||"";if(!t.includes("/universal-link"))return t;try{let e=new URL(t),r=null,h=["url","target","destination","link","redirect","to"];for(let c of h){let d=e.searchParams.get(c);if(d)try{r=decodeURIComponent(d);break}catch{}}if(!r){let c=e.pathname.split("/");if(c.length>2&&c[c.length-1])try{let d=decodeURIComponent(c[c.length-1]);(d.startsWith("http://")||d.startsWith("https://"))&&(r=d)}catch{}}r||(r=o),(!r||!r.startsWith("http://")&&!r.startsWith("https://"))&&(r&&r.startsWith("/")?r=`https://shopee.vn${r}`:r&&!r.includes("://")?r=`https://shopee.vn/${r}`:r=o);let i=r;try{let c=new URL(r);["utm_source","utm_medium","utm_campaign","utm_term","utm_content","gads_t_sig","gclid","fbclid","twclid","msclkid","affiliate_id","sub_id","subid","subId"].forEach(y=>{c.searchParams.delete(y)}),i=c.toString()}catch{i=r}let l=null;try{l=e.searchParams.get("affiliate_id")||e.searchParams.get("affiliateId")}catch{}if(!l)try{l=await idb.getCurrentAffiliateId()}catch(c){console.warn("Cannot get affiliate_id from idb:",c)}if(!l)return console.warn("Cannot get affiliate_id, returning original longLink"),t;let a=(n.subId1||"").trim(),m=(n.subId2||"").trim(),I=(n.subId3||"").trim(),k=(n.subId4||"").trim(),$=(n.subId5||"").trim(),u=[a,m,I,k,$].filter(c=>c&&!c.includes("-")).join("-"),S=`https://s.shopee.vn/an_redir?origin_link=${encodeURIComponent(i)}&affiliate_id=${l}${u?`&sub_id=${u}`:""}`;return console.log("Converted universal-link to an_redir:",{original:t,converted:S,landingUrl:i,affiliateId:l,subIds:u}),S}catch(e){return console.error("Error converting universal-link to an_redir:",e),t}}async function _e(t,o={}){let e=`link_${Date.now()}_${Math.random().toString(36).substr(2,9)}`;try{let r=await ce();try{await chrome.tabs.sendMessage(r,{type:"PING"})}catch{try{await chrome.scripting.executeScript({target:{tabId:r},files:["js/affiliate-product-offer.js"]}),await new Promise(m=>setTimeout(m,500))}catch(m){throw console.error("Failed to inject content script:",m),new Error("Kh\xF4ng th\u1EC3 inject content script v\xE0o tab affiliate.shopee.vn")}}let h=new Promise((a,m)=>{L.set(e,{resolve:a,reject:m}),setTimeout(()=>{L.has(e)&&(L.delete(e),m(new Error("Request timeout. Vui l\xF2ng th\u1EED l\u1EA1i.")))},1e4)}),i=[{originalLink:t,advancedLinkParams:{subId1:o.subId1||"",subId2:o.subId2||"",subId3:o.subId3||"",subId4:o.subId4||"",subId5:o.subId5||""}}];try{let a=await chrome.tabs.sendMessage(r,{type:"CHECK_LOGIN"});if(!a||!a.isLoggedIn){if(L.has(e)){let{reject:m}=L.get(e);L.delete(e),m(new Error("Ch\u01B0a \u0111\u0103ng nh\u1EADp Shopee Affiliate. Vui l\xF2ng \u0111\u0103ng nh\u1EADp t\u1EA1i https://affiliate.shopee.vn"))}chrome.tabs.create({url:"https://affiliate.shopee.vn/"}),await Y();return}}catch(a){console.warn("Could not check login status:",a)}try{await chrome.scripting.executeScript({target:{tabId:r},world:"MAIN",func:function(a,m,I){fetch(I,{method:"POST",credentials:"include",headers:{"content-type":"application/json; charset=UTF-8",accept:"application/json"},body:JSON.stringify(a)}).then(k=>k.json()).then(k=>{var $;window.postMessage({type:"BATCH_CUSTOM_LINK_RESPONSE",requestId:m,result:k.data?k.data.batchCustomLink:null,error:k.error?"Error "+k.error+(k.tracking_id?" (tracking_id: "+k.tracking_id+")":""):k.errors?($=k.errors[0])==null?void 0:$.message:null},"*")}).catch(k=>{window.postMessage({type:"BATCH_CUSTOM_LINK_RESPONSE",requestId:m,error:k.message||"Unknown error"},"*")})},args:[{operationName:"batchGetCustomLink",query:`
-                            query batchGetCustomLink($linkParams: [CustomLinkParam!], $sourceCaller: SourceCaller){
-                                batchCustomLink(linkParams: $linkParams, sourceCaller: $sourceCaller){
-                                    shortLink
-                                    longLink
-                                    failCode
-                                }
-                            }
-                        `,variables:{linkParams:i,sourceCaller:"CUSTOM_LINK_CALLER"}},e,"https://affiliate.shopee.vn/api/v3/gql?q=batchCustomLink"]})}catch(a){if(L.has(e)){let{reject:m}=L.get(e);L.delete(e),m(new Error(`Failed to execute script: ${a.message}`))}}let l=await h;if(l.success){if(l.data&&l.data.length>0){let a=l.data[0];if(a.failCode)throw new Error(`Fail code: ${a.failCode}`);let m=a.longLink||"";return m&&m.includes("/universal-link")&&(m=await ke(m,t,o)),{shortLink:a.shortLink||"",longLink:m}}throw new Error("No data returned from API")}else throw new Error(l.error||"Unknown error")}catch(r){throw console.error("createAffiliateLinkViaContentScript error:",r),r}}chrome.runtime.setUninstallURL("https://addlivetag.com/extension/uninstall.html");
+let socket = null;
+let botActive = true;
+const SERVER_URL = 'ws://localhost:3456';
+
+// ─── MV3 Keep-Alive Strategy ────────────────────────────────
+// Problem: Chrome MV3 terminates Service Workers after ~30s of inactivity.
+// setInterval alone cannot prevent termination — Chrome ignores it.
+//
+// Solution:
+// 1. chrome.alarms API — only reliable MV3 wake mechanism (fires every 25s)
+// 2. On each alarm tick: check WS health → reconnect if dead
+// 3. On SW restart (install/startup): restore botActive + reconnect
+// ────────────────────────────────────────────────────────────
+
+// Load saved state on every SW startup (SW restarts lose all variables)
+chrome.storage.local.get(['botActive'], (data) => {
+  botActive = data.botActive !== false; // default ON
+  // Auto-connect on SW startup if bot is active
+  if (botActive) {
+    console.log('[BG] SW started/restarted — auto-connecting...');
+    connect();
+  }
+});
+
+// Register keep-alive alarm (survives SW termination)
+chrome.alarms.get('keepAlive', (alarm) => {
+  if (!alarm) {
+    chrome.alarms.create('keepAlive', { periodInMinutes: 0.4 }); // every ~24s
+    console.log('[BG] Keep-alive alarm created.');
+  }
+});
+
+// ─── Offscreen Document — prevents SW from ever sleeping ─────
+// An offscreen page pings the SW every 5s, making it appear active to Chrome.
+// This is more reliable than alarms (which only fire every 24s minimum).
+async function ensureOffscreen() {
+  const existing = await chrome.offscreen.hasDocument();
+  if (!existing) {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['BLOBS'],
+      justification: 'Keep service worker alive for persistent WebSocket connection',
+    }).catch((e) => console.warn('[BG] Offscreen create failed:', e.message));
+  }
+}
+ensureOffscreen();
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== 'keepAlive') return;
+
+  const isConnected = socket && socket.readyState === WebSocket.OPEN;
+  const isDead = !socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING;
+
+  if (isConnected) {
+    // WS alive → send ping to keep connection warm
+    socket.send(JSON.stringify({ type: 'ping' }));
+  } else if (isDead && botActive) {
+    // WS dead + bot should be active → reconnect
+    console.log('[BG] Alarm: WS dead, reconnecting...');
+    socket = null;
+    connect();
+  }
+});
+
+// Listen for messages from popup
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'toggle_bot') {
+    botActive = msg.active;
+    chrome.storage.local.set({ botActive }); // persist through SW restarts
+    console.log('[BG] Bot', botActive ? 'ACTIVATED' : 'DEACTIVATED');
+    if (botActive && (!socket || socket.readyState !== WebSocket.OPEN)) connect();
+    if (!botActive && socket) {
+      socket.close();
+      socket = null;
+    }
+  }
+  if (msg.type === 'get_status') {
+    sendResponse({ connected: !!(socket && socket.readyState === WebSocket.OPEN), botActive });
+  }
+  // offscreen_ping from offscreen.js — keeps SW alive, check WS health
+  if (msg.type === 'offscreen_ping') {
+    if (botActive && (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING)) {
+      console.log('[BG] Offscreen ping: WS dead, reconnecting...');
+      socket = null;
+      connect();
+    } else if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'ping' }));
+    }
+    sendResponse({ ok: true });
+  }
+  return true;
+});
+
+// Handle SW install/update events
+chrome.runtime.onInstalled.addListener(async () => {
+  chrome.alarms.create('keepAlive', { periodInMinutes: 0.4 });
+  await ensureOffscreen();
+  console.log('[BG] Extension installed/updated — keep-alive alarm + offscreen set.');
+});
+
+let _reconnectTimer = null;
+function connect() {
+  // Prevent duplicate connection attempts
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    console.log('[BG] Already connected or connecting, skip.');
+    return;
+  }
+
+  console.log('[BG] Connecting to Server:', SERVER_URL);
+  if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
+
+  try {
+    socket = new WebSocket(SERVER_URL);
+  } catch (e) {
+    console.error('[BG] WebSocket creation failed', e);
+    _reconnectTimer = setTimeout(connect, 5000);
+    return;
+  }
+
+  socket.onopen = () => {
+    console.log('[BG] ✅ Connected to Node Server!');
+    socket.send(JSON.stringify({ type: 'register_extension', status: 'ready' }));
+  };
+
+  socket.onmessage = async (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+
+      if (msg.type === 'pong') return;
+
+      if (msg.type === 'execute_automation') {
+        if (!botActive) {
+          sendResult(msg.data.reqId, { success: false, error: 'Bot đang TẮT. Bật lại trong popup Extension.' });
+          return;
+        }
+        const { action, payload, reqId } = msg.data;
+        await handleAutomation(action, payload, reqId);
+      }
+    } catch (e) {
+      console.error('[BG] Error handling message:', e);
+    }
+  };
+
+  socket.onclose = (evt) => {
+    console.log(`[BG] Connection closed (code=${evt.code}), reconnecting in 5s...`);
+    socket = null;
+    // Only auto-reconnect if bot is active
+    if (botActive) {
+      _reconnectTimer = setTimeout(connect, 5000);
+    }
+  };
+
+  socket.onerror = (e) => {
+    console.error('[BG] WebSocket error — connection will close and retry.');
+    // onclose will fire after onerror, handling reconnect
+  };
+}
+
+async function handleAutomation(action, payload, reqId) {
+  // Find any Shopee Affiliate tab
+  const tabs = await chrome.tabs.query({ url: '*://affiliate.shopee.vn/*' });
+
+  if (tabs.length === 0) {
+    return sendResult(reqId, { success: false, error: 'Không tìm thấy tab Shopee Affiliate! Hãy mở https://affiliate.shopee.vn' });
+  }
+
+  const targetTab = tabs[0];
+
+  // TAB ROUTING: Navigate to the correct page based on action
+  if (action === 'convert_link') {
+    // Direct API — no page navigation needed, any affiliate.shopee.vn page works
+    executeConvertInMainWorld(targetTab.id, payload, reqId);
+
+  } else if (action === 'check_and_convert') {
+    // New flow: resolve link → search commission → generate affiliate link
+    executeCheckAndConvert(targetTab.id, payload, reqId);
+
+  } else if (action === 'search_product') {
+    // Search uses Main World scripting — inject directly
+    const targetUrl = 'https://affiliate.shopee.vn/offer/product_offer';
+    if (!targetTab.url.includes('/offer/product_offer')) {
+      console.log('[BG] Routing tab to Product Search page...');
+      await navigateAndWait(targetTab.id, targetUrl);
+    }
+    // Inject search script into MAIN world
+    executeSearchInMainWorld(targetTab.id, payload.keyword, reqId);
+
+  } else if (action === 'sync_orders') {
+    // Orders sync: trigger export → poll → download CSV via Shopee API
+    executeSyncOrders(targetTab.id, payload, reqId);
+
+  } else if (action === 'fetch_product_images') {
+    // Background fetch: get img_code from Shopee report API
+    executeFetchProductImages(targetTab.id, payload, reqId);
+
+  } else if (action === 'extract_full') {
+    // Extract full product data via internal Shopee API
+    executeExtractFull(targetTab.id, payload, reqId);
+
+  } else {
+    sendResult(reqId, { success: false, error: `Unknown action: ${action}` });
+  }
+}
+
+// ─── Extract Full Product Data ─────────────────────────────────
+async function executeExtractFull(tabId, payload, reqId) {
+  try {
+    let url = payload.url;
+
+    // Step 1: Resolve short links via HTTP redirect
+    if (url.includes('s.shopee.vn/') || url.includes('vn.shp.ee/')) {
+      console.log('[BG] ExtractFull: Resolving short link:', url);
+      try {
+        const resp = await fetch(url, { method: 'GET', redirect: 'follow' });
+        const finalUrl = resp.url;
+        console.log('[BG] ExtractFull: Resolved to:', finalUrl);
+        if (finalUrl.includes('shopee.vn')) {
+          url = finalUrl;
+        }
+      } catch (err) {
+        console.warn('[BG] ExtractFull: Short link resolve failed:', err.message);
+      }
+    }
+
+    // Step 2: Parse product info from URL
+    let productInfo = parseProductInfo(url);
+    console.log('[BG] ExtractFull: Parsed product info:', JSON.stringify(productInfo));
+
+    // If shopId is missing but itemId exists, try to resolve shopId via addlivetag
+    if (productInfo.itemId && !productInfo.shopId) {
+      console.log('[BG] ExtractFull: shopId missing, attempting lookup via addlivetag for itemId:', productInfo.itemId);
+      try {
+        const resp = await fetch(
+          `https://data.addlivetag.com/product-data/product-data.php?item_id=${productInfo.itemId}`,
+          { method: 'GET', signal: AbortSignal.timeout(8000) }
+        );
+        const data = await resp.json();
+        if (data.status === 'success' && data.productInfo?.shopId) {
+          productInfo.shopId = String(data.productInfo.shopId);
+          console.log('[BG] ExtractFull: Resolved shopId from addlivetag:', productInfo.shopId);
+        }
+      } catch (e) {
+        console.warn('[BG] ExtractFull: addlivetag shopId lookup failed:', e.message);
+      }
+    }
+
+    if (!productInfo.itemId || !productInfo.shopId) {
+      sendResult(reqId, { success: false, error: 'Không thể phân tích shopId và itemId từ link.' });
+      return;
+    }
+
+    console.log('[BG] ExtractFull: fetching full data via shopee.vn tab...');
+    let tempTabId = null;
+    try {
+      // Try to find an existing shopee.vn tab first
+      const existingTabs = await chrome.tabs.query({ url: 'https://shopee.vn/*' });
+      
+      if (existingTabs.length > 0) {
+        tempTabId = existingTabs[0].id;
+        console.log('[BG] ExtractFull: Found existing shopee.vn tab:', tempTabId);
+      } else {
+        // Create a hidden tab
+        const tempTab = await chrome.tabs.create({
+          url: `https://shopee.vn/product/${productInfo.shopId}/${productInfo.itemId}`,
+          active: false,
+        });
+        tempTabId = tempTab.id;
+        console.log('[BG] ExtractFull: Created temp shopee.vn tab:', tempTabId);
+
+        // Wait for tab to finish loading
+        await new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }, 5000);
+
+          const listener = (tId, changeInfo) => {
+            if (tId === tempTabId && changeInfo.status === 'complete') {
+              chrome.tabs.onUpdated.removeListener(listener);
+              clearTimeout(timeout);
+              resolve();
+            }
+          };
+          chrome.tabs.onUpdated.addListener(listener);
+        });
+      }
+
+      // Inject script to fetch full item data
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tempTabId },
+        world: 'MAIN',
+        func: async (itemId, shopId) => {
+          try {
+            console.log('[SHOPEE-TAB] ExtractFull: Calling API for', itemId, shopId);
+            const resp = await fetch(`/api/v4/item/get?itemid=${itemId}&shopid=${shopId}`, {
+              method: 'GET',
+              headers: { 'accept': 'application/json' },
+              credentials: 'include',
+            });
+            const data = await resp.json();
+            if (data?.data) {
+              return { success: true, productData: data.data };
+            }
+            return { success: false, error: data?.error_msg || data?.error || 'Unknown API error' };
+          } catch (e) {
+            return { success: false, error: e.message };
+          }
+        },
+        args: [productInfo.itemId, productInfo.shopId],
+      });
+
+      // Close temp tab only if we created it
+      if (!existingTabs || existingTabs.length === 0) {
+        chrome.tabs.remove(tempTabId).catch(() => {});
+      }
+
+      const result = results?.[0]?.result;
+      if (result && result.success) {
+        sendResult(reqId, { success: true, data: result.productData });
+      } else {
+        sendResult(reqId, { success: false, error: result?.error || 'Failed to extract data' });
+      }
+
+    } catch (err) {
+      if (tempTabId) chrome.tabs.remove(tempTabId).catch(() => {});
+      sendResult(reqId, { success: false, error: err.message });
+    }
+
+  } catch (err) {
+    console.error('[BG] ExtractFull error:', err);
+    sendResult(reqId, { success: false, error: err.message });
+  }
+}
+
+// ─── Sync Orders — Shopee Export API Pipeline ─────────────
+// Step 1: Trigger CSV export via /api/v1/report/download
+// Step 2: Poll /api/v1/export/list until ready (status=3)
+// Step 3: Download CSV via /api/v1/export/download?task_id=X
+async function executeSyncOrders(tabId, payload, reqId) {
+  try {
+    // Increase timeout for this operation (up to 90s)
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (startTs, endTs) => {
+        try {
+          const headers = {
+            'accept': 'application/json, text/plain, */*',
+            'affiliate-program-type': '1',
+          };
+
+          // Step 1: Trigger export
+          console.log('[SyncOrders] Step 1: Triggering export...');
+          const exportUrl = `/api/v1/report/download?page_size=20&page_num=1&purchase_time_s=${startTs}&purchase_time_e=${endTs}`;
+          const exportRes = await fetch(exportUrl, { headers, credentials: 'include' });
+          const exportData = await exportRes.json();
+
+          if (exportData.code !== 0) {
+            return { success: false, error: `Export trigger failed: ${exportData.msg}` };
+          }
+
+          const taskId = exportData.data?.task_id;
+          if (!taskId) {
+            return { success: false, error: 'No task_id returned from export API' };
+          }
+          console.log('[SyncOrders] Step 1 done. task_id:', taskId);
+
+          // Step 2: Poll until ready (max 60s, every 3s)
+          console.log('[SyncOrders] Step 2: Waiting for export to complete...');
+          let fileName = '';
+          for (let i = 0; i < 20; i++) {
+            await new Promise(r => setTimeout(r, 3000));
+
+            const listRes = await fetch(
+              `/api/v1/export/list?page_size=5&page_num=1`,
+              { headers, credentials: 'include' }
+            );
+            const listData = await listRes.json();
+            const task = listData.data?.list?.find(t => t.task_id === taskId);
+
+            if (task) {
+              console.log(`[SyncOrders] Poll ${i + 1}: status=${task.status} progress=${task.progress}%`);
+              if (task.status === 3 && task.progress === 100) {
+                fileName = task.file_name;
+                break;
+              }
+            }
+
+            if (i === 19) {
+              return { success: false, error: 'Export timeout (60s). Try again later.' };
+            }
+          }
+
+          // Step 3: Download CSV
+          console.log('[SyncOrders] Step 3: Downloading CSV...', fileName);
+          const csvRes = await fetch(
+            `/api/v1/export/download?task_id=${taskId}`,
+            { credentials: 'include' }
+          );
+
+          if (!csvRes.ok) {
+            return { success: false, error: `Download failed: HTTP ${csvRes.status}` };
+          }
+
+          const csvText = await csvRes.text();
+          console.log(`[SyncOrders] Done! CSV size: ${csvText.length} chars`);
+
+          return {
+            success: true,
+            csv: csvText,
+            fileName,
+            taskId,
+          };
+        } catch (err) {
+          return { success: false, error: `SyncOrders error: ${err.message}` };
+        }
+      },
+      args: [
+        payload.startTimestamp || Math.floor(Date.now() / 1000) - 30 * 24 * 3600, // default: last 30 days
+        payload.endTimestamp || Math.floor(Date.now() / 1000),
+      ],
+    });
+
+    const result = results?.[0]?.result;
+    sendResult(reqId, result || { success: false, error: 'Script execution returned no result' });
+  } catch (err) {
+    console.error('[BG] SyncOrders error:', err);
+    sendResult(reqId, { success: false, error: `SyncOrders error: ${err.message}` });
+  }
+}
+
+function forwardToContentScript(tabId, action, payload, reqId) {
+  chrome.tabs.sendMessage(tabId, { action, payload }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('[BG] Content script error:', chrome.runtime.lastError.message);
+      sendResult(reqId, { success: false, error: 'Content script không phản hồi. Hãy refresh tab Shopee.' });
+      return;
+    }
+    if (!response) {
+      sendResult(reqId, { success: false, error: 'Không nhận được phản hồi từ Content Script.' });
+      return;
+    }
+    sendResult(reqId, response);
+  });
+}
+
+// ─── Direct API Convert Link (MAIN World) ────────────────
+// Calls Shopee GraphQL endpoint directly inside the tab's context
+// Same cookies/session as the real UI — no DOM manipulation needed
+async function executeConvertInMainWorld(tabId, payload, reqId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (url, subId1, subId2) => {
+        try {
+          // Get CSRF token from cookie
+          const csrfMatch = document.cookie.match(/csrftoken=([^;]+)/);
+          const csrfToken = csrfMatch ? csrfMatch[1] : '';
+
+          const gqlBody = {
+            operationName: 'batchGetCustomLink',
+            query: `
+              query batchGetCustomLink($linkParams: [CustomLinkParam!], $sourceCaller: SourceCaller){
+                batchCustomLink(linkParams: $linkParams, sourceCaller: $sourceCaller){
+                  shortLink
+                  longLink
+                  failCode
+                }
+              }
+            `,
+            variables: {
+              linkParams: [{
+                originalLink: url,
+                advancedLinkParams: {
+                  subId1: subId1 || '',
+                  subId2: subId2 || '',
+                  subId3: '',
+                  subId4: '',
+                  subId5: '',
+                },
+              }],
+              sourceCaller: 'CUSTOM_LINK_CALLER',
+            },
+          };
+
+          const response = await fetch('/api/v3/gql?q=batchCustomLink', {
+            method: 'POST',
+            headers: {
+              'accept': 'application/json, text/plain, */*',
+              'content-type': 'application/json; charset=UTF-8',
+              'affiliate-program-type': '1',
+              'csrf-token': csrfToken,
+            },
+            credentials: 'include',
+            body: JSON.stringify(gqlBody),
+          });
+
+          const data = await response.json();
+
+          // Check for errors
+          if (data.errors && data.errors.length > 0) {
+            return { success: false, error: data.errors[0].message || 'GraphQL error' };
+          }
+
+          const result = data.data?.batchCustomLink?.[0];
+          if (!result) {
+            return { success: false, error: 'No result from API' };
+          }
+
+          if (result.failCode && result.failCode !== 0) {
+            return { success: false, error: `API fail code: ${result.failCode}` };
+          }
+
+          return {
+            success: true,
+            originalLink: url,
+            shortLink: result.shortLink || result.longLink,
+          };
+        } catch (err) {
+          return { success: false, error: err.message };
+        }
+      },
+      args: [payload.url, payload.subId1 || '', payload.subId2 || ''],
+    });
+
+    const result = results?.[0]?.result;
+    if (result) {
+      // If direct API failed, fallback to DOM content script
+      if (!result.success) {
+        console.warn('[BG] Direct API failed, falling back to content script:', result.error);
+        const targetUrl = 'https://affiliate.shopee.vn/offer/custom_link';
+        const currentTab = await chrome.tabs.get(tabId);
+        
+        // Auto-reload on cookie incorrect error
+        if (result.error && typeof result.error === 'string' && result.error.includes('cookie incorrect')) {
+          console.log('[BG] Detected cookie incorrect error, reloading tab...');
+          await chrome.tabs.reload(tabId);
+          // Wait briefly for reload to start
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          sendResult(reqId, { success: false, error: 'cookie incorrect - reloading tab' });
+          return;
+        }
+
+        if (!currentTab.url.includes('/offer/custom_link')) {
+          await navigateAndWait(tabId, targetUrl);
+        }
+        forwardToContentScript(tabId, 'convert_link', payload, reqId);
+        return;
+      }
+      sendResult(reqId, result);
+    } else {
+      sendResult(reqId, { success: false, error: 'Script execution returned no result' });
+    }
+  } catch (err) {
+    console.error('[BG] Main World convert error:', err);
+    // Fallback to content script
+    console.warn('[BG] Falling back to content script...');
+    const targetUrl = 'https://affiliate.shopee.vn/offer/custom_link';
+    const currentTab = await chrome.tabs.get(tabId);
+    if (!currentTab.url.includes('/offer/custom_link')) {
+      await navigateAndWait(tabId, targetUrl);
+    }
+    forwardToContentScript(tabId, 'convert_link', payload, reqId);
+  }
+}
+
+// ─── Addlivetag Commission Lookup (Service Worker level) ──────
+// Calls third-party API to get commission data as fallback
+// Runs in service worker → no CORS issues
+async function fetchAddlivetagCommission(itemId) {
+  try {
+    const resp = await fetch(
+      `https://data.addlivetag.com/product-data/product-data.php?item_id=${itemId}`,
+      { method: 'GET' }
+    );
+    const data = await resp.json();
+    if (data.status === 'success' && data.productInfo?.commission > 0) {
+      const info = data.productInfo;
+      const rate = info.price > 0
+        ? Math.round((info.commission / info.price) * 10000) / 100
+        : 0;
+      return {
+        found: true,
+        commission: rate,
+        commissionAmount: info.commission,
+        productName: info.productName,
+        price: info.price,
+        shopName: info.shopName,
+        isXtra: info.isXtra || false,
+        source: 'addlivetag',
+      };
+    }
+    return { found: false };
+  } catch (err) {
+    console.warn('[BG] Addlivetag fetch failed:', err.message);
+    return { found: false };
+  }
+}
+
+// ─── Check Commission + Convert (All-API Pipeline) ──────
+// Step 1: Resolve short link (if needed) — in service worker (no CORS)
+// Step 2: Parse product name + itemId from URL
+// Step 2.5: Fire Addlivetag commission lookup in parallel (service worker)
+// Step 3: Search in commission products (MAIN world API) — uses addlivetag as fallback
+// Step 4: If found → generate affiliate link with SubIDs (MAIN world API)
+async function executeCheckAndConvert(tabId, payload, reqId) {
+  try {
+    let url = payload.url;
+    const subIds = payload.subIds || { sub1: 'sub1', sub2: 'sub2', sub3: 'sub3' };
+
+    // Step 1: Resolve short links via HTTP redirect (s.shopee.vn or vn.shp.ee does 301/302)
+    if (url.includes('s.shopee.vn/') || url.includes('vn.shp.ee/')) {
+      console.log('[BG] Resolving short link:', url);
+      try {
+        const resp = await fetch(url, { method: 'GET', redirect: 'follow' });
+        const finalUrl = resp.url;
+        console.log('[BG] Resolved to:', finalUrl);
+        if (finalUrl.includes('shopee.vn')) {
+          url = finalUrl;
+        }
+      } catch (err) {
+        console.warn('[BG] Short link resolve failed:', err.message);
+      }
+    }
+
+    // Step 2: Parse product info from URL
+    let productInfo = parseProductInfo(url);
+    console.log('[BG] Parsed product info:', JSON.stringify(productInfo));
+
+    // Step 2a: Use product hint from Zalo message preview (fastest, no API needed)
+    if (!productInfo.searchKeyword && payload.productHint) {
+      productInfo.searchKeyword = payload.productHint;
+      console.log('[BG] Using product hint from Zalo:', payload.productHint.slice(0, 50));
+    }
+
+    // Step 2b: If no product name but have itemId+shopId, resolve via shopee.vn tab
+    // We inject a script into a shopee.vn page context to call /api/v4/item/get
+    // (same-origin request with cookies → bypasses anti-bot for logged-in users)
+    if (!productInfo.searchKeyword && productInfo.itemId && productInfo.shopId) {
+      console.log('[BG] Step 2b: resolving product name via shopee.vn tab...');
+      let tempTabId = null;
+      try {
+        // Try to find an existing shopee.vn tab first (avoid creating new ones)
+        const existingTabs = await chrome.tabs.query({ url: 'https://shopee.vn/*' });
+        
+        if (existingTabs.length > 0) {
+          // Use existing shopee.vn tab — no need to create
+          tempTabId = existingTabs[0].id;
+          console.log('[BG] Found existing shopee.vn tab:', tempTabId);
+        } else {
+          // Create a hidden tab
+          const tempTab = await chrome.tabs.create({
+            url: `https://shopee.vn/product/${productInfo.shopId}/${productInfo.itemId}`,
+            active: false,
+          });
+          tempTabId = tempTab.id;
+          console.log('[BG] Created temp shopee.vn tab:', tempTabId);
+
+          // Wait for tab to finish loading
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve(); // resolve anyway, try injection
+            }, 5000);
+
+            const listener = (tabId, changeInfo) => {
+              if (tabId === tempTabId && changeInfo.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(listener);
+                clearTimeout(timeout);
+                resolve();
+              }
+            };
+            chrome.tabs.onUpdated.addListener(listener);
+          });
+          console.log('[BG] Temp tab loaded, injecting script...');
+        }
+
+        // Inject script to fetch item API, fallback to page title
+        const nameResults = await chrome.scripting.executeScript({
+          target: { tabId: tempTabId },
+          world: 'MAIN',
+          func: async (itemId, shopId) => {
+            // Attempt 1: API call (fastest if it works)
+            try {
+              console.log('[SHOPEE-TAB] Trying item API:', itemId, shopId);
+              const resp = await fetch(`/api/v4/item/get?itemid=${itemId}&shopid=${shopId}`, {
+                method: 'GET',
+                headers: { 'accept': 'application/json' },
+                credentials: 'include',
+              });
+              const data = await resp.json();
+              if (data?.data?.name) {
+                console.log('[SHOPEE-TAB] ✅ API got name:', data.data.name.slice(0, 40));
+                return { name: data.data.name, source: 'api' };
+              }
+              console.warn('[SHOPEE-TAB] API no name, error:', data?.error, data?.error_msg);
+            } catch (e) {
+              console.warn('[SHOPEE-TAB] API fetch failed:', e.message);
+            }
+
+            // Attempt 2: Read page title (SPA sets it after render)
+            // Wait a bit for SPA to render
+            await new Promise(r => setTimeout(r, 1500));
+            const title = document.title || '';
+            // Shopee title format: "Product Name | Shopee Việt Nam" or just "Shopee Việt Nam"
+            const cleaned = title.replace(/\s*[\|–-]\s*Shopee.*$/i, '').trim();
+            if (cleaned && cleaned.length > 3 && !cleaned.toLowerCase().includes('shopee')) {
+              console.log('[SHOPEE-TAB] ✅ Got name from title:', cleaned.slice(0, 40));
+              return { name: cleaned, source: 'title' };
+            }
+
+            console.warn('[SHOPEE-TAB] ❌ All methods failed. Title was:', title.slice(0, 60));
+            return { name: null, error: 'All methods failed' };
+          },
+          args: [productInfo.itemId, productInfo.shopId],
+        });
+
+        // Close temp tab only if we created it
+        if (!existingTabs || existingTabs.length === 0) {
+          chrome.tabs.remove(tempTabId).catch(() => {});
+        }
+
+        const nameResult = nameResults?.[0]?.result;
+        if (nameResult?.name) {
+          productInfo.searchKeyword = nameResult.name;
+        }
+      } catch (err) {
+        if (tempTabId) chrome.tabs.remove(tempTabId).catch(() => {});
+      }
+    }
+
+    if (!productInfo.searchKeyword && !productInfo.itemId) {
+      sendResult(reqId, { success: false, error: 'Không thể phân tích link Shopee.' });
+      return;
+    }
+
+    // Step 2.5: Fire Addlivetag commission lookup in parallel (service worker)
+    const addlivetagPromise = productInfo.itemId
+      ? fetchAddlivetagCommission(productInfo.itemId)
+      : Promise.resolve({ found: false });
+
+    // Step 3 + 4: Search commission + generate link (combined in one MAIN world call)
+    const mainWorldPromise = chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (searchKeyword, targetItemId, targetShopId, originalUrl, subId1, subId2, subId3) => {
+        try {
+          const csrfMatch = document.cookie.match(/csrftoken=([^;]+)/);
+          const csrfToken = csrfMatch ? csrfMatch[1] : '';
+
+          const genLink = async (productLink) => {
+            const gqlBody = {
+              operationName: 'batchGetCustomLink',
+              query: `
+                query batchGetCustomLink($linkParams: [CustomLinkParam!], $sourceCaller: SourceCaller){
+                  batchCustomLink(linkParams: $linkParams, sourceCaller: $sourceCaller){
+                    shortLink
+                    longLink
+                    failCode
+                  }
+                }
+              `,
+              variables: {
+                linkParams: [{
+                  originalLink: productLink,
+                  advancedLinkParams: { subId1: subId1, subId2: subId2, subId3: subId3, subId4: '', subId5: '' },
+                }],
+                sourceCaller: 'CUSTOM_LINK_CALLER',
+              },
+            };
+            const resp = await fetch('/api/v3/gql?q=batchCustomLink', {
+              method: 'POST',
+              headers: {
+                'accept': 'application/json, text/plain, */*',
+                'content-type': 'application/json; charset=UTF-8',
+                'affiliate-program-type': '1',
+                'csrf-token': csrfToken,
+              },
+              credentials: 'include',
+              body: JSON.stringify(gqlBody),
+            });
+            const data = await resp.json();
+            return data.data?.batchCustomLink?.[0];
+          };
+
+          const parseRate = (v) => { if (!v) return 0; if (typeof v === 'number') return v; return parseFloat(v) || 0; };
+          const searchProducts = async (keyword) => {
+            const searchUrl = `/api/v3/offer/product/list?list_type=0&keyword=${encodeURIComponent(keyword)}&sort_type=1&page_offset=0&page_limit=20&client_type=1`;
+            const resp = await fetch(searchUrl, {
+              method: 'GET',
+              headers: { 'accept': 'application/json, text/plain, */*', 'affiliate-program-type': '1' },
+              credentials: 'include',
+            });
+            return resp.json();
+          };
+
+          if (searchKeyword) {
+            const searchData = await searchProducts(searchKeyword);
+            if (searchData.code !== 0) return { success: false, error: searchData.msg || `Search API error: ${searchData.code}` };
+            const list = searchData.data?.list || [];
+            if (list.length === 0) return { success: false, noCommission: true, _needFallback: true };
+
+            let matched = null;
+            if (targetItemId) matched = list.find(item => String(item.item_id) === String(targetItemId));
+            if (!matched) {
+              if (targetItemId) return { success: false, noCommission: true, _needFallback: true };
+              matched = list[0];
+            }
+
+            const card = matched.batch_item_for_item_card_full || {};
+            const rawPrice = card.price ? parseInt(card.price) / 100000 : 0;
+            const commission = Math.max(parseRate(matched.max_commission_rate), parseRate(matched.seller_commission_rate), parseRate(matched.default_commission_rate));
+            const commissionAmount = Math.round((rawPrice * commission) / 100);
+
+            if (commission <= 0) {
+              const productName = card.name || 'Sản phẩm';
+              const productLink = matched.product_link || originalUrl;
+              const linkResult = await genLink(productLink);
+              return { success: true, hasCommission: false, _needFallback: true, productName, commission: 0, commissionAmount: 0, price: new Intl.NumberFormat('vi-VN').format(rawPrice) + '₫', shortLink: linkResult?.shortLink || linkResult?.longLink || null, source: 'shopee_zero' };
+            }
+
+            const linkResult = await genLink(matched.product_link || originalUrl);
+            return { success: true, hasCommission: true, productName: card.name || 'Sản phẩm', commission, commissionAmount, price: new Intl.NumberFormat('vi-VN').format(rawPrice) + '₫', shortLink: linkResult?.shortLink || linkResult?.longLink || null, source: 'shopee' };
+          }
+
+          if (targetItemId) {
+            const productUrl = targetShopId ? `https://shopee.vn/product/${targetShopId}/${targetItemId}` : originalUrl;
+            const linkResult = await genLink(productUrl);
+            if (!linkResult || (linkResult.failCode && linkResult.failCode !== 0)) return { success: false, noCommission: true, _needFallback: true };
+
+            let commission = 0;
+            let commissionAmount = 0;
+            let productName = 'Sản phẩm';
+            let price = '';
+            try {
+              const searchData = await searchProducts(targetItemId);
+              const matched = (searchData.data?.list || []).find(item => String(item.item_id) === String(targetItemId));
+              if (matched) {
+                const card = matched.batch_item_for_item_card_full || {};
+                commission = Math.max(parseRate(matched.max_commission_rate), parseRate(matched.seller_commission_rate), parseRate(matched.default_commission_rate));
+                productName = card.name || productName;
+                const rawPrice = card.price ? parseInt(card.price) / 100000 : 0;
+                price = rawPrice ? new Intl.NumberFormat('vi-VN').format(rawPrice) + '₫' : '';
+                commissionAmount = Math.round((rawPrice * commission) / 100);
+              }
+            } catch (e) {}
+
+            return { success: true, hasCommission: commission > 0, _needFallback: commission <= 0, productName, commission, commissionAmount, price, shortLink: linkResult.shortLink || linkResult.longLink, source: commission > 0 ? 'shopee' : 'shopee_zero' };
+          }
+          return { success: false, noCommission: true, error: 'No product info available' };
+        } catch (err) { return { success: false, error: err.message }; }
+      },
+      args: [productInfo.searchKeyword || '', productInfo.itemId || '', productInfo.shopId || '', url, subIds.sub1 || 'sub1', subIds.sub2 || 'sub2', subIds.sub3 || 'sub3'],
+    });
+
+    const [addlivetagData, mainResults] = await Promise.all([addlivetagPromise, mainWorldPromise]);
+    let result = mainResults?.[0]?.result;
+
+    if (!result) {
+      sendResult(reqId, { success: false, error: 'Script execution returned no result' });
+      return;
+    }
+
+    if (result._needFallback && addlivetagData.found) {
+      if (!result.success || !result.shortLink) {
+        const linkUrl = productInfo.shopId ? `https://shopee.vn/product/${productInfo.shopId}/${productInfo.itemId}` : url;
+        try {
+          const linkResults = await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: async (productLink, s1, s2, s3) => {
+              const csrfMatch = document.cookie.match(/csrftoken=([^;]+)/);
+              const gqlBody = {
+                operationName: 'batchGetCustomLink',
+                query: `query batchGetCustomLink($linkParams: [CustomLinkParam!], $sourceCaller: SourceCaller){ batchCustomLink(linkParams: $linkParams, sourceCaller: $sourceCaller){ shortLink longLink failCode } }`,
+                variables: { linkParams: [{ originalLink: productLink, advancedLinkParams: { subId1: s1, subId2: s2, subId3: s3, subId4: '', subId5: '' } }], sourceCaller: 'CUSTOM_LINK_CALLER' }
+              };
+              const resp = await fetch('/api/v3/gql?q=batchCustomLink', { method: 'POST', headers: { 'accept': 'application/json', 'content-type': 'application/json', 'affiliate-program-type': '1', 'csrf-token': csrfMatch ? csrfMatch[1] : '' }, credentials: 'include', body: JSON.stringify(gqlBody) });
+              const data = await resp.json();
+              const lr = data.data?.batchCustomLink?.[0];
+              return (!lr || (lr.failCode && lr.failCode !== 0)) ? null : (lr.shortLink || lr.longLink);
+            },
+            args: [linkUrl, subIds.sub1 || 'sub1', subIds.sub2 || 'sub2', subIds.sub3 || 'sub3'],
+          });
+          const shortLink = linkResults?.[0]?.result;
+          if (shortLink) {
+            result = { success: true, hasCommission: true, productName: addlivetagData.productName || 'Sản phẩm', commission: addlivetagData.commission, commissionAmount: addlivetagData.commissionAmount, price: addlivetagData.price ? new Intl.NumberFormat('vi-VN').format(addlivetagData.price) + '₫' : '', shortLink, source: 'addlivetag' };
+          } else {
+            result = { success: false, noCommission: true };
+          }
+        } catch (err) { result = { success: false, noCommission: true }; }
+      } else {
+        result.hasCommission = true;
+        result.commission = addlivetagData.commission;
+        result.commissionAmount = addlivetagData.commissionAmount;
+        result.productName = result.productName || addlivetagData.productName || 'Sản phẩm';
+        if (!result.price && addlivetagData.price) result.price = new Intl.NumberFormat('vi-VN').format(addlivetagData.price) + '₫';
+        result.source = 'addlivetag';
+      }
+    } else if (result._needFallback && !addlivetagData.found) {
+      if (!result.success || !result.shortLink) result = { success: false, noCommission: true };
+    } else if (result.success) {
+      console.log('[BG] ✅ Commission source:', result.source || 'shopee', `${result.commission}%`);
+    }
+
+    delete result._needFallback;
+    // Inject item/shop IDs for convert_logs matching
+    if (productInfo.itemId) result.itemId = productInfo.itemId;
+    if (productInfo.shopId) result.shopId = productInfo.shopId;
+    sendResult(reqId, result);
+  } catch (err) {
+    console.error('[BG] check_and_convert error:', err);
+    sendResult(reqId, { success: false, error: err.message });
+  }
+}
+
+// Parse product info from any Shopee URL format
+function parseProductInfo(url) {
+  // Format 1: shopee.vn/{name}-i.{shopId}.{itemId}
+  const namedMatch = url.match(/shopee\.vn\/(.+)-i\.(\d+)\.(\d+)/);
+  if (namedMatch) {
+    const slug = namedMatch[1];
+    const name = decodeURIComponent(slug).replace(/[-_.]+/g, ' ').trim();
+    return { searchKeyword: name, shopId: namedMatch[2], itemId: namedMatch[3] };
+  }
+
+  // Format 2: shopee.vn/product/{shopId}/{itemId}
+  const productMatch = url.match(/shopee\.vn\/product\/(\d+)\/(\d+)/);
+  if (productMatch) {
+    return { searchKeyword: null, shopId: productMatch[1], itemId: productMatch[2] };
+  }
+
+  // Format 3: shopee.vn/universal-link/product/{shopId}/{itemId}
+  const universalMatch = url.match(/universal-link\/product\/(\d+)\/(\d+)/);
+  if (universalMatch) {
+    return { searchKeyword: null, shopId: universalMatch[1], itemId: universalMatch[2] };
+  }
+
+  // Format 4: affiliate.shopee.vn/offer/product_offer/{itemId}
+  const affiliateMatch = url.match(/affiliate\.shopee\.vn\/offer\/product_offer\/(\d+)/);
+  if (affiliateMatch) {
+    return { searchKeyword: null, shopId: null, itemId: affiliateMatch[1] };
+  }
+
+  // Format 5: shopee.vn/{word}/{shopId}/{itemId} (resolved short links → e.g. /opaanlp/123/456)
+  const resolvedMatch = url.match(/shopee\.vn\/([a-zA-Z0-9]+)\/(\d+)\/(\d+)/);
+  if (resolvedMatch && resolvedMatch[1] !== 'product') {
+    return { searchKeyword: null, shopId: resolvedMatch[2], itemId: resolvedMatch[3] };
+  }
+
+  // Format 6: shopee.vn/{shop_slug}/{itemId} (shop-branded URL, e.g. /ecoshop6868/24189784914)
+  // Slug contains letters AND digits, itemId must be 8+ digits
+  const shopSlugMatch = url.match(/shopee\.vn\/([a-zA-Z0-9][a-zA-Z0-9_-]*)\/(\d{8,})/);
+  if (shopSlugMatch && shopSlugMatch[1] !== 'product' && shopSlugMatch[1] !== 'universal-link') {
+    return { searchKeyword: null, shopId: null, itemId: shopSlugMatch[2] };
+  }
+
+  // Fallback: try to extract any product-like slug from shopee.vn
+  const fallbackSlug = url.match(/shopee\.vn\/([^/?#]+)/);
+  if (fallbackSlug && !fallbackSlug[1].startsWith('product')) {
+    const name = decodeURIComponent(fallbackSlug[1]).replace(/[-_.]+/g, ' ').trim();
+    if (name.length > 3) {
+      return { searchKeyword: name, shopId: null, itemId: null };
+    }
+  }
+
+  return { searchKeyword: null, shopId: null, itemId: null };
+}
+
+async function executeSearchInMainWorld(tabId, keyword, reqId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (kw) => {
+        try {
+          const url = `/api/v3/offer/product/list?list_type=0&keyword=${encodeURIComponent(kw)}&sort_type=1&page_offset=0&page_limit=20&client_type=1`;
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'accept': 'application/json, text/plain, */*',
+              'affiliate-program-type': '1',
+            },
+            credentials: 'include',
+          });
+          const data = await response.json();
+
+          if (data.code !== 0) {
+            return { success: false, error: data.msg || `API error code: ${data.code}` };
+          }
+
+          const items = (data.data?.list || []).map(item => {
+            const card = item.batch_item_for_item_card_full || {};
+            const rawPrice = card.price ? parseInt(card.price) / 100000 : 0;
+            const rawPriceBefore = card.price_before_discount ? parseInt(card.price_before_discount) / 100000 : 0;
+
+            return {
+              itemId: item.item_id,
+              name: card.name || 'Unknown',
+              productLink: item.product_link,
+              affiliateLink: item.long_link,
+              sellerCommission: item.seller_commission_rate,
+              defaultCommission: item.default_commission_rate,
+              maxCommission: item.max_commission_rate,
+              price: new Intl.NumberFormat('vi-VN').format(rawPrice) + '₫',
+              priceBeforeDiscount: rawPriceBefore > 0 ? new Intl.NumberFormat('vi-VN').format(rawPriceBefore) + '₫' : null,
+              discount: card.discount || '',
+              imageUrl: card.image ? `https://down-vn.img.susercontent.com/file/${card.image}` : null,
+              shopName: card.shop_name || '',
+              shopRating: card.shop_rating || 0,
+              sold: card.historical_sold_text || '0',
+              rating: card.item_rating?.rating_star || 0,
+            };
+          });
+
+          return {
+            success: true,
+            items,
+            totalCount: data.data?.total_count || 0,
+          };
+        } catch (err) {
+          return { success: false, error: err.message };
+        }
+      },
+      args: [keyword],
+    });
+
+    const result = results?.[0]?.result;
+    if (result) {
+      sendResult(reqId, result);
+    } else {
+      sendResult(reqId, { success: false, error: 'Script execution returned no result' });
+    }
+  } catch (err) {
+    console.error('[BG] Main World script error:', err);
+    sendResult(reqId, { success: false, error: err.message });
+  }
+}
+
+function navigateAndWait(tabId, url) {
+  return new Promise((resolve) => {
+    chrome.tabs.update(tabId, { url }, () => {
+      // Wait for tab to finish loading
+      function listener(updatedTabId, changeInfo) {
+        if (updatedTabId === tabId && changeInfo.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(listener);
+          // Short delay for React to hydrate
+          setTimeout(resolve, 500);
+        }
+      }
+      chrome.tabs.onUpdated.addListener(listener);
+      // Safety timeout
+      setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }, 10000);
+    });
+  });
+}
+
+function sendResult(reqId, data) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({
+      type: 'automation_result',
+      data: { reqId, ...data },
+    }));
+  }
+}
+
+// ─── Fetch Product Images from Conversion Report API ────
+// Calls /api/v3/report/list to extract img_code for each item.
+// Processes one page at a time with delay to avoid rate limiting.
+async function executeFetchProductImages(tabId, payload, reqId) {
+  try {
+    const { startTimestamp, endTimestamp, knownItemIds } = payload;
+    const knownSet = new Set(knownItemIds || []);
+
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (startTs, endTs, alreadyCachedIds) => {
+        const cached = new Set(alreadyCachedIds);
+        const imageMap = []; // [{item_id, shop_id, img_code}]
+        let pageNum = 1;
+        const pageSize = 50;
+        let totalFetched = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+          try {
+            const url = `/api/v3/report/list?page_size=${pageSize}&page_num=${pageNum}&purchase_time_s=${startTs}&purchase_time_e=${endTs}&version=1`;
+            const resp = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'accept': 'application/json, text/plain, */*',
+                'affiliate-program-type': '1',
+              },
+              credentials: 'include',
+            });
+
+            if (!resp.ok) {
+              return { success: false, error: `API returned ${resp.status}` };
+            }
+
+            const data = await resp.json();
+            if (data.code !== 0) {
+              return { success: false, error: data.msg || `API error code: ${data.code}` };
+            }
+
+            const list = data.data?.list || [];
+            const total = data.data?.total_count || 0;
+
+            for (const conv of list) {
+              for (const order of (conv.orders || [])) {
+                for (const item of (order.items || [])) {
+                  const itemId = String(item.item_id);
+                  if (item.img_code && !cached.has(itemId)) {
+                    imageMap.push({
+                      item_id: itemId,
+                      shop_id: String(item.shop_id || ''),
+                      img_code: item.img_code,
+                    });
+                    cached.add(itemId);
+                  }
+                }
+              }
+            }
+
+            totalFetched += list.length;
+            hasMore = totalFetched < total && list.length === pageSize;
+            pageNum++;
+
+            // Throttle: wait 1.5s between pages to be safe
+            if (hasMore) {
+              await new Promise(r => setTimeout(r, 1500));
+            }
+          } catch (err) {
+            return { success: false, error: `Page ${pageNum} failed: ${err.message}` };
+          }
+        }
+
+        return { success: true, images: imageMap, totalPages: pageNum - 1, totalFetched };
+      },
+      args: [startTimestamp, endTimestamp, Array.from(knownSet)],
+    });
+
+    const result = results?.[0]?.result;
+    if (result) {
+      sendResult(reqId, result);
+    } else {
+      sendResult(reqId, { success: false, error: 'Script execution returned no result' });
+    }
+  } catch (err) {
+    console.error('[BG] fetch_product_images error:', err);
+    sendResult(reqId, { success: false, error: err.message });
+  }
+}
+
+// SW auto-connects inside storage.local.get() callback above (on every restart)
