@@ -234,20 +234,24 @@ app.get('/go/:token', async (req, res) => {
 
 // ─── Public Shopee Extract API (no auth — used by demo.html) ─────────────
 
-// Helper: resolve any Shopee URL to a canonical product URL before sending to extension
+// Helper: resolve any Shopee URL to a canonical /product/{shopId}/{itemId} URL
 async function resolveShopeeUrl(url) {
   if (!url) return url;
-  // Already a full product URL with -i. pattern → no need to resolve
+
+  // Step 1: Already canonical → done
+  if (/shopee\.vn\/product\/\d+\/\d+/.test(url)) return url;
   if (/shopee\.vn\/.+-i\.\d+\.\d+/.test(url)) return url;
-  // an_redir → extract origin_link
+
+  // Step 2: an_redir → extract origin_link
   if (url.includes('an_redir')) {
     try {
       const u = new URL(url);
       const origin = u.searchParams.get('origin_link');
-      if (origin) return decodeURIComponent(origin);
+      if (origin) url = decodeURIComponent(origin);
     } catch {}
   }
-  // Short link → follow redirect
+
+  // Step 3: Short link (s.shopee.vn / vn.shp.ee) → follow redirect
   if (url.includes('s.shopee.vn/') || url.includes('vn.shp.ee/')) {
     try {
       const resp = await fetch(url, {
@@ -255,11 +259,38 @@ async function resolveShopeeUrl(url) {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
         signal: AbortSignal.timeout(8000),
       });
-      if (resp.url && resp.url.includes('shopee.vn')) return resp.url;
+      if (resp.url && resp.url.includes('shopee.vn')) {
+        url = resp.url;
+        logger.info('Server', `resolveShopeeUrl: short → ${url.slice(0, 80)}`);
+      }
     } catch (e) {
       logger.warn('Server', `Short link resolve failed: ${e.message}`);
     }
   }
+
+  // Step 4: If still not canonical, try to extract itemId + fetch shopId via addlivetag productLink
+  if (!/shopee\.vn\/product\/\d+\/\d+/.test(url) && !/shopee\.vn\/.+-i\.\d+\.\d+/.test(url)) {
+    const slugMatch = url.match(/shopee\.vn\/[^/?#\s]+\/(\d{8,})/);
+    if (slugMatch) {
+      const itemId = slugMatch[1];
+      try {
+        const resp = await fetch(
+          `https://data.addlivetag.com/product-data/product-data.php?item_id=${itemId}`,
+          { method: 'GET', signal: AbortSignal.timeout(8000) }
+        );
+        const data = await resp.json();
+        // productLink contains canonical shopee.vn/product/{shopId}/{itemId}
+        const productLink = data.productInfo?.productLink;
+        if (productLink && /shopee\.vn\/product\/\d+\/\d+/.test(productLink)) {
+          logger.info('Server', `resolveShopeeUrl: shop-slug → ${productLink}`);
+          return productLink;
+        }
+      } catch (e) {
+        logger.warn('Server', `addlivetag lookup failed: ${e.message}`);
+      }
+    }
+  }
+
   return url;
 }
 
