@@ -42,7 +42,7 @@ class AuthStore {
 
   async getAdmin(username) {
     const admin = await db.get(
-      'SELECT id, username, display_name, is_active, must_change_password, last_login, created_at FROM admin_users WHERE username = ?',
+      'SELECT id, username, display_name, avatar, is_active, must_change_password, last_login, created_at FROM admin_users WHERE username = ?',
       [username]
     );
     if (!admin) return null;
@@ -50,6 +50,7 @@ class AuthStore {
       id: admin.id,
       username: admin.username,
       displayName: admin.display_name,
+      avatar: admin.avatar || null,
       isActive: !!admin.is_active,
       mustChangePassword: !!admin.must_change_password,
       lastLogin: admin.last_login,
