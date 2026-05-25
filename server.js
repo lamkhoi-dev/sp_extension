@@ -372,10 +372,51 @@ app.use('/api', requireAuth);
 
 // ─── Authenticated Auth Routes ────────────────────────
 app.post('/api/auth/logout', async (req, res) => {
-  await auditStore.log(req.admin.username, 'LOGOUT', 'auth', '', {}, req.ip);
+  try {
+    if (req.admin?.username) {
+      await auditStore.log(req.admin.username, 'LOGOUT', 'auth', '', {}, req.ip);
+    }
+  } catch {}
   res.clearCookie(JWT_COOKIE);
   res.json({ ok: true });
 });
+
+// ─── Admin Avatar Upload ───────────────────────────────────────────────────
+const avatarUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(__dirname, 'public/avatars');
+      fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.jpg';
+      cb(null, `admin-${req.admin.username}-${Date.now()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 3 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) return cb(new Error('Chỉ chấp nhận ảnh'));
+    cb(null, true);
+  },
+});
+
+app.post('/api/auth/avatar', avatarUpload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Không có file' });
+    const url = `/avatars/${req.file.filename}`;
+    await db.run(
+      'UPDATE admin_users SET avatar = ? WHERE username = ?',
+      [url, req.admin.username]
+    );
+    res.json({ ok: true, url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.use('/avatars', express.static(path.join(__dirname, 'public/avatars')));
+
 
 app.get('/api/auth/me', async (req, res) => {
   const admin = await authStore.getAdmin(req.admin.username);

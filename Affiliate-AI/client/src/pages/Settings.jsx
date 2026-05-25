@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Sun, Moon, Palette, Bell, Shield, User, Check, Key, Eye, EyeOff, X, Lock } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Sun, Moon, Palette, Bell, Shield, User, Check, Key, Eye, EyeOff, X, Lock, Upload, Loader2, Camera } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import Button from '../components/ui/Button';
@@ -134,7 +134,7 @@ function ChangePasswordModal({ onClose }) {
 
 export default function SettingsPage() {
   const { isDark, toggleTheme, accentColor, setAccentColor, themeColors } = useTheme();
-  const { admin } = useAuth();
+  const { admin, checkAuth } = useAuth();
   const [notifications, setNotifications] = useState({
     email: true,
     push: true,
@@ -142,6 +142,39 @@ export default function SettingsPage() {
     payouts: false,
   });
   const [showChangePw, setShowChangePw] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+  const [avatarSuccess, setAvatarSuccess] = useState(false);
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setAvatarError('Chỉ chấp nhận file ảnh');
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setAvatarError('Ảnh tối đa 3MB');
+      return;
+    }
+    setAvatarUploading(true);
+    setAvatarError('');
+    setAvatarSuccess(false);
+    try {
+      const fd = new FormData();
+      fd.append('avatar', file);
+      const res = await fetch('/api/auth/avatar', { method: 'POST', body: fd, credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload thất bại');
+      await checkAuth(); // refresh admin state
+      setAvatarSuccess(true);
+      setTimeout(() => setAvatarSuccess(false), 3000);
+    } catch (err) {
+      setAvatarError(err.message);
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -296,27 +329,50 @@ export default function SettingsPage() {
             <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-              Tài khoản
-            </h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Thông tin tài khoản admin
-            </p>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Tài khoản</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Thông tin và ảnh đại diện</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl mb-5">
-          <img
-            src={admin?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${admin?.username || 'Admin'}`}
-            alt="Admin"
-            className="w-16 h-16 rounded-xl object-cover border-2 border-slate-200 dark:border-slate-700"
-          />
-          <div>
-            <p className="font-semibold text-slate-900 dark:text-white">{admin?.username || 'Admin'}</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{admin?.email || 'admin@affiliatehub.vn'}</p>
+        {/* Avatar section */}
+        <div className="flex items-center gap-5 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl mb-5">
+          <div className="relative flex-shrink-0">
+            <img
+              src={admin?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${admin?.username || 'Admin'}`}
+              alt="Admin"
+              className="w-20 h-20 rounded-2xl object-cover border-2 border-slate-200 dark:border-slate-700 bg-slate-200"
+              onError={e => { e.target.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${admin?.username}`; }}
+            />
+            <label
+              htmlFor="avatar-upload"
+              className="absolute -bottom-1 -right-1 w-7 h-7 bg-blue-500 hover:bg-blue-600 rounded-full flex items-center justify-center cursor-pointer shadow-lg transition-colors"
+            >
+              {avatarUploading
+                ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+                : <Camera className="w-3.5 h-3.5 text-white" />
+              }
+            </label>
+            <input
+              id="avatar-upload"
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarUpload}
+              disabled={avatarUploading}
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-slate-900 dark:text-white">{admin?.displayName || admin?.username || 'Admin'}</p>
+            <p className="text-sm text-slate-500 font-mono">@{admin?.username}</p>
             <span className="inline-flex items-center gap-1 mt-1 text-[10px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium">
-              {admin?.role || 'Admin'}
+              Admin
             </span>
+            {avatarSuccess && (
+              <p className="text-xs text-emerald-500 mt-1 flex items-center gap-1"><Check className="w-3 h-3" /> Đã cập nhật ảnh!</p>
+            )}
+            {avatarError && (
+              <p className="text-xs text-red-500 mt-1">{avatarError}</p>
+            )}
           </div>
         </div>
 
@@ -328,6 +384,13 @@ export default function SettingsPage() {
             <Key className="w-4 h-4" />
             Đổi mật khẩu
           </button>
+          <label
+            htmlFor="avatar-upload"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 dark:border-blue-800 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors cursor-pointer"
+          >
+            <Upload className="w-4 h-4" />
+            {avatarUploading ? 'Đang upload...' : 'Đổi ảnh đại diện'}
+          </label>
         </div>
       </Card>
 
