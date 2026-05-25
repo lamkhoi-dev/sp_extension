@@ -535,56 +535,62 @@ app.get('/api/users', async (req, res) => {
   const lim = Math.min(parseInt(limit) || 100, 500);
   const off = parseInt(offset) || 0;
 
-  // Enriched query: invited_count, total_orders_count, invited_avatars (JSON)
-  const baseSelect = `
+  // PostgreSQL enriched query using json_agg + LATERAL-style correlated subquery
+  // NOTE: pg-adapter auto-converts ? → $1,$2,... so always use ? placeholders
+  const enrichedSQL = (whereClause = '', extraParams = []) => [`
     SELECT
       u.*,
       r.avatar AS referrer_avatar,
       r.display_name AS referrer_name,
       COALESCE(inv_count.cnt, 0) AS invited_count,
       COALESCE(ord_count.cnt, 0) AS total_orders_count,
-      inv_avatars.avatars AS invited_avatars
+      (
+        SELECT json_agg(json_build_object('avatar', inv.avatar, 'name', COALESCE(inv.display_name, inv.zalo_name, '')))
+        FROM (
+          SELECT avatar, display_name, zalo_name
+          FROM users
+          WHERE referrer_id = u.user_id AND avatar IS NOT NULL
+          ORDER BY last_seen DESC NULLS LAST
+          LIMIT 5
+        ) inv
+      ) AS invited_avatars
     FROM users u
     LEFT JOIN users r ON u.referrer_id = r.user_id
     LEFT JOIN (
-      SELECT referrer_id, COUNT(*) AS cnt FROM users WHERE referrer_id != '' GROUP BY referrer_id
+      SELECT referrer_id, COUNT(*) AS cnt
+      FROM users WHERE referrer_id IS NOT NULL AND referrer_id != ''
+      GROUP BY referrer_id
     ) inv_count ON inv_count.referrer_id = u.user_id
     LEFT JOIN (
-      SELECT sub_id1, COUNT(DISTINCT order_id) AS cnt FROM orders WHERE sub_id1 != '' GROUP BY sub_id1
+      SELECT sub_id1, COUNT(DISTINCT order_id) AS cnt
+      FROM orders WHERE sub_id1 IS NOT NULL AND sub_id1 != ''
+      GROUP BY sub_id1
     ) ord_count ON ord_count.sub_id1 = u.user_id
-    LEFT JOIN (
-      SELECT
-        referrer_id,
-        json_group_array(json_object('avatar', avatar, 'name', COALESCE(display_name, zalo_name, ''))) AS avatars
-      FROM (
-        SELECT referrer_id, avatar, display_name, zalo_name
-        FROM users WHERE referrer_id != '' AND avatar IS NOT NULL
-        ORDER BY last_seen DESC
-      ) GROUP BY referrer_id
-    ) inv_avatars ON inv_avatars.referrer_id = u.user_id
-  `;
+    ${whereClause}
+    ORDER BY u.last_seen DESC NULLS LAST
+  `, extraParams];
 
-  if (search) {
-    const q = `%${search}%`;
-    const rows = await db.all(
-      `${baseSelect} WHERE u.display_name LIKE ? OR u.zalo_name LIKE ? OR u.user_id LIKE ? ORDER BY u.last_seen DESC LIMIT ?`,
-      [q, q, q, lim]
-    );
-    return res.json(rows.map(r => ({
-      ...r,
-      invited_avatars: r.invited_avatars ? JSON.parse(r.invited_avatars).slice(0, 5) : []
-    })));
+  try {
+    if (search) {
+      const q = `%${search}%`;
+      const [sql, params] = enrichedSQL(
+        `WHERE u.display_name ILIKE ? OR u.zalo_name ILIKE ? OR CAST(u.user_id AS TEXT) ILIKE ?`,
+        [q, q, q]
+      );
+      const rows = await db.all(sql + ` LIMIT ?`, [...params, lim]);
+      return res.json(rows.map(r => ({ ...r, invited_avatars: r.invited_avatars || [] })));
+    }
+
+    const [sql, params] = enrichedSQL();
+    const rows = await db.all(sql + ` LIMIT ? OFFSET ?`, [...params, lim, off]);
+    res.json(rows.map(r => ({ ...r, invited_avatars: r.invited_avatars || [] })));
+  } catch (err) {
+    logger.error('Users', `GET /api/users failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
   }
-
-  const rows = await db.all(
-    `${baseSelect} ORDER BY u.last_seen DESC LIMIT ? OFFSET ?`,
-    [lim, off]
-  );
-  res.json(rows.map(r => ({
-    ...r,
-    invited_avatars: r.invited_avatars ? JSON.parse(r.invited_avatars).slice(0, 5) : []
-  })));
 });
+
+
 
 // Convert Logs API
 app.get('/api/convert-logs', async (req, res) => {
