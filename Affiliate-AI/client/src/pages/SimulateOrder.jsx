@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ShoppingCart, Link2, User, DollarSign, CheckCircle, AlertCircle, Package, Hash, Percent, Calendar, Building2, Zap, Gift, RotateCcw, Info } from 'lucide-react';
+import { ShoppingCart, Link2, User, DollarSign, CheckCircle, AlertCircle, Package, Hash, Percent, Calendar, Building2, Zap, Gift } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
@@ -39,7 +39,7 @@ export default function SimulateOrderPage() {
     price: '', quantity: 1,
     shopeeRate: '', sellerRate: '', xtraCommission: '',
     orderCommission: '', orderBonus: '',
-    refundAmount: '', commissionType: 'CPS', mcnFeeRate: '',
+    commissionType: 'CPS',
     status: 'Hoàn thành', subId1: '',
     orderTime: new Date().toISOString().slice(0, 16),
     completeTime: new Date().toISOString().slice(0, 16),
@@ -79,20 +79,16 @@ export default function SimulateOrderPage() {
   const price = parseFloat(form.price) || 0;
   const qty = parseInt(form.quantity) || 1;
   const orderValue = price * qty;
-  const refundAmount = parseFloat(form.refundAmount) || 0;
-  const effectiveValue = Math.max(orderValue - refundAmount, 0);
   const shopeeRate = parseFloat(form.shopeeRate) || 0;
   const sellerRate = parseFloat(form.sellerRate) || 0;
-  const shopeeComm = Math.round(effectiveValue * shopeeRate / 100);
-  const sellerComm = Math.round(effectiveValue * sellerRate / 100);
+  const shopeeComm = Math.round(orderValue * shopeeRate / 100);
+  const sellerComm = Math.round(orderValue * sellerRate / 100);
   const xtraComm = parseFloat(form.xtraCommission) || 0;
   const totalProductComm = shopeeComm + sellerComm + xtraComm;
   const orderComm = parseFloat(form.orderCommission) || 0;
   const orderBonus = parseFloat(form.orderBonus) || 0;
   const totalOrderComm = totalProductComm + orderComm + orderBonus;
-  const mcnRate = parseFloat(form.mcnFeeRate) || 0;
-  const mcnFee = Math.round(totalOrderComm * mcnRate / 100);
-  const netCommission = totalOrderComm - mcnFee;
+  const netCommission = totalOrderComm;
 
   // Cashback split
   const buyerRate = selectedUser?.cashback_buyer_rate || 60;
@@ -116,7 +112,7 @@ export default function SimulateOrderPage() {
           completeTime: form.status === 'Hoàn thành' ? new Date(form.completeTime).toISOString() : '',
           shopeeRate, sellerRate,
           xtraCommission: xtraComm, orderCommission: orderComm, orderBonus,
-          refundAmount, commissionType: form.commissionType, mcnFeeRate: mcnRate,
+          commissionType: form.commissionType,
         }),
       });
       const data = await res.json();
@@ -185,10 +181,9 @@ export default function SimulateOrderPage() {
             </h2>
             <div className="space-y-4">
               {/* Price row */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <Field label="Giá *" icon={DollarSign}><input className={inputCls} type="number" min="0" value={form.price} onChange={e => set('price', e.target.value)} placeholder="56000" /></Field>
                 <Field label="Số lượng"><input className={inputCls} type="number" min="1" value={form.quantity} onChange={e => set('quantity', e.target.value)} /></Field>
-                <Field label="Hoàn trả" icon={RotateCcw} hint="Nếu đơn bị return 1 phần"><input className={inputCls} type="number" min="0" value={form.refundAmount} onChange={e => set('refundAmount', e.target.value)} placeholder="0" /></Field>
               </div>
 
               {/* Commission rates */}
@@ -210,15 +205,12 @@ export default function SimulateOrderPage() {
               {/* Order-level commission */}
               <div className="p-4 rounded-xl bg-amber-50/50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30 space-y-3">
                 <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1"><Gift className="w-3 h-3" /> Hoa hồng cấp đơn hàng (số tiền cố định)</p>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   <Field label="Order Commission (đ)" hint="HH cấp đơn">
                     <input className={inputCls} type="number" min="0" value={form.orderCommission} onChange={e => set('orderCommission', e.target.value)} placeholder="0" />
                   </Field>
                   <Field label="Order Bonus (đ)" hint="Bonus đơn">
                     <input className={inputCls} type="number" min="0" value={form.orderBonus} onChange={e => set('orderBonus', e.target.value)} placeholder="0" />
-                  </Field>
-                  <Field label="MCN Fee (%)" icon={Info} hint="% phí MCN cắt">
-                    <input className={inputCls} type="number" min="0" max="100" step="0.1" value={form.mcnFeeRate} onChange={e => set('mcnFeeRate', e.target.value)} placeholder="0" />
                   </Field>
                 </div>
               </div>
@@ -242,8 +234,6 @@ export default function SimulateOrderPage() {
             <h2 className="text-base font-semibold text-slate-900 dark:text-white mb-3">📋 Tổng hợp</h2>
             <div className="space-y-2">
               <PreviewRow label="Giá trị đơn" value={fmtVND(orderValue)} />
-              {refundAmount > 0 && <PreviewRow label="− Hoàn trả" value={`-${fmtVND(refundAmount)}`} color="text-red-500" />}
-              {refundAmount > 0 && <PreviewRow label="Giá trị thực" value={fmtVND(effectiveValue)} bold />}
 
               <hr className="border-slate-200 dark:border-slate-700" />
               <p className="text-[10px] font-semibold text-blue-500 uppercase tracking-wider">HH Sản phẩm</p>
@@ -262,8 +252,6 @@ export default function SimulateOrderPage() {
               )}
 
               <hr className="border-slate-200 dark:border-slate-700" />
-              <PreviewRow label="Tổng HH đơn" value={fmtVND(totalOrderComm)} bold />
-              {mcnFee > 0 && <PreviewRow label={`− MCN Fee (${mcnRate}%)`} value={`-${fmtVND(mcnFee)}`} color="text-red-400" />}
               <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20">
                 <PreviewRow label="💰 NET Commission" value={fmtVND(netCommission)} color="text-emerald-600 dark:text-emerald-400" bold />
               </div>
@@ -290,7 +278,6 @@ export default function SimulateOrderPage() {
                 <p>Order: <code className="text-xs bg-emerald-100 dark:bg-emerald-900/40 px-1 rounded">{result.orderId}</code></p>
                 <p>Shopee: {fmtVND(result.shopeeCommission)} | Seller: {fmtVND(result.sellerCommission)} | Xtra: {fmtVND(result.xtraCommission)}</p>
                 <p>Order Comm: {fmtVND(result.orderCommission)} | Bonus: {fmtVND(result.orderBonus)}</p>
-                {result.mcnFeeAmount > 0 && <p>MCN Fee: -{fmtVND(result.mcnFeeAmount)}</p>}
                 <p className="font-bold">NET: {fmtVND(result.netCommission)}</p>
               </div>
             )}
