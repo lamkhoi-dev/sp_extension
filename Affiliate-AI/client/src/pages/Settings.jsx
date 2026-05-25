@@ -5,6 +5,34 @@ import { useAuth } from '../context/AuthContext';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 
+const inputCls = 'w-full px-3 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-colors pr-10';
+
+// ⚠️ Must be defined OUTSIDE ChangePasswordModal to prevent re-mount on every keystroke
+function PwField({ label, field, showKey, form, setForm, show, setShow }) {
+  return (
+    <div>
+      <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 block">{label}</label>
+      <div className="relative">
+        <input
+          type={show[showKey] ? 'text' : 'password'}
+          value={form[field]}
+          onChange={e => setForm(prev => ({ ...prev, [field]: e.target.value }))}
+          className={inputCls}
+          placeholder="••••••••"
+          autoComplete="new-password"
+        />
+        <button
+          type="button"
+          onClick={() => setShow(prev => ({ ...prev, [showKey]: !prev[showKey] }))}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+        >
+          {show[showKey] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ChangePasswordModal({ onClose }) {
   const { changePassword } = useAuth();
   const [form, setForm] = useState({ oldPw: '', newPw: '', confirmPw: '' });
@@ -12,8 +40,6 @@ function ChangePasswordModal({ onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-
-  const inputCls = 'w-full px-3 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-colors pr-10';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,28 +68,6 @@ function ChangePasswordModal({ onClose }) {
     }
   };
 
-  const PwField = ({ label, field, showKey }) => (
-    <div>
-      <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 block">{label}</label>
-      <div className="relative">
-        <input
-          type={show[showKey] ? 'text' : 'password'}
-          value={form[field]}
-          onChange={e => setForm(prev => ({ ...prev, [field]: e.target.value }))}
-          className={inputCls}
-          placeholder="••••••••"
-          autoComplete="new-password"
-        />
-        <button
-          type="button"
-          onClick={() => setShow(prev => ({ ...prev, [showKey]: !prev[showKey] }))}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-        >
-          {show[showKey] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-        </button>
-      </div>
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -95,9 +99,9 @@ function ChangePasswordModal({ onClose }) {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-            <PwField label="Mật khẩu hiện tại" field="oldPw" showKey="old" />
-            <PwField label="Mật khẩu mới" field="newPw" showKey="new" />
-            <PwField label="Xác nhận mật khẩu mới" field="confirmPw" showKey="confirm" />
+            <PwField label="Mật khẩu hiện tại" field="oldPw" showKey="old" form={form} setForm={setForm} show={show} setShow={setShow} />
+            <PwField label="Mật khẩu mới" field="newPw" showKey="new" form={form} setForm={setForm} show={show} setShow={setShow} />
+            <PwField label="Xác nhận mật khẩu mới" field="confirmPw" showKey="confirm" form={form} setForm={setForm} show={show} setShow={setShow} />
 
             {error && (
               <div className="px-3 py-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
