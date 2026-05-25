@@ -8,6 +8,21 @@ const STATUS_OPTIONS = ['Đang chờ xử lý', 'Hoàn thành', 'Đã huỷ', 'C
 const COMMISSION_TYPES = ['CPS', 'CPC'];
 const fmtVND = v => new Intl.NumberFormat('vi-VN').format(Math.round(v || 0)) + 'đ';
 
+function PercentInput({ value, onChange, placeholder = '0', max = 50 }) {
+  return (
+    <div className="relative">
+      <input
+        className={inputCls + ' pr-8'}
+        type="number" min="0" max={max} step="0.1"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium pointer-events-none">%</span>
+    </div>
+  );
+}
+
 function Field({ label, icon: Icon, children, hint }) {
   return (
     <div>
@@ -191,10 +206,10 @@ export default function SimulateOrderPage() {
                 <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1"><Percent className="w-3 h-3" /> Hoa hồng sản phẩm (% × giá trị)</p>
                 <div className="grid grid-cols-3 gap-3">
                   <Field label="% Shopee" icon={Percent} hint="Shopee trả theo ngành hàng">
-                    <input className={inputCls} type="number" min="0" max="50" step="0.1" value={form.shopeeRate} onChange={e => set('shopeeRate', e.target.value)} placeholder="7" />
+                    <PercentInput value={form.shopeeRate} onChange={v => set('shopeeRate', v)} placeholder="7" />
                   </Field>
                   <Field label="% Seller" icon={Building2} hint="Shop tự cài thêm">
-                    <input className={inputCls} type="number" min="0" max="50" step="0.1" value={form.sellerRate} onChange={e => set('sellerRate', e.target.value)} placeholder="0" />
+                    <PercentInput value={form.sellerRate} onChange={v => set('sellerRate', v)} placeholder="0" />
                   </Field>
                   <Field label="Xtra bonus (đ)" icon={Zap} hint="Bonus campaign Xtra">
                     <input className={inputCls} type="number" min="0" value={form.xtraCommission} onChange={e => set('xtraCommission', e.target.value)} placeholder="0" />
@@ -216,8 +231,7 @@ export default function SimulateOrderPage() {
               </div>
 
               {/* Status & time */}
-              <div className="grid grid-cols-3 gap-3">
-                <Field label="Loại HH"><select className={selectCls} value={form.commissionType} onChange={e => set('commissionType', e.target.value)}>{COMMISSION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></Field>
+              <div className="grid grid-cols-2 gap-3">
                 <Field label="Trạng thái"><select className={selectCls} value={form.status} onChange={e => set('status', e.target.value)}>{STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select></Field>
                 <Field label="Ngày đặt" icon={Calendar}><input className={inputCls} type="datetime-local" value={form.orderTime} onChange={e => set('orderTime', e.target.value)} /></Field>
               </div>
