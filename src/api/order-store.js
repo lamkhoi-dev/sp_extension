@@ -221,7 +221,7 @@ const orderStore = {
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    return db.get(`
+    const baseStats = await db.get(`
       SELECT
         COUNT(*) as "totalOrders",
         COUNT(DISTINCT order_id) as "uniqueOrders",
@@ -231,10 +231,30 @@ const orderStore = {
         SUM(order_commission) as "totalOrderCommission",
         SUM(order_bonus) as "totalOrderBonus",
         COUNT(DISTINCT shop_id) as "uniqueShops",
-        COUNT(DISTINCT sub_id1) as "uniqueBuyers"
+        COUNT(DISTINCT sub_id1) as "uniqueBuyers",
+        COALESCE(SUM(quantity), 0) as "totalQuantity"
       FROM orders ${where}
     `, params);
+
+    // New buyers: sub_id1 whose FIRST ever order falls within current filter range
+    let newBuyers = 0;
+    if (filters.dateFrom) {
+      const nbResult = await db.get(`
+        SELECT COUNT(*) as cnt FROM (
+          SELECT sub_id1, MIN(order_time) as first_order
+          FROM orders
+          WHERE sub_id1 != '' AND sub_id1 IS NOT NULL
+          GROUP BY sub_id1
+          HAVING MIN(order_time) >= ?
+          ${filters.dateTo ? 'AND MIN(order_time) <= ?' : ''}
+        ) t
+      `, filters.dateTo ? [filters.dateFrom, filters.dateTo + ' 23:59:59'] : [filters.dateFrom]);
+      newBuyers = nbResult?.cnt || 0;
+    }
+
+    return { ...baseStats, newBuyers };
   },
+
 
   async search(query, limit = 20) {
     const q = `%${query}%`;

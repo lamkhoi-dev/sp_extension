@@ -2,7 +2,7 @@ import { useState, useRef, useMemo } from 'react';
 import {
   RefreshCw, ShoppingCart, CheckCircle, DollarSign, Percent,
   Download, Upload, AlertCircle, ChevronDown, ChevronRight,
-  Search, X,
+  Search, X, MousePointerClick, Package, UserPlus,
 } from 'lucide-react';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
@@ -207,12 +207,14 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard icon={ShoppingCart} label="Tổng đơn" value={stats?.uniqueOrders || 0} />
-        <StatCard icon={DollarSign} label="Hoa hồng" value={formatShortVND(stats?.totalCommission || 0)} color="text-emerald-500" />
-        <StatCard icon={Percent} label="GMV" value={formatShortVND(stats?.totalOrderValue || 0)} color="text-blue-500" />
-        <StatCard icon={CheckCircle} label="Shops" value={stats?.uniqueShops || 0} />
+      {/* Stats — 6 cards giống Shopee Affiliate Dashboard */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <StatCard icon={MousePointerClick} label="Clicks" value={stats?.clicks || 0} color="text-red-500" />
+        <StatCard icon={ShoppingCart} label="Đơn hàng" value={stats?.uniqueOrders || 0} />
+        <StatCard icon={DollarSign} label="Hoa hồng ước tính" value={formatShortVND(stats?.totalCommissionNew || 0)} color="text-emerald-500" unit="đ" />
+        <StatCard icon={Package} label="Số lượng đã bán" value={stats?.totalQuantity || 0} />
+        <StatCard icon={Percent} label="Giá trị đơn hàng" value={formatShortVND(stats?.totalOrderValue || 0)} color="text-blue-500" unit="đ" />
+        <StatCard icon={UserPlus} label="Người mua mới" value={stats?.newBuyers || 0} color="text-amber-500" />
       </div>
 
       {/* ═══ Shopee-style Filter Panel ═══ */}
@@ -589,15 +591,16 @@ function DField({ label, value }) {
 }
 
 // ─── Stat Card ──────────────────────────────────────────
-function StatCard({ icon: Icon, label, value, color = '' }) {
+function StatCard({ icon: Icon, label, value, color = '', unit = '' }) {
   return (
-    <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-3 sm:p-4">
+    <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-3">
       <div className="flex items-center gap-1.5 mb-1">
         <Icon className="w-3.5 h-3.5 text-slate-400" />
-        <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">{label}</p>
+        <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">{label}</p>
       </div>
-      <p className={`text-lg sm:text-2xl font-bold ${color || 'text-slate-900 dark:text-white'}`}>
+      <p className={`text-base sm:text-xl font-bold ${color || 'text-slate-900 dark:text-white'}`}>
         {typeof value === 'number' ? value.toLocaleString('vi-VN') : value}
+        {unit && <span className="text-xs font-normal text-slate-400 ml-0.5">{unit}</span>}
       </p>
     </div>
   );

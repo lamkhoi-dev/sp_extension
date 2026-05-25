@@ -677,7 +677,21 @@ app.get('/api/orders/filter-options', async (req, res) => {
 
 app.get('/api/orders/stats', async (req, res) => {
   const { timeField, dateFrom, dateTo, status, orderId, shopName, shopType, productName, commissionType, channel } = req.query;
-  res.json(await orderStore.getStats({ timeField, dateFrom, dateTo, status, orderId, shopName, shopType, productName, commissionType, channel }));
+  const stats = await orderStore.getStats({ timeField, dateFrom, dateTo, status, orderId, shopName, shopType, productName, commissionType, channel });
+
+  // Add clicks from convert_logs (filtered by same date range)
+  let clicks = 0;
+  try {
+    const clickConditions = [];
+    const clickParams = [];
+    if (dateFrom) { clickConditions.push('created_at >= ?'); clickParams.push(dateFrom); }
+    if (dateTo) { clickConditions.push('created_at <= ?'); clickParams.push(dateTo + ' 23:59:59'); }
+    const clickWhere = clickConditions.length > 0 ? `WHERE ${clickConditions.join(' AND ')}` : '';
+    const clickResult = await db.get(`SELECT COUNT(*) as cnt FROM convert_logs ${clickWhere}`, clickParams);
+    clicks = clickResult?.cnt || 0;
+  } catch {}
+
+  res.json({ ...stats, clicks });
 });
 
 // ─── Report Dashboard API ───────────────────────────────
