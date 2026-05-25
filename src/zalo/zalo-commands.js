@@ -408,12 +408,19 @@ class ZaloCommands {
       if (result.commissionAmount > 0) {
         commissionText += ` (~${new Intl.NumberFormat('vi-VN').format(result.commissionAmount)}đ)`;
       }
-      const msg = `✅ ${mentionTag}\n🔗 ${linkToShow}\n🏷️ Hoa hồng: ${commissionText}`;
+      const msg = `${mentionTag} ✅ Em gửi link ạ!\n\n` +
+        `✨ Link hoàn tiền:\n${linkToShow}\n` +
+        `💰 Hoa hồng ước tính: ${commissionText}\n\n` +
+        `⚠️ Lưu ý:\n` +
+        `1. Không xem VIDEO/LIVE sau khi click link\n` +
+        `2. Hãy xóa giỏ hàng nếu đã thêm trước đó\n\n` +
+        `🔔 Anh/chị ấn link và tiến hành đặt hàng trong hôm nay nhé 🎉\n` +
+        `Ngày mai sẽ có BÁO CÁO hoa hồng chi tiết ạ!`;
 
       const msgContent = {
         msg,
         mentions: [{
-          pos: 2, // after "✅ "
+          pos: 0, // @mention starts at position 0
           uid: senderUid,
           len: mentionTag.length,
         }],
