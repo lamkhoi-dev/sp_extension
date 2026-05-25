@@ -594,7 +594,17 @@ app.get('/api/users', async (req, res) => {
           ORDER BY last_seen DESC NULLS LAST
           LIMIT 5
         ) inv
-      ) AS invited_avatars
+      ) AS invited_avatars,
+      COALESCE((
+        SELECT SUM(net_commission)
+        FROM orders
+        WHERE sub_id1 = CAST(u.user_id AS TEXT) AND net_commission IS NOT NULL
+      ), 0) AS total_commission,
+      COALESCE((
+        SELECT SUM(p.amount)
+        FROM payouts p
+        WHERE CAST(p.user_id AS TEXT) = CAST(u.user_id AS TEXT) AND p.status = 'paid'
+      ), 0) AS total_refunded
     FROM users u
     LEFT JOIN users r ON u.referrer_id = r.user_id
     LEFT JOIN (
