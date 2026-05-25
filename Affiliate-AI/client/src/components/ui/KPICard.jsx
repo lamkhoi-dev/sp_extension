@@ -3,6 +3,7 @@ import clsx from 'clsx';
 export default function KPICard({
   title,
   value,
+  subtitle,
   change,
   changeType = 'increase',
   icon: Icon,
@@ -31,6 +32,11 @@ export default function KPICard({
           <p className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mt-0.5">
             {formatValue(value)}
           </p>
+          {subtitle && (
+            <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              {subtitle}
+            </p>
+          )}
           {change !== undefined && (
             <div className="flex items-center gap-1 mt-1">
               <span

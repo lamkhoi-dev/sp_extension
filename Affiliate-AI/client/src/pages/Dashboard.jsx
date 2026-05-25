@@ -63,8 +63,9 @@ export default function Dashboard() {
           delay={0}
         />
         <KPICard
-          title="Hoa hồng User"
-          value={formatShortVND(stats.converts?.totalCommission || 0)}
+          title="Lợi nhuận Admin"
+          value={formatShortVND(stats.admin?.adminProfit || 0)}
+          subtitle={`${stats.admin?.profitPercent || 0}% tổng HH`}
           icon={Percent}
           iconBg="bg-gradient-to-br from-amber-500 to-orange-500"
           delay={0.1}

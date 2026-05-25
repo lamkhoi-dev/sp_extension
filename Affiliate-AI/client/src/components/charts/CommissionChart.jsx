@@ -47,7 +47,6 @@ export default function CommissionChart() {
           // Format date labels: "2026-05-20" → "20/05"
           const formatted = (data.chartData || []).map(d => ({
             ...d,
-            date: d.date ? d.date.substring(8, 10) + '/' + d.date.substring(5, 7) : d.date,
             commission: Number(d.commission || 0),
           }));
           setChartData(formatted);

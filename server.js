@@ -535,13 +535,18 @@ app.get('/api/zalo-user-fetch/:userId', async (req, res) => {
 // ═══════════════════════════════════════════════════════
 
 app.get('/api/dashboard-stats', async (req, res) => {
-  const [msgStats, convertStats, orderStats, todayConvert, userCount] = await Promise.all([
+  const [msgStats, convertStats, orderStats, todayConvert, userCount, payoutTotalRow] = await Promise.all([
     messageStore.getStats(),
     convertLogStore.getStats(),
     orderStore.getStats(),
     convertLogStore.getTodayStats(),
     userCache.getUserCount(),
+    db.get("SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts"),
   ]);
+
+  const totalCommission = orderStats.totalCommissionNew || 0;
+  const totalPaidOut = Number(payoutTotalRow?.total_paid || 0);
+  const adminProfit = totalCommission - totalPaidOut;
 
   res.json({
     users: { total: userCount },
@@ -561,9 +566,14 @@ app.get('/api/dashboard-stats', async (req, res) => {
       uniqueOrders: orderStats.uniqueOrders || 0,
       totalValue: orderStats.totalOrderValue || 0,
       totalCommission: orderStats.totalCommission || 0,
-      totalCommissionNew: orderStats.totalCommissionNew || 0,
+      totalCommissionNew: totalCommission,
       uniqueShops: orderStats.uniqueShops || 0,
       uniqueBuyers: orderStats.uniqueBuyers || 0,
+    },
+    admin: {
+      totalPaidOut,
+      adminProfit,
+      profitPercent: totalCommission > 0 ? Math.round((adminProfit / totalCommission) * 10000) / 100 : 0,
     },
     extension: extensionStatus,
     zalo: zaloBot.getStatus(),
