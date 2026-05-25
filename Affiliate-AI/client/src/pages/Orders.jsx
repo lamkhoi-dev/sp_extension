@@ -207,14 +207,13 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* Stats — 6 cards giống Shopee Affiliate Dashboard */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      {/* Stats — 5 cards giống Shopee Affiliate Dashboard */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <StatCard icon={MousePointerClick} label="Clicks" value={stats?.clicks || 0} color="text-red-500" />
         <StatCard icon={ShoppingCart} label="Đơn hàng" value={stats?.uniqueOrders || 0} />
         <StatCard icon={DollarSign} label="Hoa hồng ước tính" value={formatShortVND(stats?.totalCommissionNew || 0)} color="text-emerald-500" unit="đ" />
         <StatCard icon={Package} label="Số lượng đã bán" value={stats?.totalQuantity || 0} />
         <StatCard icon={Percent} label="Giá trị đơn hàng" value={formatShortVND(stats?.totalOrderValue || 0)} color="text-blue-500" unit="đ" />
-        <StatCard icon={UserPlus} label="Người mua mới" value={stats?.newBuyers || 0} color="text-amber-500" />
       </div>
 
       {/* ═══ Shopee-style Filter Panel ═══ */}
