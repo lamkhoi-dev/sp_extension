@@ -820,17 +820,37 @@ app.get('/api/users/select', async (req, res) => {
 
 
 app.post('/api/orders/simulate', async (req, res) => {
-  const { itemId, itemName, shopId, shopName, price, quantity, commissionRate, status, subId1, subId2, orderTime, completeTime } = req.body;
-  if (!subId1) {
+  const body = req.body;
+  if (!body.subId1) {
     return res.status(400).json({ error: 'subId1 (buyer) is required' });
   }
   const result = await simulateStore.createOrder({
-    itemId, itemName, shopId, shopName, price: Number(price), quantity: Number(quantity || 1),
-    commissionRate: Number(commissionRate || 0), status, subId1, subId2: subId2 || '',
-    orderTime, completeTime,
+    itemId: body.itemId,
+    itemName: body.itemName,
+    shopId: body.shopId,
+    shopName: body.shopName,
+    price: Number(body.price) || 0,
+    quantity: Number(body.quantity) || 1,
+    status: body.status,
+    subId1: body.subId1,
+    subId2: body.subId2 || '',
+    orderTime: body.orderTime,
+    completeTime: body.completeTime,
+    // Commission fields
+    shopeeRate: Number(body.shopeeRate) || 0,
+    sellerRate: Number(body.sellerRate) || 0,
+    xtraCommission: Number(body.xtraCommission) || 0,
+    orderCommission: Number(body.orderCommission) || 0,
+    orderBonus: Number(body.orderBonus) || 0,
+    refundAmount: Number(body.refundAmount) || 0,
+    commissionType: body.commissionType || 'CPS',
+    // MCN
+    mcnFeeRate: Number(body.mcnFeeRate) || 0,
+    mcnName: body.mcnName || '',
+    mcnContract: body.mcnContract || '',
   });
   if (result.success) {
-    await auditStore.log(req.admin?.username || 'system', 'SIMULATE_ORDER', 'order', result.orderId, req.body, req.ip);
+    await auditStore.log(req.admin?.username || 'system', 'SIMULATE_ORDER', 'order', result.orderId, body, req.ip);
   }
   res.json(result);
 });
