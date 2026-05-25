@@ -231,21 +231,61 @@ class ZaloBot {
           const inviterName = typeof inviterProfile === 'string' ? inviterProfile : (inviterProfile?.displayName || '');
           logger.info('ZaloBot', `👥 Referrer resolved: ${inviterUid} (${inviterName}) invited ${invitedMembers.length} member(s)`);
 
+          // Collect valid new member IDs/names for the welcome message
+          const newMembersList = [];
+
           for (const uid of invitedMembers) {
-            // Extract ID from various formats: string, {id: "..."}, {uid: "..."}, {0: "id", 1: "name"}
             const memberId = typeof uid === 'string' ? uid
               : (uid.id || uid.uid || uid.userId || String(uid));
             const memberName = typeof uid === 'object' ? (uid.dName || uid.displayName || uid.name || '') : '';
 
             if (memberId && memberId !== inviterUid) {
-              // Ensure invited user exists in DB
               await userCache.recordMessage(memberId, memberName);
-              // Save referrer relationship
               await userCache.setReferrer(memberId, inviterUid, inviterName);
               logger.info('ZaloBot', `✅ Referrer saved: ${memberId} (${memberName}) → invited by ${inviterUid} (${inviterName})`);
-              // Async: fetch full profile of invited user
               userCache.fetchAndSave(memberId).catch(() => {});
+              newMembersList.push({ id: memberId, name: memberName });
             }
+          }
+
+          // Schedule welcome message 6 minutes after join event
+          if (newMembersList.length > 0) {
+            const threadId = data.groupId || event.threadId || data.threadId || '';
+            const threadType = this.actions?.ThreadType?.Group ?? 1;
+            const DELAY_MS = 6 * 60 * 1000; // 6 minutes
+
+            logger.info('ZaloBot', `⏰ Scheduling welcome message in 6min for ${newMembersList.length} member(s) in thread ${threadId}`);
+
+            setTimeout(async () => {
+              try {
+                // Re-fetch names in case profile loaded by now
+                const resolvedMembers = await Promise.all(
+                  newMembersList.map(async (m) => {
+                    const profile = await this.actions?.getDisplayName?.(m.id).catch(() => null);
+                    const name = (typeof profile === 'string' ? profile : profile?.displayName) || m.name || m.id;
+                    return { id: m.id, name };
+                  })
+                );
+
+                // Build @mention string for each member
+                const mentionTags = resolvedMembers.map(m => `@${m.name}`).join(' ');
+                const msg = `${mentionTags} Anh/chị đọc kĩ tin nhắn đã ghim phía trên để nắm rõ cách hoàn tiền nhé ❤️`;
+
+                // Build mention metadata (each mention offset in the string)
+                const mentions = [];
+                let pos = 0;
+                for (const m of resolvedMembers) {
+                  const tag = `@${m.name}`;
+                  mentions.push({ pos, uid: m.id, len: tag.length });
+                  pos += tag.length + 1; // +1 for the space
+                }
+
+                await this.actions.sendStyled({ msg, mentions }, threadId, threadType);
+                logger.info('ZaloBot', `✅ Welcome message sent to ${resolvedMembers.length} member(s) in thread ${threadId}`);
+              } catch (err) {
+                logger.warn('ZaloBot', `Welcome message failed: ${err.message}`);
+              }
+            }, DELAY_MS);
           }
         } else {
           logger.warn('ZaloBot', `⚠️ Join event but could not resolve inviter or members`);
