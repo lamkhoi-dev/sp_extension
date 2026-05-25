@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Eye, Users, UserCheck, DollarSign, RefreshCw, MessageSquare, Edit2, ChevronLeft, ChevronRight, Save, Building2 } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Eye, Users, UserCheck, DollarSign, RefreshCw, MessageSquare, Edit2, Save, Building2, Trophy, ShoppingBag } from 'lucide-react';
+import { Avatar, Tooltip } from 'antd';
 import DataTable from '../components/ui/DataTable';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
@@ -14,13 +15,11 @@ export default function UsersPage() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [editingRates, setEditingRates] = useState({ buyer: 40, referrer: 30 });
-  const [savingRates, setSavingRates] = useState(false);
-  const [rateSaved, setRateSaved] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
+  const [allSaved, setAllSaved] = useState(false);
 
   // Bank info edit state
   const [editingBank, setEditingBank] = useState({ bankName: '', bankAccount: '' });
-  const [savingBank, setSavingBank] = useState(false);
-  const [bankSaved, setBankSaved] = useState(false);
 
   const openDetail = (row) => {
     setSelectedUser(row);
@@ -32,8 +31,7 @@ export default function UsersPage() {
       bankName: row.bank_name || '',
       bankAccount: row.bank_account || '',
     });
-    setBankSaved(false);
-    setRateSaved(false);
+    setAllSaved(false);
     setShowDetailModal(true);
   };
 
@@ -76,6 +74,54 @@ export default function UsersPage() {
           <MessageSquare className="w-3 h-3 text-slate-400" />
           <span className="font-medium text-slate-900 dark:text-white text-sm">{value || 0}</span>
         </div>
+      ),
+    },
+    {
+      key: 'invited_count',
+      label: 'Cộng Tác Viên',
+      hideOnMobile: true,
+      render: (value, row) => {
+        const members = Array.isArray(row.invited_avatars) ? row.invited_avatars : [];
+        if (members.length === 0 && !value) return <span className="text-slate-400 text-sm">--</span>;
+        return (
+          <div className="flex items-center gap-2">
+            <Avatar.Group max={{ count: 4, style: { fontSize: '11px', width: 24, height: 24 } }} size={24}>
+              {members.map((m, i) => (
+                <Tooltip key={i} title={m.name || ''} placement="top">
+                  <Avatar
+                    src={m.avatar}
+                    size={24}
+                    style={{ backgroundColor: '#3b82f6', fontSize: '10px' }}
+                  >
+                    {!m.avatar && (m.name?.[0] || '?')}
+                  </Avatar>
+                </Tooltip>
+              ))}
+            </Avatar.Group>
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{value || 0}</span>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'total_orders_count',
+      label: 'Đơn hàng',
+      hideOnMobile: true,
+      render: (value) => (
+        <div className="flex items-center gap-1">
+          <ShoppingBag className="w-3 h-3 text-slate-400" />
+          <span className="text-sm font-medium text-slate-900 dark:text-white">{value || 0}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'total_commission',
+      label: 'Commission',
+      hideOnMobile: true,
+      render: (value) => (
+        <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+          {value ? formatVND(value) : '--'}
+        </span>
       ),
     },
     {
@@ -137,44 +183,56 @@ export default function UsersPage() {
 
   const referredUsers = users.filter(u => u.referrer_id);
 
+  // Leaderboard top 3 per category (client-side sort)
+  const topByOrders = useMemo(() =>
+    [...users].sort((a, b) => (b.total_orders_count || 0) - (a.total_orders_count || 0)).slice(0, 3)
+  , [users]);
+  const topByCommission = useMemo(() =>
+    [...users].sort((a, b) => (b.total_commission || 0) - (a.total_commission || 0)).slice(0, 3)
+  , [users]);
+  const topByReferral = useMemo(() =>
+    [...users].sort((a, b) => (b.invited_count || 0) - (a.invited_count || 0)).slice(0, 3)
+  , [users]);
+
   // VietQR preview URL (uses current edit state, no amount)
   const vietQrPreview = buildVietQrUrl(editingBank.bankName, editingBank.bankAccount);
   const selectedBankData = VIET_BANKS.find(b => b.code === editingBank.bankName);
 
-  const handleSaveBank = async () => {
-    if (!editingBank.bankName || !editingBank.bankAccount) return;
-    setSavingBank(true);
+  // Unified save handler — bank + rates in one click
+  const handleSaveAll = async () => {
+    setSavingAll(true);
     try {
-      const result = await updateUserBankInfo(selectedUser.user_id, editingBank.bankName, editingBank.bankAccount);
-      setSelectedUser(prev => ({ ...prev, bank_name: editingBank.bankName, bank_account: editingBank.bankAccount, qr_code: result.qrCode }));
-      setBankSaved(true);
-      refresh();
-    } catch (err) {
-      alert('Lỗi: ' + err.message);
-    } finally {
-      setSavingBank(false);
-    }
-  };
-
-  const handleSaveRates = async () => {
-    setSavingRates(true);
-    try {
-      const result = await updateUserCashbackRates(selectedUser.user_id, editingRates.buyer, editingRates.referrer);
-      if (result && result.success === false) {
-        alert('Lỗi: ' + (result.error || 'Không thể cập nhật'));
-        return;
+      const tasks = [];
+      if (editingBank.bankName && editingBank.bankAccount) {
+        tasks.push(
+          updateUserBankInfo(selectedUser.user_id, editingBank.bankName, editingBank.bankAccount)
+            .then(result => {
+              setSelectedUser(prev => ({ ...prev, bank_name: editingBank.bankName, bank_account: editingBank.bankAccount, qr_code: result.qrCode }));
+            })
+        );
       }
-      setRateSaved(true);
-      setSelectedUser(prev => ({
-        ...prev,
-        cashback_buyer_rate: editingRates.buyer,
-        referrer_earn_rate: editingRates.referrer,
-      }));
-      refresh();
+      tasks.push(
+        updateUserCashbackRates(selectedUser.user_id, editingRates.buyer, editingRates.referrer)
+          .then(() => {
+            setSelectedUser(prev => ({
+              ...prev,
+              cashback_buyer_rate: editingRates.buyer,
+              referrer_earn_rate: editingRates.referrer,
+            }));
+          })
+      );
+      const results = await Promise.allSettled(tasks);
+      const failed = results.filter(r => r.status === 'rejected');
+      if (failed.length > 0) {
+        alert('Lưu có lỗi: ' + failed.map(f => f.reason?.message).join(', '));
+      } else {
+        setAllSaved(true);
+        refresh();
+      }
     } catch (err) {
       alert('Lỗi: ' + err.message);
     } finally {
-      setSavingRates(false);
+      setSavingAll(false);
     }
   };
 
@@ -217,6 +275,41 @@ export default function UsersPage() {
           <p className="text-lg sm:text-2xl font-bold text-blue-500">{referredUsers.length}</p>
         </div>
       </div>
+
+      {/* Top Leaderboard */}
+      {!loading && users.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[
+            { title: '🏆 Top Mua Nhiều', icon: ShoppingBag, color: 'blue', data: topByOrders, valueKey: 'total_orders_count', valueLabel: 'đơn' },
+            { title: '💰 Top Commission', icon: DollarSign, color: 'emerald', data: topByCommission, valueKey: 'total_commission', valueFn: formatVND },
+            { title: '🤝 Top Giới Thiệu', icon: Trophy, color: 'amber', data: topByReferral, valueKey: 'invited_count', valueLabel: 'CTV' },
+          ].map(({ title, color, data, valueKey, valueFn, valueLabel }) => (
+            <div key={title} className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">{title}</p>
+              <div className="space-y-2">
+                {data.map((u, idx) => (
+                  <div key={u.user_id} className="flex items-center gap-2.5">
+                    <span className={`text-xs font-bold w-4 ${
+                      idx === 0 ? 'text-amber-500' : idx === 1 ? 'text-slate-400' : 'text-amber-700'
+                    }`}>{idx + 1}</span>
+                    <img
+                      src={u.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.user_id}`}
+                      alt={u.display_name}
+                      className="w-7 h-7 rounded-lg object-cover flex-shrink-0 bg-slate-200"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-slate-900 dark:text-white truncate">{u.display_name || '--'}</p>
+                    </div>
+                    <span className={`text-xs font-bold text-${color}-600 dark:text-${color}-400 whitespace-nowrap`}>
+                      {valueFn ? valueFn(u[valueKey] || 0) : `${u[valueKey] || 0}${valueLabel ? ' ' + valueLabel : ''}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Data Table */}
       <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4 sm:p-6">
@@ -314,31 +407,31 @@ export default function UsersPage() {
               </h4>
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-3 border border-emerald-100 dark:border-emerald-800/30">
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mb-2">Buyer nhận</p>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mb-2">Hoa hồng mua</p>
                   <div className="flex items-center gap-1">
                     <input
                       type="number" min="0" max="100" step="5"
                       value={editingRates.buyer}
-                      onChange={(e) => { setEditingRates(r => ({ ...r, buyer: Number(e.target.value) })); setRateSaved(false); }}
+                      onChange={(e) => { setEditingRates(r => ({ ...r, buyer: Number(e.target.value) })); setAllSaved(false); }}
                       className="w-full px-2 py-1 text-lg font-bold text-emerald-600 bg-white dark:bg-slate-800 rounded-lg border border-emerald-200 dark:border-emerald-700 text-center"
                     />
                     <span className="text-emerald-600 font-bold">%</span>
                   </div>
                 </div>
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 border border-blue-100 dark:border-blue-800/30">
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mb-2">Tỷ lệ nhận khi con mua</p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mb-2">Hoa hồng giới thiệu</p>
                   <div className="flex items-center gap-1">
                     <input
                       type="number" min="0" max="100" step="5"
                       value={editingRates.referrer}
-                      onChange={(e) => { setEditingRates(r => ({ ...r, referrer: Number(e.target.value) })); setRateSaved(false); }}
+                      onChange={(e) => { setEditingRates(r => ({ ...r, referrer: Number(e.target.value) })); setAllSaved(false); }}
                       className="w-full px-2 py-1 text-lg font-bold text-blue-600 bg-white dark:bg-slate-800 rounded-lg border border-blue-200 dark:border-blue-700 text-center"
                     />
                     <span className="text-blue-600 font-bold">%</span>
                   </div>
                 </div>
                 <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-3 border border-amber-100 dark:border-amber-800/30">
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">Admin giữ</p>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">Admin</p>
                   <p className="text-lg font-bold text-amber-600 dark:text-amber-400 text-center py-1">
                     {Math.max(0, 100 - editingRates.buyer - editingRates.referrer)}%
                   </p>
@@ -373,7 +466,7 @@ export default function UsersPage() {
                     )}
                     <select
                       value={editingBank.bankName}
-                      onChange={e => { setEditingBank(b => ({ ...b, bankName: e.target.value })); setBankSaved(false); }}
+                      onChange={e => { setEditingBank(b => ({ ...b, bankName: e.target.value })); setAllSaved(false); }}
                       className={`w-full py-2.5 pr-3 text-sm text-slate-900 dark:text-white bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 appearance-none ${
                         selectedBankData ? 'pl-9' : 'pl-3'
                       }`}
@@ -395,17 +488,16 @@ export default function UsersPage() {
                   <input
                     type="text"
                     value={editingBank.bankAccount}
-                    onChange={e => { setEditingBank(b => ({ ...b, bankAccount: e.target.value })); setBankSaved(false); }}
+                    onChange={e => { setEditingBank(b => ({ ...b, bankAccount: e.target.value })); setAllSaved(false); }}
                     placeholder="VD: 1234567890"
                     className="w-full px-3 py-2.5 text-sm font-mono text-slate-900 dark:text-white bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
                   />
                 </div>
 
-                {/* QR Preview + Save row */}
-                <div className="flex gap-3 items-start">
-                  {/* VietQR */}
-                  <div className="w-28 flex-shrink-0">
-                    <div className="w-full aspect-square bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden">
+                {/* QR Preview — larger, no inline save button */}
+                <div className="flex justify-center">
+                  <div className="w-44 flex-shrink-0">
+                    <div className="w-full aspect-square bg-white dark:bg-slate-900 rounded-xl border-2 border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shadow-sm">
                       {vietQrPreview ? (
                         <img
                           src={vietQrPreview}
@@ -414,63 +506,35 @@ export default function UsersPage() {
                           onError={e => { e.target.style.display = 'none'; e.target.parentElement.innerHTML = '<p class="text-[10px] text-slate-400 text-center p-1">QR lỗi</p>'; }}
                         />
                       ) : (
-                        <span className="text-[10px] text-slate-400 text-center px-2 leading-tight">Chọn NH & nhập STK</span>
+                        <span className="text-[10px] text-slate-400 text-center px-2 leading-tight">Chọn NH & nhập STK<br/>để xem QR</span>
                       )}
                     </div>
-                    <p className="text-center text-[9px] text-slate-400 mt-1">VietQR Preview</p>
-                  </div>
-
-                  {/* Right side: bank name confirm + save button */}
-                  <div className="flex-1 flex flex-col justify-between h-28">
-                    {selectedBankData ? (
-                      <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl px-3 py-2 border border-slate-200 dark:border-slate-700">
-                        <img
-                          src={getBankLogoUrl(selectedBankData.code)}
-                          alt={selectedBankData.short}
-                          className="w-8 h-8 rounded-lg object-contain bg-white p-0.5 border border-slate-200"
-                          onError={e => { e.target.style.display = 'none'; }}
-                        />
-                        <div>
-                          <p className="text-xs font-semibold text-slate-900 dark:text-white">{selectedBankData.name}</p>
-                          <p className="text-[10px] text-slate-500 font-mono">{editingBank.bankAccount || '—'}</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="bg-slate-50 dark:bg-slate-800/40 rounded-xl px-3 py-2 border border-dashed border-slate-300 dark:border-slate-600">
-                        <p className="text-xs text-slate-400 italic">Chưa chọn ngân hàng</p>
+                    {selectedBankData && (
+                      <div className="flex items-center gap-1.5 mt-2 justify-center">
+                        <img src={getBankLogoUrl(selectedBankData.code)} alt={selectedBankData.short}
+                          className="w-4 h-4 rounded object-contain" onError={e => { e.target.style.display = 'none'; }} />
+                        <p className="text-[10px] text-slate-500">{selectedBankData.short} · {editingBank.bankAccount || '—'}</p>
                       </div>
                     )}
-
-                    <button
-                      onClick={handleSaveBank}
-                      disabled={savingBank || !editingBank.bankName || !editingBank.bankAccount}
-                      className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-medium transition-all ${
-                        bankSaved
-                          ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 border border-emerald-200'
-                          : 'bg-blue-500 hover:bg-blue-600 text-white disabled:opacity-40 disabled:cursor-not-allowed'
-                      }`}
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                      {savingBank ? 'Đang lưu...' : bankSaved ? '✓ Đã lưu' : 'Lưu ngân hàng'}
-                    </button>
+                    <p className="text-center text-[9px] text-slate-400 mt-0.5">VietQR Preview</p>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Action Buttons */}
+            {/* Action Buttons — unified save */}
             <div className="flex items-center gap-3 pt-2">
               <Button variant="outline" className="flex-1" onClick={() => setShowDetailModal(false)}>
                 Đóng
               </Button>
               <Button
-                variant={rateSaved ? 'outline' : 'primary'}
-                className={`flex-1 ${rateSaved ? '!bg-emerald-50 dark:!bg-emerald-900/20 !text-emerald-600 !border-emerald-200' : ''}`}
-                icon={rateSaved ? Save : Edit2}
-                disabled={savingRates || (100 - editingRates.buyer - editingRates.referrer) < 0}
-                onClick={handleSaveRates}
+                variant={allSaved ? 'outline' : 'primary'}
+                className={`flex-1 ${allSaved ? '!bg-emerald-50 dark:!bg-emerald-900/20 !text-emerald-600 !border-emerald-200' : ''}`}
+                icon={allSaved ? Save : Edit2}
+                disabled={savingAll || (100 - editingRates.buyer - editingRates.referrer) < 0}
+                onClick={handleSaveAll}
               >
-                {savingRates ? 'Đang lưu...' : rateSaved ? '✓ Đã lưu thành công' : 'Lưu tỷ lệ'}
+                {savingAll ? 'Đang lưu...' : allSaved ? '✓ Đã lưu thành công' : 'Lưu tất cả'}
               </Button>
             </div>
           </div>

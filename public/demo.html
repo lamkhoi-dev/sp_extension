@@ -218,7 +218,10 @@
       try {
         const response = await fetch('/api/shopee/extract-full', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+          },
           body: JSON.stringify({ url })
         });
 

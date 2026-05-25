@@ -226,7 +226,7 @@ export function useOrders() {
       const qs = buildQueryParams(f);
       const [ordersData, statsData] = await Promise.all([
         apiFetch(`/orders?${qs}`),
-        apiFetch('/orders/stats'),
+        apiFetch(`/orders/stats?${qs}`),  // sync stats with active filter
       ]);
       setOrders(ordersData);
       setStats(statsData);

@@ -201,7 +201,26 @@ const orderStore = {
     return row.count;
   },
 
-  async getStats() {
+  async getStats(filters = {}) {
+    const conditions = [];
+    const params = [];
+
+    const timeField = filters.timeField || 'order_time';
+    const validTimeFields = ['order_time', 'complete_time', 'click_time'];
+    const safeTimeField = validTimeFields.includes(timeField) ? timeField : 'order_time';
+
+    if (filters.dateFrom) { conditions.push(`${safeTimeField} >= ?`); params.push(filters.dateFrom); }
+    if (filters.dateTo) { conditions.push(`${safeTimeField} <= ?`); params.push(filters.dateTo + ' 23:59:59'); }
+    if (filters.status && filters.status !== 'Tất cả') { conditions.push('order_status = ?'); params.push(filters.status); }
+    if (filters.orderId) { conditions.push('order_id LIKE ?'); params.push(`%${filters.orderId}%`); }
+    if (filters.shopName) { conditions.push('shop_name LIKE ?'); params.push(`%${filters.shopName}%`); }
+    if (filters.shopType && filters.shopType !== 'Tất cả') { conditions.push('shop_type = ?'); params.push(filters.shopType); }
+    if (filters.productName) { conditions.push('item_name LIKE ?'); params.push(`%${filters.productName}%`); }
+    if (filters.commissionType && filters.commissionType !== 'Tất cả') { conditions.push('commission_type = ?'); params.push(filters.commissionType); }
+    if (filters.channel && filters.channel !== 'Tất cả') { conditions.push('channel = ?'); params.push(filters.channel); }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
     return db.get(`
       SELECT
         COUNT(*) as "totalOrders",
@@ -213,8 +232,8 @@ const orderStore = {
         SUM(order_bonus) as "totalOrderBonus",
         COUNT(DISTINCT shop_id) as "uniqueShops",
         COUNT(DISTINCT sub_id1) as "uniqueBuyers"
-      FROM orders
-    `);
+      FROM orders ${where}
+    `, params);
   },
 
   async search(query, limit = 20) {

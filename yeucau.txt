@@ -17,3 +17,15 @@ Phần 1
 Phần 2
 - đối với user, các user mặc định là 60 20 20, ko có referal là 60 40, nhưng đôi khi tôi muồn chinhr vài user đặc biệt, thì cho phép chỉnh cả 3 thông số, sau khi chỉnh sẽ đánh dấu họ là user đặc biệt, có 2 light vàng 
 - chỉnh % refferal: cần phân tích kĩ % mua hiện tại là thiết lâpj cho user đó đúng ko, còn % refer là thiết lập cho referer hay chính user đó luôn, cần làm rõ ở đây
+
+
+Phần 3
+- Thêm columns Cộng Tác Viên: avatar group cho table user, tổng đơn hàng, commission..
++ Thêm colums cộng tác viên: avatar group ( ant design có thư viện ) các user được người đó mời vào, rõ chứ
++ Thêm 2 colums tổng đơn hàng, comission của user đó luôn 
+- Mapping Tổng comisssion , đã hoàn trong view user details
+- Chỉnh UI UX QR To lên chỗ view user details, cả chổ hoàn tiền cần QR to hơn luôn
+- Chỉnh text : Hoa hồng mua, Hoa hồng giới thiệu, admin ( các chỗ % trong view user details)
+- Chỗ user thêm metric: Top người mua , hoa hồng, giới thiệu etc..
+- Báo cáo chuyển đổi Filter apply global bao gôm ca metric
+- gộp 2 nut lưu usr, chỗ view user details lưu ngân hàng đang khác lưu chỉnh sửa, gộp lại luôn nhé
