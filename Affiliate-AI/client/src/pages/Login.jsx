@@ -66,7 +66,7 @@ export default function Login() {
             
             <h2 className="text-4xl xl:text-5xl font-bold text-white leading-tight mb-6">
               Quản lý Affiliate<br />
-              <span className="gradient-text">Shopee & TikTok</span>
+              <span className="gradient-text">Shopee Affiliate</span>
             </h2>
             
             <p className="text-lg text-slate-300 mb-8 max-w-md">

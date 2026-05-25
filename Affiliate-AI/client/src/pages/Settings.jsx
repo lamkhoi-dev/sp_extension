@@ -153,8 +153,8 @@ export default function SettingsPage() {
       setAvatarError('Chỉ chấp nhận file ảnh');
       return;
     }
-    if (file.size > 3 * 1024 * 1024) {
-      setAvatarError('Ảnh tối đa 3MB');
+    if (file.size > 20 * 1024 * 1024) {
+      setAvatarError('Ảnh tối đa 20MB');
       return;
     }
     setAvatarUploading(true);

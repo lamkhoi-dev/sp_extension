@@ -78,16 +78,11 @@ export default function ReportsPage() {
 
   const { summary, chartData, topProducts } = reportData;
 
-  // Calculate comparison data
-  // Currently we only have Shopee data according to requirements, so TikTok is 0.
   const shopeeTotal = summary.totalRevenue || 0;
-  const tiktokTotal = 0;
-  const total = shopeeTotal + tiktokTotal;
 
   const comparisonData = [
-    { name: 'Shopee', value: shopeeTotal, percentage: total > 0 ? ((shopeeTotal / total) * 100).toFixed(1) : 0 },
-    { name: 'TikTok', value: tiktokTotal, percentage: total > 0 ? ((tiktokTotal / total) * 100).toFixed(1) : 0 },
-  ].filter(d => d.value > 0 || d.name === 'Shopee');
+    { name: 'Shopee', value: shopeeTotal, percentage: 100 },
+  ];
 
   return (
     <div className="space-y-6 print-area">
@@ -169,7 +164,7 @@ export default function ReportsPage() {
         {/* Commission Comparison */}
         <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4 sm:p-6">
           <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">
-            So sánh Shopee vs TikTok
+            Hoa hồng theo ngày
           </h3>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">

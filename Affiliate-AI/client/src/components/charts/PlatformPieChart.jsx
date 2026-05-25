@@ -1,19 +1,16 @@
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
-import { platformData } from '../../data/dummyData';
+import { useState, useEffect } from 'react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
-const COLORS = ['#EE4D2D', '#00F2EA'];
+const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#06b6d4'];
 
 const CustomTooltip = ({ active, payload }) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl">
         <div className="flex items-center gap-2">
-          <div 
-            className="w-3 h-3 rounded-full" 
-            style={{ backgroundColor: payload[0].payload.color }}
-          />
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: payload[0].payload.fill }} />
           <span className="text-sm font-medium text-slate-900 dark:text-white">
-            {payload[0].name}: {payload[0].value}%
+            {payload[0].name}: {payload[0].value} đơn
           </span>
         </div>
       </div>
@@ -23,72 +20,99 @@ const CustomTooltip = ({ active, payload }) => {
 };
 
 const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+  if (percent < 0.05) return null;
   const RADIAN = Math.PI / 180;
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
   const x = cx + radius * Math.cos(-midAngle * RADIAN);
   const y = cy + radius * Math.sin(-midAngle * RADIAN);
-
   return (
-    <text 
-      x={x} 
-      y={y} 
-      fill="white" 
-      textAnchor="middle" 
-      dominantBaseline="central"
-      className="text-sm font-bold"
-    >
+    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" className="text-xs font-bold">
       {`${(percent * 100).toFixed(0)}%`}
     </text>
   );
 };
 
 export default function PlatformPieChart() {
+  const [statusData, setStatusData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchData = async () => {
+      try {
+        const res = await fetch('/api/orders/stats', { credentials: 'include' });
+        const stats = await res.json();
+        if (!cancelled) {
+          // Build pie from statusBreakdown
+          const breakdown = stats.statusBreakdown || {};
+          const data = Object.entries(breakdown)
+            .map(([name, count]) => ({ name, value: Number(count) }))
+            .filter(d => d.value > 0)
+            .sort((a, b) => b.value - a.value);
+          setStatusData(data);
+        }
+      } catch (err) {
+        console.error('PlatformPieChart fetch error:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    fetchData();
+    return () => { cancelled = true; };
+  }, []);
+
+  const total = statusData.reduce((s, d) => s + d.value, 0);
+
   return (
     <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-6">
       <div className="mb-4">
         <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-          Phân bổ theo nền tảng
+          Phân bổ trạng thái
         </h3>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Tỷ lệ đơn hàng Shopee vs TikTok
+          {total > 0 ? `Tổng ${total} đơn hàng` : 'Chưa có dữ liệu'}
         </p>
       </div>
 
       <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={platformData}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={renderCustomizedLabel}
-              outerRadius={100}
-              innerRadius={60}
-              fill="#8884d8"
-              dataKey="value"
-              stroke="none"
-            >
-              {platformData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip content={<CustomTooltip />} />
-          </PieChart>
-        </ResponsiveContainer>
+        {loading ? (
+          <div className="flex items-center justify-center h-full text-slate-400 text-sm">Đang tải...</div>
+        ) : statusData.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-slate-400 text-sm">Chưa có đơn hàng</div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={statusData}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={renderCustomizedLabel}
+                outerRadius={100}
+                innerRadius={60}
+                dataKey="value"
+                stroke="none"
+              >
+                {statusData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
-      <div className="flex justify-center gap-6 mt-4">
-        {platformData.map((item, index) => (
-          <div key={item.name} className="flex items-center gap-2">
-            <div 
-              className="w-3 h-3 rounded-full" 
-              style={{ backgroundColor: COLORS[index] }}
-            />
-            <span className="text-sm text-slate-600 dark:text-slate-400">{item.name}</span>
-          </div>
-        ))}
-      </div>
+      {statusData.length > 0 && (
+        <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 mt-4">
+          {statusData.map((item, index) => (
+            <div key={item.name} className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+              <span className="text-xs text-slate-600 dark:text-slate-400">{item.name} ({item.value})</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
