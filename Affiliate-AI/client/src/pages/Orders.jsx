@@ -81,7 +81,7 @@ const labelCls = 'text-[12px] font-medium text-slate-500 dark:text-slate-400 mb-
 
 function FilterSelect({ label, value, onChange, options, className = '' }) {
   return (
-    <div className={`min-w-[160px] ${className}`}>
+    <div className={className}>
       <label className={labelCls}>{label}</label>
       <div className="relative">
         <select value={value} onChange={e => onChange(e.target.value)} className={selectCls}>
@@ -98,7 +98,7 @@ function FilterSelect({ label, value, onChange, options, className = '' }) {
 
 function FilterInput({ label, value, onChange, placeholder, className = '' }) {
   return (
-    <div className={`min-w-[160px] ${className}`}>
+    <div className={className}>
       <label className={labelCls}>{label}</label>
       <input
         type="text"
@@ -218,9 +218,9 @@ export default function OrdersPage() {
       {/* ═══ Shopee-style Filter Panel ═══ */}
       <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4" onKeyDown={handleKeyDown}>
 
-        {/* Row 1: Time field + Date range + Status */}
-        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-3">
-          <div className="flex flex-col gap-1">
+        {/* Row 1: Time + Date range + Status + Order ID */}
+        <div className="grid grid-cols-4 gap-x-4 gap-y-3 mb-3">
+          <div className="col-span-2">
             <label className={labelCls}>Thời Gian Đặt Hàng</label>
             <DateRangePicker
               from={filters.dateFrom}
@@ -231,24 +231,22 @@ export default function OrdersPage() {
               onTimeFieldChange={v => updateFilter('timeField', v)}
             />
           </div>
-
           <FilterSelect
             label="Trạng thái đơn hàng"
             value={filters.status}
             onChange={v => updateFilter('status', v)}
             options={['Tất cả', ...STATUS_OPTIONS.slice(1)]}
           />
-
           <FilterInput
-            label="Order id"
+            label="Order ID"
             value={filters.orderId}
             onChange={v => updateFilter('orderId', v)}
             placeholder="Tìm kiếm ID đơn hàng"
           />
         </div>
 
-        {/* Row 2: Shop name + Shop type + Product type */}
-        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 mb-3">
+        {/* Row 2: Shop name + Shop type + Product type + (empty) */}
+        <div className="grid grid-cols-4 gap-x-4 gap-y-3 mb-3">
           <FilterInput
             label="Tên Shop"
             value={filters.shopName}
@@ -267,10 +265,11 @@ export default function OrdersPage() {
             onChange={v => updateFilter('commissionType', v)}
             options={['Tất cả', ...(filterOptions.commissionTypes || [])]}
           />
+          <div />
         </div>
 
-        {/* Row 3: Product name + Category + Actions */}
-        <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
+        {/* Row 3: Product name + Channel + Reset + Search */}
+        <div className="grid grid-cols-4 gap-x-4 gap-y-3 items-end">
           <FilterInput
             label="Tên sản phẩm"
             value={filters.productName}
@@ -283,18 +282,18 @@ export default function OrdersPage() {
             onChange={v => updateFilter('channel', v)}
             options={['Tất cả', ...(filterOptions.channels || [])]}
           />
-
-          {/* Action buttons aligned to bottom-right */}
-          <div className="flex items-center gap-2 ml-auto">
+          {/* Spacer + action buttons */}
+          <div />
+          <div className="flex items-center justify-end gap-2">
             <button
               onClick={resetFilters}
-              className="inline-flex items-center gap-1.5 px-3 py-[7px] text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-[7px] text-[13px] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors whitespace-nowrap"
             >
               Thiết lập lại
             </button>
             <button
               onClick={applyFilters}
-              className="inline-flex items-center gap-1.5 px-5 py-[7px] text-[13px] font-semibold text-white bg-orange-500 hover:bg-orange-600 rounded-lg shadow-sm transition-colors"
+              className="inline-flex items-center gap-1.5 px-5 py-[7px] text-[13px] font-semibold text-white bg-orange-500 hover:bg-orange-600 rounded-lg shadow-sm transition-colors whitespace-nowrap"
             >
               <Search className="w-3.5 h-3.5" />
               Tìm kiếm
