@@ -10,12 +10,17 @@ export default defineConfig({
     emptyOutDir: false
   },
   server: {
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://localhost:3456',
         changeOrigin: true,
       },
       '/avatars': {
+        target: 'http://localhost:3456',
+        changeOrigin: true,
+      },
+      '/go': {
         target: 'http://localhost:3456',
         changeOrigin: true,
       },
