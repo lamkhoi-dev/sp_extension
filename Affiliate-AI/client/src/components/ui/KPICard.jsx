@@ -1,9 +1,11 @@
 import clsx from 'clsx';
+import Tooltip from './Tooltip';
 
 export default function KPICard({
   title,
   value,
   subtitle,
+  tooltip,
   change,
   changeType = 'increase',
   icon: Icon,
@@ -26,9 +28,12 @@ export default function KPICard({
     <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-3 sm:p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
-            {title}
-          </p>
+          <div className="flex items-center gap-1">
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
+              {title}
+            </p>
+            {tooltip && <Tooltip text={tooltip} />}
+          </div>
           <p className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mt-0.5">
             {formatValue(value)}
           </p>

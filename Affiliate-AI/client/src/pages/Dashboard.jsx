@@ -4,6 +4,7 @@ import {
   RefreshCw, Wifi, WifiOff, MessageSquare, Link2
 } from 'lucide-react';
 import KPICard from '../components/ui/KPICard';
+import Tooltip from '../components/ui/Tooltip';
 import CommissionChart from '../components/charts/CommissionChart';
 import PlatformPieChart from '../components/charts/PlatformPieChart';
 import TopProductsChart from '../components/charts/TopProductsChart';
@@ -60,6 +61,7 @@ export default function Dashboard() {
           value={formatShortVND(stats.orders?.totalCommissionNew || 0)}
           icon={DollarSign}
           iconBg="bg-gradient-to-br from-emerald-500 to-emerald-600"
+          tooltip="Tổng hoa hồng ròng từ tất cả đơn hàng. Cộng dồn phần hoa hồng thực nhận (sau phí) của mỗi đơn."
           delay={0}
         />
         <KPICard
@@ -68,6 +70,7 @@ export default function Dashboard() {
           subtitle={`${stats.admin?.profitPercent || 0}% tổng HH`}
           icon={Percent}
           iconBg="bg-gradient-to-br from-amber-500 to-orange-500"
+          tooltip="Lợi nhuận = Tổng hoa hồng − Tổng đã chi trả cho users. Phần trăm = Lợi nhuận ÷ Tổng hoa hồng × 100. Không thay đổi khi chỉnh % hoa hồng — chỉ ảnh hưởng đơn mới."
           delay={0.1}
         />
         <KPICard
@@ -75,6 +78,7 @@ export default function Dashboard() {
           value={stats.users?.total || 0}
           icon={Users}
           iconBg="bg-gradient-to-br from-blue-500 to-blue-600"
+          tooltip="Tổng số người dùng đã đăng ký trong hệ thống."
           delay={0.2}
         />
         <KPICard
@@ -82,6 +86,7 @@ export default function Dashboard() {
           value={stats.orders?.uniqueOrders || 0}
           icon={ShoppingCart}
           iconBg="bg-gradient-to-br from-teal-500 to-cyan-600"
+          tooltip="Số đơn hàng duy nhất (không trùng mã đơn). Một đơn nhiều sản phẩm chỉ đếm 1 lần."
           delay={0.3}
         />
         <KPICard
@@ -89,6 +94,7 @@ export default function Dashboard() {
           value={`${stats.converts?.todaySuccess || 0}/${stats.converts?.today || 0}`}
           icon={Link2}
           iconBg="bg-gradient-to-br from-rose-500 to-pink-600"
+          tooltip="Số link chuyển đổi thành công / tổng link đã chuyển đổi trong hôm nay."
           delay={0.4}
         />
         <KPICard
@@ -96,6 +102,7 @@ export default function Dashboard() {
           value={formatShortVND(stats.orders?.totalValue || 0)}
           icon={BarChart3}
           iconBg="bg-gradient-to-br from-cyan-500 to-blue-600"
+          tooltip="Tổng giá trị hàng hóa đã bán (trước khi trừ phí, hoa hồng). Cộng dồn giá trị mỗi đơn hàng."
           delay={0.5}
         />
       </div>
@@ -118,12 +125,18 @@ export default function Dashboard() {
             Thống kê nhanh
           </h3>
           <div className="space-y-3">
-            <StatRow label="Tổng convert" value={stats.converts?.total || 0} icon={Link2} />
-            <StatRow label="Convert thành công" value={stats.converts?.success || 0} icon={TrendingUp} color="text-emerald-500" />
-            <StatRow label="Convert lỗi" value={stats.converts?.failed || 0} icon={TrendingUp} color="text-red-500" />
-            <StatRow label="Users convert" value={stats.converts?.uniqueUsers || 0} icon={Users} />
-            <StatRow label="Shops bán hàng" value={stats.orders?.uniqueShops || 0} icon={ShoppingCart} />
-            <StatRow label="Tin nhắn hôm nay" value={stats.messages?.today || 0} icon={MessageSquare} />
+            <StatRow label="Tổng convert" value={stats.converts?.total || 0} icon={Link2}
+              tooltip="Tổng số lần chuyển đổi link Shopee thành link affiliate (bao gồm cả lỗi)." />
+            <StatRow label="Convert thành công" value={stats.converts?.success || 0} icon={TrendingUp} color="text-emerald-500"
+              tooltip="Số link đã chuyển đổi thành công, tạo được link affiliate hợp lệ." />
+            <StatRow label="Convert lỗi" value={stats.converts?.failed || 0} icon={TrendingUp} color="text-red-500"
+              tooltip="Số link chuyển đổi thất bại (sản phẩm không hoa hồng, link lỗi...)." />
+            <StatRow label="Users convert" value={stats.converts?.uniqueUsers || 0} icon={Users}
+              tooltip="Số người dùng khác nhau đã từng chuyển đổi ít nhất 1 link." />
+            <StatRow label="Shops bán hàng" value={stats.orders?.uniqueShops || 0} icon={ShoppingCart}
+              tooltip="Số shop Shopee khác nhau có đơn hàng phát sinh qua hệ thống." />
+            <StatRow label="Tin nhắn hôm nay" value={stats.messages?.today || 0} icon={MessageSquare}
+              tooltip="Số tin nhắn Zalo Bot nhận và xử lý trong ngày hôm nay." />
           </div>
         </div>
 
@@ -167,12 +180,13 @@ export default function Dashboard() {
   );
 }
 
-function StatRow({ label, value, icon: Icon, color = '' }) {
+function StatRow({ label, value, icon: Icon, color = '', tooltip = '' }) {
   return (
     <div className="flex items-center justify-between py-1.5">
       <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 text-sm">
         <Icon className="w-4 h-4" />
         <span>{label}</span>
+        {tooltip && <Tooltip text={tooltip} />}
       </div>
       <span className={`font-semibold text-sm ${color || 'text-slate-900 dark:text-white'}`}>
         {typeof value === 'number' ? value.toLocaleString('vi-VN') : value}

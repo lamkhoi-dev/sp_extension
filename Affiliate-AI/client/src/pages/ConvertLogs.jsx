@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import Tooltip from '../components/ui/Tooltip';
 import {
   Link2, ExternalLink, Copy, Check, RefreshCw, CheckCircle,
   XCircle, MousePointerClick, X, Monitor, Smartphone, Tablet, Bot,
@@ -351,6 +352,7 @@ export default function ConvertLogsPage() {
           <div className="flex items-center gap-1.5 mb-1">
             <Link2 className="w-3.5 h-3.5 text-slate-400" />
             <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">Tổng Convert</p>
+            <Tooltip text="Tổng số lần chuyển đổi link Shopee thành link affiliate (bao gồm cả lỗi)." />
           </div>
           <p className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white">
             {stats?.total || 0}
@@ -360,6 +362,7 @@ export default function ConvertLogsPage() {
           <div className="flex items-center gap-1.5 mb-1">
             <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
             <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">Thành công</p>
+            <Tooltip text="Số link đã chuyển đổi thành công, tạo được link affiliate hợp lệ." />
           </div>
           <p className="text-lg sm:text-2xl font-bold text-emerald-500">{stats?.success || 0}</p>
         </div>
@@ -367,6 +370,7 @@ export default function ConvertLogsPage() {
           <div className="flex items-center gap-1.5 mb-1">
             <XCircle className="w-3.5 h-3.5 text-red-500" />
             <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">Lỗi</p>
+            <Tooltip text="Số link chuyển đổi thất bại (sản phẩm không hoa hồng, link lỗi...)." />
           </div>
           <p className="text-lg sm:text-2xl font-bold text-red-500">{stats?.failed || 0}</p>
         </div>

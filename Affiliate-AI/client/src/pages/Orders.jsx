@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo } from 'react';
+import Tooltip from '../components/ui/Tooltip';
 import {
   RefreshCw, ShoppingCart, CheckCircle, DollarSign, Percent,
   Download, Upload, AlertCircle, ChevronDown, ChevronRight,
@@ -209,11 +210,16 @@ export default function OrdersPage() {
 
       {/* Stats — 5 cards giống Shopee Affiliate Dashboard */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <StatCard icon={MousePointerClick} label="Clicks" value={stats?.clicks || 0} color="text-red-500" />
-        <StatCard icon={ShoppingCart} label="Đơn hàng" value={stats?.uniqueOrders || 0} />
-        <StatCard icon={DollarSign} label="Hoa hồng ước tính" value={formatShortVND(stats?.totalCommissionNew || 0)} color="text-emerald-500" unit="đ" />
-        <StatCard icon={Package} label="Số lượng đã bán" value={stats?.totalQuantity || 0} />
-        <StatCard icon={Percent} label="Giá trị đơn hàng" value={formatShortVND(stats?.totalOrderValue || 0)} color="text-blue-500" unit="đ" />
+        <StatCard icon={MousePointerClick} label="Clicks" value={stats?.clicks || 0} color="text-red-500"
+          tooltip="Số lượt chuyển đổi link trong khoảng thời gian đã chọn." />
+        <StatCard icon={ShoppingCart} label="Đơn hàng" value={stats?.uniqueOrders || 0}
+          tooltip="Số đơn hàng duy nhất trong khoảng thời gian đã chọn." />
+        <StatCard icon={DollarSign} label="Hoa hồng ước tính" value={formatShortVND(stats?.totalCommissionNew || 0)} color="text-emerald-500" unit="đ"
+          tooltip="Tổng hoa hồng ròng ước tính. Số thực tế có thể thay đổi khi đơn hoàn thành hoặc bị hủy." />
+        <StatCard icon={Package} label="Số lượng đã bán" value={stats?.totalQuantity || 0}
+          tooltip="Tổng số sản phẩm đã bán (tính theo số lượng của mỗi dòng đơn)." />
+        <StatCard icon={Percent} label="Giá trị đơn hàng" value={formatShortVND(stats?.totalOrderValue || 0)} color="text-blue-500" unit="đ"
+          tooltip="Tổng giá trị các đơn hàng. Là doanh số gốc chưa trừ phí." />
       </div>
 
       {/* ═══ Shopee-style Filter Panel ═══ */}
@@ -590,12 +596,13 @@ function DField({ label, value }) {
 }
 
 // ─── Stat Card ──────────────────────────────────────────
-function StatCard({ icon: Icon, label, value, color = '', unit = '' }) {
+function StatCard({ icon: Icon, label, value, color = '', unit = '', tooltip = '' }) {
   return (
     <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-3">
       <div className="flex items-center gap-1.5 mb-1">
         <Icon className="w-3.5 h-3.5 text-slate-400" />
         <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">{label}</p>
+        {tooltip && <Tooltip text={tooltip} />}
       </div>
       <p className={`text-base sm:text-xl font-bold ${color || 'text-slate-900 dark:text-white'}`}>
         {typeof value === 'number' ? value.toLocaleString('vi-VN') : value}
