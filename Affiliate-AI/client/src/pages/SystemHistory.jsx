@@ -21,49 +21,63 @@ import {
   BarChart3,
   Clock,
   Activity,
+  QrCode,
 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import { useAuditLogs } from '../hooks/useApi';
 
+// Keys are lowercase — action from server is normalized via .toLowerCase() at lookup time
 const actionIcons = {
-  create_user:    { icon: UserPlus,   bg: 'bg-emerald-500',  ring: 'ring-emerald-500/20', label: 'Thêm user' },
-  update_user:    { icon: Edit,       bg: 'bg-blue-500',     ring: 'ring-blue-500/20',    label: 'Cập nhật user' },
-  delete_user:    { icon: UserMinus,  bg: 'bg-red-500',      ring: 'ring-red-500/20',     label: 'Xóa user' },
-  payout:         { icon: Banknote,   bg: 'bg-violet-500',   ring: 'ring-violet-500/20',  label: 'Thanh toán' },
-  sync:           { icon: RefreshCw,  bg: 'bg-cyan-500',     ring: 'ring-cyan-500/20',    label: 'Đồng bộ' },
-  settings:       { icon: Settings,   bg: 'bg-amber-500',    ring: 'ring-amber-500/20',   label: 'Cài đặt' },
-  update_order:   { icon: FileText,   bg: 'bg-orange-500',   ring: 'ring-orange-500/20',  label: 'Đơn hàng' },
-  login:          { icon: LogIn,      bg: 'bg-teal-500',     ring: 'ring-teal-500/20',    label: 'Đăng nhập' },
-  logout:         { icon: LogOut,     bg: 'bg-slate-400',    ring: 'ring-slate-400/20',   label: 'Đăng xuất' },
-  view:           { icon: Eye,        bg: 'bg-sky-500',      ring: 'ring-sky-500/20',     label: 'Xem' },
-  delete:         { icon: Trash2,     bg: 'bg-rose-500',     ring: 'ring-rose-500/20',    label: 'Xóa' },
-  export:         { icon: Download,   bg: 'bg-indigo-500',   ring: 'ring-indigo-500/20',  label: 'Xuất dữ liệu' },
-  import:         { icon: Upload,     bg: 'bg-fuchsia-500',  ring: 'ring-fuchsia-500/20', label: 'Nhập dữ liệu' },
-  create_link:    { icon: Link,       bg: 'bg-pink-500',     ring: 'ring-pink-500/20',    label: 'Tạo link' },
-  notification:   { icon: Bell,       bg: 'bg-yellow-500',   ring: 'ring-yellow-500/20',  label: 'Thông báo' },
-  update_rates:   { icon: BarChart3,  bg: 'bg-lime-500',     ring: 'ring-lime-500/20',    label: 'Cập nhật tỷ lệ' },
-  update_bank:    { icon: CreditCard, bg: 'bg-emerald-600',  ring: 'ring-emerald-600/20', label: 'Cập nhật NH' },
+  // ── Auth ────────────────────────────────────────────────
+  login:              { icon: LogIn,       bg: 'bg-teal-500',     ring: 'ring-teal-500/20',     label: 'Đăng nhập' },
+  logout:             { icon: LogOut,      bg: 'bg-slate-500',    ring: 'ring-slate-500/20',    label: 'Đăng xuất' },
+  change_password:    { icon: Shield,      bg: 'bg-rose-500',     ring: 'ring-rose-500/20',     label: 'Đổi mật khẩu' },
+
+  // ── Payout ──────────────────────────────────────────────
+  create_payout:      { icon: Banknote,    bg: 'bg-violet-500',   ring: 'ring-violet-500/20',   label: 'Tạo thanh toán' },
+  update_bill:        { icon: Upload,      bg: 'bg-indigo-500',   ring: 'ring-indigo-500/20',   label: 'Upload bill' },
+
+  // ── User ────────────────────────────────────────────────
+  update_user_rates:  { icon: BarChart3,   bg: 'bg-lime-500',     ring: 'ring-lime-500/20',     label: 'Cập nhật tỷ lệ' },
+  update_bank_info:   { icon: CreditCard,  bg: 'bg-blue-500',     ring: 'ring-blue-500/20',     label: 'Cập nhật NH' },
+  update_bank:        { icon: QrCode,      bg: 'bg-sky-500',      ring: 'ring-sky-500/20',      label: 'QR tùy chỉnh' },
+
+  // ── Order ───────────────────────────────────────────────
+  simulate_order:     { icon: FileText,    bg: 'bg-amber-500',    ring: 'ring-amber-500/20',    label: 'Mô phỏng đơn' },
+  sync_orders:        { icon: RefreshCw,   bg: 'bg-cyan-500',     ring: 'ring-cyan-500/20',     label: 'Đồng bộ đơn' },
+  import_csv:         { icon: Download,    bg: 'bg-fuchsia-500',  ring: 'ring-fuchsia-500/20',  label: 'Nhập CSV' },
+
+  // ── System ──────────────────────────────────────────────
+  zalo_restart:       { icon: RefreshCw,   bg: 'bg-orange-500',   ring: 'ring-orange-500/20',   label: 'Restart Zalo' },
+
+  // ── Legacy / extras ─────────────────────────────────────
+  create_user:        { icon: UserPlus,    bg: 'bg-emerald-500',  ring: 'ring-emerald-500/20',  label: 'Thêm user' },
+  delete_user:        { icon: UserMinus,   bg: 'bg-red-500',      ring: 'ring-red-500/20',      label: 'Xóa user' },
+  payout:             { icon: Banknote,    bg: 'bg-violet-500',   ring: 'ring-violet-500/20',   label: 'Thanh toán' },
+  settings:           { icon: Settings,    bg: 'bg-amber-600',    ring: 'ring-amber-600/20',    label: 'Cài đặt' },
 };
 
-// Action badge colors for the label tag
+// Badge pill colors — matched to icon bg for consistency
 const actionBadgeColors = {
-  create_user:    'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  update_user:    'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  delete_user:    'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  payout:         'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
-  sync:           'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
-  settings:       'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  update_order:   'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-  login:          'bg-teal-50 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
-  logout:         'bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-400',
-  delete:         'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
-  export:         'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
-  import:         'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-400',
-  update_rates:   'bg-lime-50 text-lime-700 dark:bg-lime-900/30 dark:text-lime-400',
-  update_bank:    'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  login:              'bg-teal-50    text-teal-700    dark:bg-teal-900/30    dark:text-teal-400',
+  logout:             'bg-slate-100  text-slate-600   dark:bg-slate-700/50   dark:text-slate-400',
+  change_password:    'bg-rose-50    text-rose-700    dark:bg-rose-900/30    dark:text-rose-400',
+  create_payout:      'bg-violet-50  text-violet-700  dark:bg-violet-900/30  dark:text-violet-400',
+  update_bill:        'bg-indigo-50  text-indigo-700  dark:bg-indigo-900/30  dark:text-indigo-400',
+  update_user_rates:  'bg-lime-50    text-lime-700    dark:bg-lime-900/30    dark:text-lime-400',
+  update_bank_info:   'bg-blue-50    text-blue-700    dark:bg-blue-900/30    dark:text-blue-400',
+  update_bank:        'bg-sky-50     text-sky-700     dark:bg-sky-900/30     dark:text-sky-400',
+  simulate_order:     'bg-amber-50   text-amber-700   dark:bg-amber-900/30   dark:text-amber-400',
+  sync_orders:        'bg-cyan-50    text-cyan-700    dark:bg-cyan-900/30    dark:text-cyan-400',
+  import_csv:         'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-400',
+  zalo_restart:       'bg-orange-50  text-orange-700  dark:bg-orange-900/30  dark:text-orange-400',
+  create_user:        'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  delete_user:        'bg-red-50     text-red-700     dark:bg-red-900/30     dark:text-red-400',
+  payout:             'bg-violet-50  text-violet-700  dark:bg-violet-900/30  dark:text-violet-400',
 };
 
 const defaultBadge = 'bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-400';
+
 
 export default function SystemHistoryPage() {
   const { logs, stats, admins, loading, loadingMore, hasMore, filters, setFilters, loadMore } = useAuditLogs();
@@ -141,7 +155,7 @@ export default function SystemHistoryPage() {
           ))}
         </select>
         
-        {/* Filter by Action */}
+        {/* Filter by Action — values shown in UI labels, sent as uppercase to match DB */}
         <select
           value={filters.action}
           onChange={(e) => setFilters(prev => ({ ...prev, action: e.target.value }))}
@@ -149,7 +163,7 @@ export default function SystemHistoryPage() {
         >
           <option value="">Tất cả Hoạt động</option>
           {Object.entries(actionIcons).map(([key, conf]) => (
-            <option key={key} value={key}>{conf.label}</option>
+            <option key={key} value={key.toUpperCase()}>{conf.label}</option>
           ))}
         </select>
 
@@ -168,7 +182,8 @@ export default function SystemHistoryPage() {
       <Card className="-mx-4 sm:mx-0 p-0 overflow-hidden rounded-none sm:rounded-xl border-x-0 sm:border-x">
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
           {logs.map((log, index) => {
-            const actionConfig = actionIcons[log.action] || { icon: History, bg: 'bg-slate-500', ring: 'ring-slate-500/20', label: log.action || 'Khác' };
+            const actionKey = (log.action || '').toLowerCase();
+            const actionConfig = actionIcons[actionKey] || { icon: History, bg: 'bg-slate-500', ring: 'ring-slate-500/20', label: log.action || 'Khác' };
             const ActionIcon = actionConfig.icon;
             const time = new Date(log.created_at).toLocaleString('vi-VN');
             
@@ -199,7 +214,7 @@ export default function SystemHistoryPage() {
                   </p>
                   <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                     {/* Action badge */}
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${actionBadgeColors[log.action] || defaultBadge}`}>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${actionBadgeColors[actionKey] || defaultBadge}`}>
                       {actionConfig.label}
                     </span>
                     <span className="text-slate-300 dark:text-slate-600">·</span>
