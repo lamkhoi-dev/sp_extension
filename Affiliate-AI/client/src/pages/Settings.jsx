@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { Sun, Moon, Palette, Bell, Shield, User, Check, Key, Eye, EyeOff, X, Lock, Upload, Loader2, Camera } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Sun, Moon, Palette, Bell, Shield, User, Check, Key, Eye, EyeOff, X, Lock, Upload, Loader2, Camera, Server, Clock, Save, AlertTriangle } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import Button from '../components/ui/Button';
@@ -145,6 +145,73 @@ export default function SettingsPage() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState('');
   const [avatarSuccess, setAvatarSuccess] = useState(false);
+
+  // VPS Management state
+  const [vpsForm, setVpsForm] = useState({ expiryDate: '', provider: '', ipAddress: '', note: '' });
+  const [vpsLoading, setVpsLoading] = useState(false);
+  const [vpsSaving, setVpsSaving] = useState(false);
+  const [vpsSuccess, setVpsSuccess] = useState(false);
+  const [vpsError, setVpsError] = useState('');
+  const [countdown, setCountdown] = useState(null);
+
+  // Fetch VPS config on mount
+  useEffect(() => {
+    (async () => {
+      setVpsLoading(true);
+      try {
+        const res = await fetch('/api/settings/vps');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.expiryDate) {
+            setVpsForm({ expiryDate: data.expiryDate, provider: data.provider || '', ipAddress: data.ipAddress || '', note: data.note || '' });
+          }
+        }
+      } catch (e) { console.error('VPS fetch error', e); }
+      finally { setVpsLoading(false); }
+    })();
+  }, []);
+
+  // Live countdown timer
+  useEffect(() => {
+    if (!vpsForm.expiryDate) { setCountdown(null); return; }
+    const calc = () => {
+      const now = new Date();
+      const exp = new Date(vpsForm.expiryDate + 'T23:59:59');
+      const diff = exp - now;
+      if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0, expired: true, totalDays: 0 };
+      const days = Math.floor(diff / 86400000);
+      const hours = Math.floor((diff % 86400000) / 3600000);
+      const minutes = Math.floor((diff % 3600000) / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      return { days, hours, minutes, seconds, expired: false, totalDays: diff / 86400000 };
+    };
+    setCountdown(calc());
+    const timer = setInterval(() => setCountdown(calc()), 1000);
+    return () => clearInterval(timer);
+  }, [vpsForm.expiryDate]);
+
+  const handleVpsSave = async () => {
+    if (!vpsForm.expiryDate) { setVpsError('Vui lòng chọn ngày hết hạn'); return; }
+    setVpsSaving(true); setVpsError(''); setVpsSuccess(false);
+    try {
+      const res = await fetch('/api/settings/vps', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(vpsForm),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Lỗi lưu'); }
+      setVpsSuccess(true);
+      setTimeout(() => setVpsSuccess(false), 3000);
+    } catch (e) { setVpsError(e.message); }
+    finally { setVpsSaving(false); }
+  };
+
+  const getCountdownColor = () => {
+    if (!countdown || countdown.expired) return { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-600 dark:text-red-400', border: 'border-red-200 dark:border-red-800', ring: 'ring-red-500/20' };
+    if (countdown.totalDays <= 7) return { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-600 dark:text-red-400', border: 'border-red-200 dark:border-red-800', ring: 'ring-red-500/20' };
+    if (countdown.totalDays <= 30) return { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-600 dark:text-amber-400', border: 'border-amber-200 dark:border-amber-800', ring: 'ring-amber-500/20' };
+    return { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-400', border: 'border-emerald-200 dark:border-emerald-800', ring: 'ring-emerald-500/20' };
+  };
 
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -391,6 +458,116 @@ export default function SettingsPage() {
             <Upload className="w-4 h-4" />
             {avatarUploading ? 'Đang upload...' : 'Đổi ảnh đại diện'}
           </label>
+        </div>
+      </Card>
+
+      {/* VPS Management */}
+      <Card className="p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 rounded-lg bg-cyan-100 dark:bg-cyan-900/30">
+            <Server className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Quản lý VPS</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Theo dõi hạn & gia hạn máy chủ</p>
+          </div>
+          {vpsSuccess && (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-500 font-medium">
+              <Check className="w-3.5 h-3.5" /> Đã lưu!
+            </span>
+          )}
+        </div>
+
+        {/* Countdown */}
+        {countdown && (
+          <div className={`mb-5 p-4 rounded-xl border ${getCountdownColor().border} ${getCountdownColor().bg} ring-1 ${getCountdownColor().ring}`}>
+            <div className="flex items-center gap-2 mb-3">
+              {countdown.expired || countdown.totalDays <= 7
+                ? <AlertTriangle className={`w-4 h-4 ${getCountdownColor().text}`} />
+                : <Clock className={`w-4 h-4 ${getCountdownColor().text}`} />
+              }
+              <span className={`text-sm font-semibold ${getCountdownColor().text}`}>
+                {countdown.expired ? '⚠️ VPS ĐÃ HẾT HẠN!' : 'Thời gian còn lại'}
+              </span>
+            </div>
+            {!countdown.expired && (
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { val: countdown.days, label: 'Ngày' },
+                  { val: countdown.hours, label: 'Giờ' },
+                  { val: countdown.minutes, label: 'Phút' },
+                  { val: countdown.seconds, label: 'Giây' },
+                ].map(({ val, label }) => (
+                  <div key={label} className="text-center">
+                    <div className={`text-2xl font-bold tabular-nums ${getCountdownColor().text}`}>
+                      {String(val).padStart(2, '0')}
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider mt-0.5">{label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Form */}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 block">Ngày hết hạn *</label>
+              <input
+                type="date"
+                value={vpsForm.expiryDate}
+                onChange={e => setVpsForm(p => ({ ...p, expiryDate: e.target.value }))}
+                className="w-full px-3 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 block">Nhà cung cấp</label>
+              <input
+                type="text"
+                value={vpsForm.provider}
+                onChange={e => setVpsForm(p => ({ ...p, provider: e.target.value }))}
+                placeholder="VD: Vultr, DigitalOcean, Aiven..."
+                className="w-full px-3 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 transition-colors"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 block">Địa chỉ IP</label>
+            <input
+              type="text"
+              value={vpsForm.ipAddress}
+              onChange={e => setVpsForm(p => ({ ...p, ipAddress: e.target.value }))}
+              placeholder="VD: 103.xxx.xxx.xxx"
+              className="w-full px-3 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 block">Ghi chú</label>
+            <textarea
+              value={vpsForm.note}
+              onChange={e => setVpsForm(p => ({ ...p, note: e.target.value }))}
+              placeholder="VD: RAM 4GB, 2 vCPU, Ubuntu 22.04..."
+              rows={2}
+              className="w-full px-3 py-2.5 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 transition-colors resize-none"
+            />
+          </div>
+
+          {vpsError && (
+            <div className="px-3 py-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+              <p className="text-sm text-red-600 dark:text-red-400">{vpsError}</p>
+            </div>
+          )}
+
+          <button
+            onClick={handleVpsSave}
+            disabled={vpsSaving}
+            className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-cyan-500 hover:bg-cyan-600 rounded-xl transition-colors disabled:opacity-60"
+          >
+            {vpsSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {vpsSaving ? 'Đang lưu...' : 'Lưu cài đặt VPS'}
+          </button>
         </div>
       </Card>
 

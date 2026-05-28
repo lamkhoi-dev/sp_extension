@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   DollarSign, Users, ShoppingCart, TrendingUp, Percent, BarChart3,
-  RefreshCw, Wifi, WifiOff, MessageSquare, Link2
+  RefreshCw, Wifi, WifiOff, MessageSquare, Link2, Server, AlertTriangle
 } from 'lucide-react';
 import KPICard from '../components/ui/KPICard';
 import Tooltip from '../components/ui/Tooltip';
@@ -13,6 +13,23 @@ import { useDashboardStats, formatShortVND } from '../hooks/useApi';
 
 export default function Dashboard() {
   const { stats, loading, refresh } = useDashboardStats(15000);
+
+  // VPS expiry banner
+  const [vpsDays, setVpsDays] = useState(null);
+  const [vpsExpired, setVpsExpired] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/settings/vps');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.expiryDate) return;
+        const diff = new Date(data.expiryDate + 'T23:59:59') - new Date();
+        if (diff <= 0) { setVpsExpired(true); setVpsDays(0); }
+        else { setVpsDays(Math.ceil(diff / 86400000)); }
+      } catch (e) { /* ignore */ }
+    })();
+  }, []);
 
   if (loading || !stats) {
     return (
@@ -53,6 +70,39 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {/* VPS Expiry Banner */}
+      {(vpsDays !== null && vpsDays <= 30) && (
+        <a href="/settings" className={`flex items-center gap-3 p-3 rounded-xl border transition-colors no-underline ${
+          vpsExpired || vpsDays <= 7
+            ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/30'
+            : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30'
+        }`}>
+          <div className={`p-1.5 rounded-lg ${
+            vpsExpired || vpsDays <= 7 ? 'bg-red-100 dark:bg-red-900/40' : 'bg-amber-100 dark:bg-amber-900/40'
+          }`}>
+            {vpsExpired || vpsDays <= 7
+              ? <AlertTriangle className="w-4 h-4 text-red-500" />
+              : <Server className="w-4 h-4 text-amber-500" />
+            }
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm font-semibold ${
+              vpsExpired || vpsDays <= 7 ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'
+            }`}>
+              {vpsExpired ? '⚠️ VPS đã hết hạn!' : `VPS còn ${vpsDays} ngày`}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Bấm để xem chi tiết & gia hạn</p>
+          </div>
+          <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+            vpsExpired || vpsDays <= 7
+              ? 'bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400'
+              : 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400'
+          }`}>
+            {vpsExpired ? 'Hết hạn' : `${vpsDays} ngày`}
+          </span>
+        </a>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">

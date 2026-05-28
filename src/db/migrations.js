@@ -511,6 +511,14 @@ const PG_SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_clicks_token ON link_click_events(token);
   CREATE INDEX IF NOT EXISTS idx_clicks_time ON link_click_events(clicked_at DESC);
+
+  -- System settings (key-value store for VPS expiry, etc.)
+  CREATE TABLE IF NOT EXISTS system_settings (
+    key TEXT PRIMARY KEY,
+    value JSONB DEFAULT '{}',
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_by TEXT DEFAULT ''
+  );
 `;
 
 async function runMigrations(db) {

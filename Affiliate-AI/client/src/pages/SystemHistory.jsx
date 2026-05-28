@@ -22,6 +22,7 @@ import {
   Clock,
   Activity,
   QrCode,
+  Server,
 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import { useAuditLogs } from '../hooks/useApi';
@@ -55,6 +56,7 @@ const actionIcons = {
   delete_user:        { icon: UserMinus,   bg: 'bg-red-500',      ring: 'ring-red-500/20',      label: 'Xóa user' },
   payout:             { icon: Banknote,    bg: 'bg-violet-500',   ring: 'ring-violet-500/20',   label: 'Thanh toán' },
   settings:           { icon: Settings,    bg: 'bg-amber-600',    ring: 'ring-amber-600/20',    label: 'Cài đặt' },
+  vps_settings_updated:{ icon: Server,      bg: 'bg-teal-600',     ring: 'ring-teal-600/20',     label: 'Cập nhật VPS' },
 };
 
 // Badge pill colors — matched to icon bg for consistency
@@ -74,6 +76,7 @@ const actionBadgeColors = {
   create_user:        'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
   delete_user:        'bg-red-50     text-red-700     dark:bg-red-900/30     dark:text-red-400',
   payout:             'bg-violet-50  text-violet-700  dark:bg-violet-900/30  dark:text-violet-400',
+  vps_settings_updated:'bg-teal-50    text-teal-700    dark:bg-teal-900/30    dark:text-teal-400',
 };
 
 const defaultBadge = 'bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-400';

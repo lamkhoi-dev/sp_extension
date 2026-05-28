@@ -832,6 +832,42 @@ app.patch('/api/users/:userId/custom-qr', async (req, res) => {
   res.json({ success: true });
 });
 
+// ─── VPS Settings API ──────────────────────────────────
+app.get('/api/settings/vps', async (req, res) => {
+  try {
+    const row = await db.get("SELECT value FROM system_settings WHERE key = 'vps_config'");
+    res.json(row ? (typeof row.value === 'string' ? JSON.parse(row.value) : row.value) : {});
+  } catch (err) {
+    logger.error('VPS', `Get settings failed: ${err.message}`);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.patch('/api/settings/vps', async (req, res) => {
+  try {
+    const { expiryDate, provider, ipAddress, note } = req.body;
+    if (!expiryDate) return res.status(400).json({ error: 'Ngày hết hạn là bắt buộc' });
+
+    const config = { expiryDate, provider: provider || '', ipAddress: ipAddress || '', note: note || '' };
+    const adminUser = req.admin?.username || 'system';
+
+    await db.run(
+      `INSERT INTO system_settings (key, value, updated_at, updated_by)
+       VALUES ('vps_config', $1, NOW(), $2)
+       ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW(), updated_by = $2`,
+      [JSON.stringify(config), adminUser]
+    );
+
+    // Audit log
+    await auditStore.log(adminUser, 'VPS_SETTINGS_UPDATED', 'system', 'vps_config', config, req.ip);
+
+    res.json({ success: true, config });
+  } catch (err) {
+    logger.error('VPS', `Update settings failed: ${err.message}`);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ─── Redirect Click Analytics API ──────────────────────
 app.get('/api/redirect-clicks/:token', async (req, res) => {
   try {

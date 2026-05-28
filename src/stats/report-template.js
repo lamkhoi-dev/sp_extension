@@ -29,7 +29,7 @@ function statusBadge(status) {
 }
 
 function renderReport(data) {
-  const { user, summary, links, matchedOrders, payouts, generatedAt, expiresAt } = data;
+  const { user, referrer, ctvList = [], monthlyChart = [], summary, links, matchedOrders, payouts, generatedAt, expiresAt } = data;
 
   const linksHtml = links.map((l, i) => `
     <tr data-row-links="${i}" style="display:none">
@@ -456,6 +456,96 @@ function renderReport(data) {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
+
+    /* Referrer Card (Sidebar) */
+    .referrer-card {
+      margin-top: 24px;
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.15);
+      border-radius: 16px;
+      padding: 16px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .referrer-avatar {
+      width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
+      border: 2px solid rgba(16, 185, 129, 0.3);
+      flex-shrink: 0;
+    }
+    .referrer-avatar-placeholder {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--green), #059669);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 700; color: #fff;
+      flex-shrink: 0;
+    }
+    .referrer-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .referrer-name { font-size: 14px; font-weight: 600; color: #34d399; }
+
+    /* CTV Summary Chip (Sidebar) */
+    .ctv-chip {
+      margin-top: 16px;
+      background: rgba(6, 182, 212, 0.08);
+      border: 1px solid rgba(6, 182, 212, 0.15);
+      border-radius: 12px;
+      padding: 12px 16px;
+      width: 100%;
+      text-align: center;
+    }
+    .ctv-chip-number { font-size: 28px; font-weight: 700; color: #22d3ee; }
+    .ctv-chip-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+    /* CTV Grid */
+    .ctv-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      padding: 16px;
+    }
+    @media (min-width: 480px) { .ctv-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (min-width: 768px) { .ctv-grid { padding: 20px; gap: 12px; } }
+
+    .ctv-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: background 0.2s;
+    }
+    .ctv-card:hover { background: rgba(255,255,255,0.06); }
+    .ctv-avatar {
+      width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
+      border: 1px solid var(--glass-border);
+      flex-shrink: 0;
+    }
+    .ctv-avatar-placeholder {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: linear-gradient(135deg, #06b6d4, #3b82f6);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 600; color: #fff;
+      flex-shrink: 0;
+    }
+    .ctv-info { min-width: 0; flex: 1; }
+    .ctv-name { font-size: 13px; font-weight: 600; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ctv-stats { font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; margin-top: 2px; }
+    .ctv-stat-value { color: #22d3ee; font-weight: 600; }
+
+    /* SVG Revenue Chart */
+    .chart-container {
+      padding: 20px;
+      overflow-x: auto;
+    }
+    .chart-svg { width: 100%; height: auto; min-width: 300px; }
+    .chart-bar { transition: opacity 0.2s; cursor: pointer; }
+    .chart-bar:hover { opacity: 0.8; }
+    .chart-bar-label { font-size: 11px; fill: var(--text-muted); text-anchor: middle; }
+    .chart-bar-value { font-size: 10px; fill: #60a5fa; text-anchor: middle; font-weight: 600; }
+    .chart-month-label { font-size: 12px; fill: var(--text-muted); text-anchor: middle; }
   </style>
 </head>
 <body>
@@ -479,6 +569,24 @@ function renderReport(data) {
         <div class="value">${user.cashbackBuyerRate}%</div>
         <div class="desc">Áp dụng cho đơn hàng hoàn thành</div>
       </div>
+
+      ${referrer ? `
+      <div class="referrer-card">
+        ${referrer.avatar 
+          ? `<img src="${referrer.avatar}" class="referrer-avatar" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+          : ''}
+        <div class="referrer-avatar-placeholder" ${referrer.avatar ? 'style="display:none"' : ''}>${(referrer.displayName || '?')[0].toUpperCase()}</div>
+        <div>
+          <div class="referrer-label">👤 Người giới thiệu</div>
+          <div class="referrer-name">${referrer.displayName}</div>
+        </div>
+      </div>` : ''}
+
+      ${ctvList.length > 0 ? `
+      <div class="ctv-chip">
+        <div class="ctv-chip-number">${ctvList.length}</div>
+        <div class="ctv-chip-label">👥 Cộng tác viên đã mời</div>
+      </div>` : ''}
     </aside>
 
     <!-- Main Content -->
@@ -506,6 +614,77 @@ function renderReport(data) {
           <div class="stat-sub">Tổng lượt chuyển đổi</div>
         </div>
       </div>
+
+      ${(() => {
+        // SVG Revenue Chart (inline — no library needed)
+        const maxCommission = Math.max(...monthlyChart.map(m => m.commission), 1);
+        const chartWidth = 460;
+        const chartHeight = 180;
+        const barWidth = 50;
+        const gap = 20;
+        const startX = 30;
+        const bars = monthlyChart.map((m, i) => {
+          const barH = Math.max((m.commission / maxCommission) * (chartHeight - 40), 2);
+          const x = startX + i * (barWidth + gap);
+          const y = chartHeight - 20 - barH;
+          const val = m.commission >= 1000000 ? (m.commission / 1000000).toFixed(1) + 'M' 
+                    : m.commission >= 1000 ? Math.round(m.commission / 1000) + 'k' 
+                    : Math.round(m.commission);
+          return `
+            <g class="chart-bar">
+              <defs>
+                <linearGradient id="barGrad${i}" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#60a5fa"/>
+                  <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.6"/>
+                </linearGradient>
+              </defs>
+              <rect x="${x}" y="${y}" width="${barWidth}" height="${barH}" rx="6" fill="url(#barGrad${i})"/>
+              <text x="${x + barWidth/2}" y="${y - 6}" class="chart-bar-value">${val}đ</text>
+              <text x="${x + barWidth/2}" y="${chartHeight - 4}" class="chart-month-label">${m.label}</text>
+            </g>`;
+        }).join('');
+
+        if (monthlyChart.some(m => m.commission > 0)) {
+          return `
+          <section class="data-section" style="margin-bottom:0">
+            <div class="section-header">
+              <span class="section-title">📊 Doanh thu 6 tháng</span>
+              <span class="badge-count">${formatVND(monthlyChart.reduce((s,m) => s + m.commission, 0))}</span>
+            </div>
+            <div class="chart-container">
+              <svg class="chart-svg" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="xMidYMid meet">
+                ${bars}
+              </svg>
+            </div>
+          </section>`;
+        }
+        return '';
+      })()}
+
+      ${ctvList.length > 0 ? `
+      <section class="data-section">
+        <div class="section-header">
+          <span class="section-title">👥 Cộng tác viên</span>
+          <span class="badge-count">${ctvList.length} người</span>
+        </div>
+        <div class="ctv-grid">
+          ${ctvList.map(c => `
+            <div class="ctv-card">
+              ${c.avatar 
+                ? `<img src="${c.avatar}" class="ctv-avatar" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+                : ''}
+              <div class="ctv-avatar-placeholder" ${c.avatar ? 'style="display:none"' : ''}>${(c.displayName || '?')[0].toUpperCase()}</div>
+              <div class="ctv-info">
+                <div class="ctv-name">${c.displayName}</div>
+                <div class="ctv-stats">
+                  <span>📦 <span class="ctv-stat-value">${c.orderCount}</span> đơn</span>
+                  <span>💰 <span class="ctv-stat-value">${formatVND(c.totalCommission)}</span></span>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </section>` : ''}
 
       <div class="content-grid">
         <!-- Links Section -->
