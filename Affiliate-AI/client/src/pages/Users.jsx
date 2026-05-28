@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Eye, Users, UserCheck, DollarSign, RefreshCw, MessageSquare, Edit2, Save, Building2, Trophy, ShoppingBag } from 'lucide-react';
+import { Eye, Users, UserCheck, DollarSign, RefreshCw, MessageSquare, Edit2, Save, Building2, Trophy, ShoppingBag, Upload } from 'lucide-react';
 import { Avatar, Tooltip } from 'antd';
 import DataTable from '../components/ui/DataTable';
 import Badge from '../components/ui/Badge';
