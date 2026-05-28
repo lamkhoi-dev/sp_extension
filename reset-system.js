@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { DB } = require('./src/db/index');
+const DB = require('./src/db/index');
 const logger = require('./src/logger');
 
 async function resetSystem() {
