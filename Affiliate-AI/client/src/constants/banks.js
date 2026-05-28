@@ -55,6 +55,7 @@ export const VIET_BANKS = [
   // ── Digital banks / Fintech ──────────────────────────────
   { code: 'CAKE',     name: 'CAKE by VPBank',                              bin: '546034', short: 'CAKE' },
   { code: 'Ubank',    name: 'Ubank by VPBank',                             bin: '546035', short: 'Ubank' },
+  { code: 'TIMO',     name: 'Ngân hàng số Timo by Ban Viet Bank',          bin: '963388', short: 'Timo' },
   { code: 'momo',     name: 'MoMo',                                        bin: '971025', short: 'MoMo' },
 ];
 
