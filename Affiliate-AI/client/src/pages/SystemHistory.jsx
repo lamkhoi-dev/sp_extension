@@ -8,34 +8,65 @@ import {
   RefreshCw,
   Settings,
   FileText,
-  Search,
-  Filter,
+  LogIn,
+  LogOut,
+  Shield,
+  Eye,
+  Trash2,
+  Download,
+  Upload,
+  Link,
+  Bell,
+  Banknote,
+  BarChart3,
+  Clock,
+  Activity,
 } from 'lucide-react';
 import Card from '../components/ui/Card';
 import { useAuditLogs } from '../hooks/useApi';
 
 const actionIcons = {
-  create_user: { icon: UserPlus, color: 'bg-emerald-500', label: 'Thêm user' },
-  update_user: { icon: Edit, color: 'bg-blue-500', label: 'Cập nhật' },
-  delete_user: { icon: UserMinus, color: 'bg-red-500', label: 'Xóa user' },
-  payout: { icon: CreditCard, color: 'bg-violet-500', label: 'Thanh toán' },
-  sync: { icon: RefreshCw, color: 'bg-cyan-500', label: 'Đồng bộ' },
-  settings: { icon: Settings, color: 'bg-amber-500', label: 'Cài đặt' },
-  update_order: { icon: FileText, color: 'bg-orange-500', label: 'Đơn hàng' },
-  login: { icon: History, color: 'bg-indigo-500', label: 'Đăng nhập' },
-  logout: { icon: History, color: 'bg-slate-500', label: 'Đăng xuất' }
+  create_user:    { icon: UserPlus,   bg: 'bg-emerald-500',  ring: 'ring-emerald-500/20', label: 'Thêm user' },
+  update_user:    { icon: Edit,       bg: 'bg-blue-500',     ring: 'ring-blue-500/20',    label: 'Cập nhật user' },
+  delete_user:    { icon: UserMinus,  bg: 'bg-red-500',      ring: 'ring-red-500/20',     label: 'Xóa user' },
+  payout:         { icon: Banknote,   bg: 'bg-violet-500',   ring: 'ring-violet-500/20',  label: 'Thanh toán' },
+  sync:           { icon: RefreshCw,  bg: 'bg-cyan-500',     ring: 'ring-cyan-500/20',    label: 'Đồng bộ' },
+  settings:       { icon: Settings,   bg: 'bg-amber-500',    ring: 'ring-amber-500/20',   label: 'Cài đặt' },
+  update_order:   { icon: FileText,   bg: 'bg-orange-500',   ring: 'ring-orange-500/20',  label: 'Đơn hàng' },
+  login:          { icon: LogIn,      bg: 'bg-teal-500',     ring: 'ring-teal-500/20',    label: 'Đăng nhập' },
+  logout:         { icon: LogOut,     bg: 'bg-slate-400',    ring: 'ring-slate-400/20',   label: 'Đăng xuất' },
+  view:           { icon: Eye,        bg: 'bg-sky-500',      ring: 'ring-sky-500/20',     label: 'Xem' },
+  delete:         { icon: Trash2,     bg: 'bg-rose-500',     ring: 'ring-rose-500/20',    label: 'Xóa' },
+  export:         { icon: Download,   bg: 'bg-indigo-500',   ring: 'ring-indigo-500/20',  label: 'Xuất dữ liệu' },
+  import:         { icon: Upload,     bg: 'bg-fuchsia-500',  ring: 'ring-fuchsia-500/20', label: 'Nhập dữ liệu' },
+  create_link:    { icon: Link,       bg: 'bg-pink-500',     ring: 'ring-pink-500/20',    label: 'Tạo link' },
+  notification:   { icon: Bell,       bg: 'bg-yellow-500',   ring: 'ring-yellow-500/20',  label: 'Thông báo' },
+  update_rates:   { icon: BarChart3,  bg: 'bg-lime-500',     ring: 'ring-lime-500/20',    label: 'Cập nhật tỷ lệ' },
+  update_bank:    { icon: CreditCard, bg: 'bg-emerald-600',  ring: 'ring-emerald-600/20', label: 'Cập nhật NH' },
 };
+
+// Action badge colors for the label tag
+const actionBadgeColors = {
+  create_user:    'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  update_user:    'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  delete_user:    'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  payout:         'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
+  sync:           'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
+  settings:       'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  update_order:   'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  login:          'bg-teal-50 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+  logout:         'bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-400',
+  delete:         'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
+  export:         'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+  import:         'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-400',
+  update_rates:   'bg-lime-50 text-lime-700 dark:bg-lime-900/30 dark:text-lime-400',
+  update_bank:    'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+};
+
+const defaultBadge = 'bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-400';
 
 export default function SystemHistoryPage() {
   const { logs, stats, admins, loading, loadingMore, hasMore, filters, setFilters, loadMore } = useAuditLogs();
-
-  const handleSearch = (e) => {
-    // Only fetch on enter or button click if it was an API search, 
-    // but right now the API filters are applied when state changes
-    // Wait, the hook refetches when `filters` changes. 
-    // For simple local search: wait, the API supports filtering by action, admin, dateFrom, dateTo.
-    // Let's use the local state for search, or use API filters.
-  };
 
   const observer = useRef();
   const lastLogElementRef = useCallback(node => {
@@ -49,24 +80,60 @@ export default function SystemHistoryPage() {
     if (node) observer.current.observe(node);
   }, [loading, loadingMore, hasMore, loadMore]);
 
-  return (
-    <div className="space-y-4">
-      {/* Search + Filter */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-          <button
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm"
-          >
-            <History className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Hoạt động hệ thống</span>
-          </button>
-        </div>
+  // Stats derived from the stats prop
+  const todayCount = stats?.today || 0;
+  const totalCount = stats?.total || logs.length;
+  const uniqueAdmins = admins?.length || 0;
 
+  return (
+    <div className="space-y-5">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 dark:from-slate-500 dark:to-slate-700 flex items-center justify-center">
+              <Shield className="w-4.5 h-4.5 text-white" />
+            </div>
+            Log Hệ Thống
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            Theo dõi mọi hoạt động quản trị viên
+          </p>
+        </div>
+      </div>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-2.5 sm:p-4">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Activity className="w-3.5 h-3.5 text-blue-500" />
+            <p className="text-[10px] sm:text-xs text-slate-500">Tổng log</p>
+          </div>
+          <p className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white">{totalCount}</p>
+        </div>
+        <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-2.5 sm:p-4">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Clock className="w-3.5 h-3.5 text-emerald-500" />
+            <p className="text-[10px] sm:text-xs text-slate-500">Hôm nay</p>
+          </div>
+          <p className="text-lg sm:text-2xl font-bold text-emerald-500">{todayCount}</p>
+        </div>
+        <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-2.5 sm:p-4">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Shield className="w-3.5 h-3.5 text-indigo-500" />
+            <p className="text-[10px] sm:text-xs text-slate-500">Admin</p>
+          </div>
+          <p className="text-lg sm:text-2xl font-bold text-indigo-500">{uniqueAdmins}</p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2">
         {/* Filter by Admin */}
         <select
           value={filters.admin}
           onChange={(e) => setFilters(prev => ({ ...prev, admin: e.target.value }))}
-          className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
         >
           <option value="">Tất cả Admin</option>
           {admins.map(a => (
@@ -78,20 +145,30 @@ export default function SystemHistoryPage() {
         <select
           value={filters.action}
           onChange={(e) => setFilters(prev => ({ ...prev, action: e.target.value }))}
-          className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
         >
           <option value="">Tất cả Hoạt động</option>
           {Object.entries(actionIcons).map(([key, conf]) => (
             <option key={key} value={key}>{conf.label}</option>
           ))}
         </select>
+
+        {/* Active filters hint */}
+        {(filters.admin || filters.action) && (
+          <button
+            onClick={() => setFilters({ admin: '', action: '' })}
+            className="text-xs px-2.5 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+          >
+            ✕ Xoá bộ lọc
+          </button>
+        )}
       </div>
 
       {/* Content */}
       <Card className="-mx-4 sm:mx-0 p-0 overflow-hidden rounded-none sm:rounded-xl border-x-0 sm:border-x">
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
           {logs.map((log, index) => {
-            const actionConfig = actionIcons[log.action] || { icon: History, color: 'bg-slate-500', label: log.action || 'Khác' };
+            const actionConfig = actionIcons[log.action] || { icon: History, bg: 'bg-slate-500', ring: 'ring-slate-500/20', label: log.action || 'Khác' };
             const ActionIcon = actionConfig.icon;
             const time = new Date(log.created_at).toLocaleString('vi-VN');
             
@@ -102,37 +179,76 @@ export default function SystemHistoryPage() {
                description = log.details || `${actionConfig.label} ${log.resource_type} ${log.resource_id}`;
             }
 
-            if (logs.length === index + 1) {
-              return (
-                <div
-                  ref={lastLogElementRef}
-                  key={log.id}
-                  className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
-                >
-                  <LogItem log={log} actionConfig={actionConfig} ActionIcon={ActionIcon} description={description} time={time} />
+            const isLast = logs.length === index + 1;
+
+            return (
+              <div
+                ref={isLast ? lastLogElementRef : undefined}
+                key={log.id}
+                className="flex items-start gap-3 px-3 sm:px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group"
+              >
+                {/* Icon */}
+                <div className={`w-9 h-9 rounded-xl ${actionConfig.bg} ring-4 ${actionConfig.ring} flex items-center justify-center flex-shrink-0 shadow-sm`}>
+                  <ActionIcon className="w-4 h-4 text-white" />
                 </div>
-              );
-            } else {
-              return (
-                <div
-                  key={log.id}
-                  className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors"
-                >
-                  <LogItem log={log} actionConfig={actionConfig} ActionIcon={ActionIcon} description={description} time={time} />
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-slate-800 dark:text-slate-100 text-sm font-medium leading-snug line-clamp-2">
+                    {description}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    {/* Action badge */}
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${actionBadgeColors[log.action] || defaultBadge}`}>
+                      {actionConfig.label}
+                    </span>
+                    <span className="text-slate-300 dark:text-slate-600">·</span>
+                    {/* Admin name */}
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[120px]">
+                      {log.admin_username}
+                    </span>
+                    <span className="text-slate-300 dark:text-slate-600 hidden sm:inline">·</span>
+                    {/* Timestamp */}
+                    <span className="text-xs text-slate-400 hidden sm:inline">{time}</span>
+                    {/* IP */}
+                    {log.ip_address && (
+                      <>
+                        <span className="text-slate-300 dark:text-slate-600 hidden sm:inline">·</span>
+                        <span className="hidden sm:inline text-[10px] text-slate-400 font-mono">
+                          {log.ip_address}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
-              );
-            }
+
+                {/* Timestamp for mobile */}
+                <div className="sm:hidden text-right flex-shrink-0">
+                  <p className="text-[10px] text-slate-400 whitespace-nowrap">
+                    {new Date(log.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                  <p className="text-[9px] text-slate-300 dark:text-slate-600">
+                    {new Date(log.created_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                  </p>
+                </div>
+              </div>
+            );
           })}
 
           {logs.length === 0 && !loading && (
-            <div className="p-8 text-center text-slate-500">
-              Không tìm thấy hoạt động nào
+            <div className="p-12 text-center">
+              <History className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+              <p className="text-slate-500 text-sm">Không tìm thấy hoạt động nào</p>
+              {(filters.admin || filters.action) && (
+                <p className="text-xs text-slate-400 mt-1">Thử xoá bộ lọc để xem tất cả</p>
+              )}
             </div>
           )}
           
           {(loading || loadingMore) && (
-            <div className="p-4 text-center text-sm text-slate-500">
-              Đang tải...
+            <div className="p-4 text-center">
+              <RefreshCw className="w-5 h-5 text-blue-500 animate-spin mx-auto mb-1" />
+              <p className="text-sm text-slate-500">Đang tải...</p>
             </div>
           )}
         </div>
@@ -140,37 +256,3 @@ export default function SystemHistoryPage() {
     </div>
   );
 }
-
-function LogItem({ log, actionConfig, ActionIcon, description, time }) {
-  return (
-    <>
-      <div className={`w-9 h-9 rounded-lg ${actionConfig.color} flex items-center justify-center flex-shrink-0`}>
-        <ActionIcon className="w-4 h-4 text-white" />
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-slate-800 dark:text-slate-100 text-sm font-medium truncate">
-            {description}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-medium">
-            {actionConfig.label}
-          </span>
-          <span className="text-slate-400">•</span>
-          <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">{log.admin_username}</span>
-          <span className="text-slate-400 hidden sm:inline">•</span>
-          <span className="hidden sm:inline">{time}</span>
-          {log.ip_address && (
-            <>
-              <span className="text-slate-400 hidden sm:inline">•</span>
-              <span className="hidden sm:inline text-xs text-slate-400">IP: {log.ip_address}</span>
-            </>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
