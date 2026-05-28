@@ -229,6 +229,16 @@ class UserCache {
       return false;
     }
   }
+
+  async updateCustomQr(userId, customQr) {
+    try {
+      await db.run('UPDATE users SET qr_code = ? WHERE user_id = ?', [customQr || null, userId]);
+      return true;
+    } catch (err) {
+      logger.error('UserCache', `updateCustomQr failed: ${err.message}`);
+      return false;
+    }
+  }
 }
 
 module.exports = new UserCache();

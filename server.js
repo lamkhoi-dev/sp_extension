@@ -826,14 +826,10 @@ app.patch('/api/users/:userId/custom-qr', async (req, res) => {
   if (customQr && customQr.length > 400000) {
     return res.status(413).json({ error: 'Ảnh QR quá lớn (tối đa ~300KB)' });
   }
-  try {
-    const db = userCache.db;
-    await db.run('UPDATE users SET qr_code = ? WHERE user_id = ?', [customQr || null, req.params.userId]);
-    await auditStore.log(req.admin?.username || 'system', 'update_bank', 'user', req.params.userId, { note: 'custom_qr_updated' }, req.ip);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to save custom QR' });
-  }
+  const ok = await userCache.updateCustomQr(req.params.userId, customQr || null);
+  if (!ok) return res.status(500).json({ error: 'Failed to save custom QR' });
+  await auditStore.log(req.admin?.username || 'system', 'update_bank', 'user', req.params.userId, { note: 'custom_qr_updated' }, req.ip);
+  res.json({ success: true });
 });
 
 // ─── Redirect Click Analytics API ──────────────────────
