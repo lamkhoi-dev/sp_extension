@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import { Wallet, Check, Clock, ChevronDown, ChevronUp, ChevronRight, Upload, RefreshCw, Building2, FileText, ExternalLink, History } from 'lucide-react';
+import { Wallet, Check, Clock, ChevronDown, ChevronUp, ChevronRight, Upload, RefreshCw, Building2, FileText, ExternalLink, History, QrCode } from 'lucide-react';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import { usePayouts, formatVND } from '../hooks/useApi';
@@ -922,6 +922,16 @@ export default function PayoutsPage() {
                     <p className="text-xs text-slate-500 mb-0.5">Ngân hàng nhận</p>
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">{bankData?.name || bankCode}</p>
                     <p className="text-xs font-mono text-slate-600 dark:text-slate-400">{bankAccount}</p>
+                  </div>
+                </div>
+              ) : payTarget.customQr ? (
+                <div className="flex items-center gap-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl px-4 py-3 border border-amber-200 dark:border-amber-800/40">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center flex-shrink-0">
+                    <QrCode className="w-5 h-5 text-amber-500" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-400">QR tùy chỉnh</p>
+                    <p className="text-[10px] text-amber-600 dark:text-amber-500">Nhập số tiền thủ công khi chuyển khoản</p>
                   </div>
                 </div>
               ) : (
