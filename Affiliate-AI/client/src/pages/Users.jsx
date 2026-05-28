@@ -7,6 +7,7 @@ import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import { useUsers, formatVND, updateUserCashbackRates, updateUserBankInfo } from '../hooks/useApi';
 import { VIET_BANKS, getBankLogoUrl, buildVietQrUrl } from '../constants/banks';
+import BankSelect from '../components/ui/BankSelect';
 
 const PAGE_SIZE = 20;
 
@@ -449,37 +450,14 @@ export default function UsersPage() {
                 Thông tin ngân hàng
               </h4>
 
-              {/* Bank Dropdown with Logo */}
+              {/* Bank Dropdown with Logo + Search */}
               <div className="space-y-3">
                 <div>
                   <label className="text-xs text-slate-500 mb-1.5 block">Ngân hàng</label>
-                  <div className="relative">
-                    {selectedBankData && (
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
-                        <img
-                          src={getBankLogoUrl(selectedBankData.code)}
-                          alt={selectedBankData.short}
-                          className="w-5 h-5 rounded object-contain"
-                          onError={e => { e.target.style.display = 'none'; }}
-                        />
-                      </div>
-                    )}
-                    <select
-                      value={editingBank.bankName}
-                      onChange={e => { setEditingBank(b => ({ ...b, bankName: e.target.value })); setAllSaved(false); }}
-                      className={`w-full py-2.5 pr-3 text-sm text-slate-900 dark:text-white bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 appearance-none ${
-                        selectedBankData ? 'pl-9' : 'pl-3'
-                      }`}
-                    >
-                      <option value="">— Chọn ngân hàng —</option>
-                      {VIET_BANKS.map(b => (
-                        <option key={b.code} value={b.code}>
-                          {b.short} — {b.name}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs">▼</div>
-                  </div>
+                  <BankSelect
+                    value={editingBank.bankName}
+                    onChange={code => { setEditingBank(b => ({ ...b, bankName: code })); setAllSaved(false); }}
+                  />
                 </div>
 
                 {/* Bank Account Number */}
