@@ -5,7 +5,7 @@ import DataTable from '../components/ui/DataTable';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
-import { useUsers, formatVND, updateUserCashbackRates, updateUserBankInfo } from '../hooks/useApi';
+import { useUsers, formatVND, updateUserCashbackRates, updateUserBankInfo, updateUserCustomQr } from '../hooks/useApi';
 import { VIET_BANKS, getBankLogoUrl, buildVietQrUrl } from '../constants/banks';
 import BankSelect from '../components/ui/BankSelect';
 
@@ -21,6 +21,8 @@ export default function UsersPage() {
 
   // Bank info edit state
   const [editingBank, setEditingBank] = useState({ bankName: '', bankAccount: '' });
+  const [customQrPreview, setCustomQrPreview] = useState(''); // base64 data URL for custom QR
+  const [savingCustomQr, setSavingCustomQr] = useState(false);
 
   const openDetail = (row) => {
     setSelectedUser(row);
@@ -32,6 +34,9 @@ export default function UsersPage() {
       bankName: row.bank_name || '',
       bankAccount: row.bank_account || '',
     });
+    // Load existing custom QR if any (only if it's a data URL, not a VietQR URL)
+    const stored = row.qr_code || '';
+    setCustomQrPreview(stored.startsWith('data:') ? stored : '');
     setAllSaved(false);
     setShowDetailModal(true);
   };
@@ -209,6 +214,15 @@ export default function UsersPage() {
           updateUserBankInfo(selectedUser.user_id, editingBank.bankName, editingBank.bankAccount)
             .then(result => {
               setSelectedUser(prev => ({ ...prev, bank_name: editingBank.bankName, bank_account: editingBank.bankAccount, qr_code: result.qrCode }));
+            })
+        );
+      }
+      // Save custom QR if changed
+      if (customQrPreview !== (selectedUser.qr_code?.startsWith('data:') ? selectedUser.qr_code : '')) {
+        tasks.push(
+          updateUserCustomQr(selectedUser.user_id, customQrPreview || null)
+            .then(() => {
+              setSelectedUser(prev => ({ ...prev, qr_code: customQrPreview || null }));
             })
         );
       }
@@ -496,6 +510,67 @@ export default function UsersPage() {
                     )}
                     <p className="text-center text-[9px] text-slate-400 mt-0.5">VietQR Preview</p>
                   </div>
+                </div>
+                {/* Custom QR Upload — for banks without VietQR support */}
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-700/50">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs text-slate-500">QR tùy chỉnh <span className="text-slate-400">(Timo, MoMo, ví điện tử...)</span></label>
+                    {customQrPreview && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setSavingCustomQr(true);
+                          try {
+                            await updateUserCustomQr(selectedUser.user_id, null);
+                            setCustomQrPreview('');
+                          } finally { setSavingCustomQr(false); }
+                        }}
+                        className="text-[10px] text-red-400 hover:text-red-500 transition-colors"
+                      >
+                        ✕ Xoá QR
+                      </button>
+                    )}
+                  </div>
+
+                  {customQrPreview ? (
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={customQrPreview}
+                        alt="Custom QR"
+                        className="w-24 h-24 rounded-xl object-contain bg-white border border-slate-200 dark:border-slate-700 shadow-sm"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-emerald-600 mb-1">✓ Đã có QR tùy chỉnh</p>
+                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
+                          🔄 Thay ảnh
+                          <input type="file" accept="image/*" className="hidden" onChange={e => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = ev => setCustomQrPreview(ev.target.result);
+                            reader.readAsDataURL(file);
+                          }} />
+                        </label>
+                        <p className="text-[10px] text-slate-400 mt-1">Lưu bằng nút "Lưu tất cả"</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center gap-1.5 py-4 px-3 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors group">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center group-hover:bg-blue-50 dark:group-hover:bg-blue-900/30 transition-colors">
+                        <Upload className="w-4 h-4 text-slate-400 group-hover:text-blue-500" />
+                      </div>
+                      <p className="text-xs text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300">Tải ảnh QR lên</p>
+                      <p className="text-[10px] text-slate-300 dark:text-slate-600">PNG / JPG · tối đa 300KB</p>
+                      <input type="file" accept="image/*" className="hidden" onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (file.size > 300000) { alert('Ảnh quá lớn! Tối đa 300KB.'); return; }
+                        const reader = new FileReader();
+                        reader.onload = ev => setCustomQrPreview(ev.target.result);
+                        reader.readAsDataURL(file);
+                      }} />
+                    </label>
+                  )}
                 </div>
               </div>
             </div>

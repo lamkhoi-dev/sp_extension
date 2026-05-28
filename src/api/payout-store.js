@@ -156,6 +156,7 @@ const payoutStore = {
           avatar: user.avatar || '',
           bankName: user.bank_name || '',
           bankAccount: user.bank_account || '',
+          customQr: user.qr_code || '',
           referrerId: user.referrer_id || '',
           referrerName: user.referrer_name || '',
           hasReferrer,
@@ -192,7 +193,7 @@ const payoutStore = {
         } else {
           userMap[r.userId] = {
             userId: r.userId, displayName: r.displayName, avatar: r.avatar,
-            bankName: r.bankName || '', bankAccount: r.bankAccount || '',
+            bankName: r.bankName || '', bankAccount: r.bankAccount || '', customQr: r.customQr || '',
             referrerId: '', referrerName: '', hasReferrer: false,
             buyerRate: 0, referrerRate: 0, adminRate: 0,
             referrerEarnRate: r.referrerEarnRate ?? 20,
@@ -270,6 +271,7 @@ const payoutStore = {
         avatar: refUser?.avatar || '',
         bankName: refUser?.bank_name || '',
         bankAccount: refUser?.bank_account || '',
+        customQr: refUser?.qr_code || '',
         totalReferrerCashback: totalRef,
         completedReferrerCashback: completedRef,
         totalPaid: paidAsReferrer,

@@ -820,6 +820,22 @@ app.patch('/api/users/:userId/bank-info', async (req, res) => {
   res.json({ success: true, qrCode });
 });
 
+// Custom QR image upload (base64 data URL, max ~300KB)
+app.patch('/api/users/:userId/custom-qr', async (req, res) => {
+  const { customQr } = req.body;
+  if (customQr && customQr.length > 400000) {
+    return res.status(413).json({ error: 'Ảnh QR quá lớn (tối đa ~300KB)' });
+  }
+  try {
+    const db = userCache.db;
+    await db.run('UPDATE users SET qr_code = ? WHERE user_id = ?', [customQr || null, req.params.userId]);
+    await auditStore.log(req.admin?.username || 'system', 'update_bank', 'user', req.params.userId, { note: 'custom_qr_updated' }, req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save custom QR' });
+  }
+});
+
 // ─── Redirect Click Analytics API ──────────────────────
 app.get('/api/redirect-clicks/:token', async (req, res) => {
   try {

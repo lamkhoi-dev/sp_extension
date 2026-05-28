@@ -934,19 +934,38 @@ export default function PayoutsPage() {
                 </div>
               )}
 
-              {/* VietQR */}
-              {qrUrl ? (
+              {/* QR — VietQR auto or custom fallback */}
+              {(qrUrl || payTarget.customQr) ? (
                 <div className="flex flex-col items-center gap-2 bg-slate-50 dark:bg-slate-900/40 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs font-medium text-slate-500">Quét QR để chuyển tiền</p>
-                  <img
-                    src={qrUrl}
-                    alt="VietQR"
-                    className="w-56 h-56 object-contain rounded-lg border border-slate-200 dark:border-slate-600 bg-white"
-                    onError={e => { e.target.style.display = 'none'; }}
-                  />
-                  <p className="text-[10px] text-slate-400">
-                    Số tiền đã điền sẵn: <strong className="text-slate-600 dark:text-slate-300">{formatVND(amount)}</strong>
-                  </p>
+                  {qrUrl && !payTarget.customQr ? (
+                    <>
+                      <p className="text-xs font-medium text-slate-500">Quét QR để chuyển tiền</p>
+                      <img
+                        src={qrUrl}
+                        alt="VietQR"
+                        className="w-56 h-56 object-contain rounded-lg border border-slate-200 dark:border-slate-600 bg-white"
+                        onError={e => { e.target.style.display = 'none'; }}
+                      />
+                      <p className="text-[10px] text-slate-400">
+                        Số tiền đã điền sẵn: <strong className="text-slate-600 dark:text-slate-300">{formatVND(amount)}</strong>
+                      </p>
+                    </>
+                  ) : payTarget.customQr ? (
+                    <>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium">QR tùy chỉnh</span>
+                        {qrUrl && <span className="text-[10px] text-slate-400">• VietQR cũng có sẵn</span>}
+                      </div>
+                      <img
+                        src={payTarget.customQr}
+                        alt="Custom QR"
+                        className="w-56 h-56 object-contain rounded-lg border border-amber-200 dark:border-amber-800/40 bg-white shadow-sm"
+                      />
+                      <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                        ⚠️ Nhập số tiền thủ công: <strong>{formatVND(amount)}</strong>
+                      </p>
+                    </>
+                  ) : null}
                 </div>
               ) : null}
 

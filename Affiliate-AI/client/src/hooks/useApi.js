@@ -392,6 +392,14 @@ export async function updateUserBankInfo(userId, bankName, bankAccount) {
   });
 }
 
+// Upload custom QR image (base64 data URL) for special banks
+export async function updateUserCustomQr(userId, customQr) {
+  return apiFetch(`/users/${userId}/custom-qr`, {
+    method: 'PATCH',
+    body: JSON.stringify({ customQr }),
+  });
+}
+
 // Product Images — batch lookup with local cache
 const imgCache = {};
 
