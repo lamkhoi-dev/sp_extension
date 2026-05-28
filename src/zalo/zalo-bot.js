@@ -231,6 +231,14 @@ class ZaloBot {
           const inviterName = typeof inviterProfile === 'string' ? inviterProfile : (inviterProfile?.displayName || '');
           logger.info('ZaloBot', `👥 Referrer resolved: ${inviterUid} (${inviterName}) invited ${invitedMembers.length} member(s)`);
 
+          // ── Also register the inviter themselves ──────────────────────
+          // (A may never have messaged the bot; this ensures they appear in DB)
+          if (inviterUid !== this.ownId) {
+            await userCache.recordMessage(inviterUid, inviterName);
+            userCache.fetchAndSave(inviterUid).catch(() => {});
+            logger.info('ZaloBot', `✅ Inviter registered: ${inviterUid} (${inviterName})`);
+          }
+
           // Collect valid new member IDs/names for the welcome message
           const newMembersList = [];
 
@@ -239,7 +247,7 @@ class ZaloBot {
               : (uid.id || uid.uid || uid.userId || String(uid));
             const memberName = typeof uid === 'object' ? (uid.dName || uid.displayName || uid.name || '') : '';
 
-            if (memberId && memberId !== inviterUid) {
+            if (memberId && memberId !== inviterUid && memberId !== this.ownId) {
               await userCache.recordMessage(memberId, memberName);
               await userCache.setReferrer(memberId, inviterUid, inviterName);
               logger.info('ZaloBot', `✅ Referrer saved: ${memberId} (${memberName}) → invited by ${inviterUid} (${inviterName})`);
