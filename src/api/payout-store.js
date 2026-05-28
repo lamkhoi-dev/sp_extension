@@ -46,7 +46,7 @@ const USERS_WITH_ORDERS_SQL = `
   SELECT DISTINCT u.user_id, u.display_name, u.zalo_name, u.avatar,
          u.cashback_buyer_rate, u.cashback_referrer_rate, u.referrer_earn_rate, u.is_special,
          u.referrer_id, u.referrer_name,
-         u.bank_name, u.bank_account
+         u.bank_name, u.bank_account, u.qr_code
   FROM users u
   INNER JOIN orders o ON o.sub_id1 = u.user_id
   INNER JOIN convert_logs cl ON (
@@ -240,7 +240,7 @@ const payoutStore = {
       // Fetch the referrer user details and their referrer_earn_rate
       let refUser = userMap[refId];
       if (!refUser) {
-        refUser = await db.get('SELECT user_id, display_name, zalo_name, avatar, bank_name, bank_account, referrer_earn_rate, is_special FROM users WHERE user_id = ?', [refId]);
+        refUser = await db.get('SELECT user_id, display_name, zalo_name, avatar, bank_name, bank_account, qr_code, referrer_earn_rate, is_special FROM users WHERE user_id = ?', [refId]);
       }
       const refRate = refUser?.referrer_earn_rate ?? 20;
 
