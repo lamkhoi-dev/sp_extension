@@ -124,7 +124,7 @@ export default function BankSelect({ value, onChange, placeholder = '— Chọn 
           </div>
 
           {/* List */}
-          <ul className="max-h-60 overflow-y-auto py-1">
+          <ul className="max-h-80 overflow-y-auto py-1">
             {filtered.length === 0 ? (
               <li className="px-3 py-3 text-sm text-slate-400 text-center">Không tìm thấy ngân hàng</li>
             ) : (
