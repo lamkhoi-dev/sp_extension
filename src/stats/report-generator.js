@@ -90,7 +90,7 @@ class ReportGenerator {
 
     // 7. Monthly revenue chart (last 6 months)
     const monthlyRevenue = await db.all(
-      `SELECT TO_CHAR(DATE_TRUNC('month', TO_TIMESTAMP(o.order_time, 'YYYY-MM-DD HH24:MI:SS')), 'YYYY-MM') as month,
+      `SELECT LEFT(o.order_time, 7) as month,
               COUNT(DISTINCT o.order_id) as orders,
               COALESCE(SUM(o.net_commission), 0) as commission
        FROM orders o
@@ -101,7 +101,7 @@ class ReportGenerator {
        )
        WHERE cl.user_id = ? AND cl.status = 'success'
          AND o.order_time >= TO_CHAR(NOW() - INTERVAL '6 months', 'YYYY-MM-DD')
-       GROUP BY TO_CHAR(DATE_TRUNC('month', TO_TIMESTAMP(o.order_time, 'YYYY-MM-DD HH24:MI:SS')), 'YYYY-MM')
+       GROUP BY LEFT(o.order_time, 7)
        ORDER BY month ASC`,
       [userId]
     );
