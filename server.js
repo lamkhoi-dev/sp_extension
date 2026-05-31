@@ -917,6 +917,7 @@ app.post('/api/orders/simulate', async (req, res) => {
     status: body.status,
     subId1: body.subId1,
     subId2: body.subId2 || '',
+    subId4: body.subId4 || 'from_direct',
     orderTime: body.orderTime,
     completeTime: body.completeTime,
     // Commission fields
@@ -936,6 +937,73 @@ app.post('/api/orders/simulate', async (req, res) => {
     await auditStore.log(req.admin?.username || 'system', 'SIMULATE_ORDER', 'order', result.orderId, body, req.ip);
   }
   res.json(result);
+});
+
+// ─── Debug: inspect order ↔ convert_log matching ─────────
+app.get('/api/debug/order/:orderId', async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    const order = await db.get('SELECT order_id, item_id, item_name, sub_id1, sub_id2, sub_id4, order_status, net_commission, channel FROM orders WHERE order_id = ?', [orderId]);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    // Find matching convert_logs
+    const matchingLogs = await db.all(`
+      SELECT id, user_id, product_name, item_id, sub_id1, sub_id2, sub_id4, status, created_at
+      FROM convert_logs
+      WHERE sub_id1 = ? AND status = 'success'
+      ORDER BY created_at DESC LIMIT 20
+    `, [order.sub_id1]);
+
+    // Check exact JOIN match
+    const joinMatch = await db.all(`
+      SELECT cl.id, cl.item_id as cl_item_id, cl.product_name as cl_product_name, cl.sub_id1 as cl_sub_id1, cl.sub_id4 as cl_sub_id4
+      FROM convert_logs cl
+      WHERE cl.status = 'success'
+        AND cl.sub_id1 = ?
+        AND (
+          (? != '' AND cl.item_id = ? AND cl.sub_id1 = ?)
+          OR
+          (cl.item_id = '' AND ? != '' AND cl.product_name = ? AND cl.sub_id1 = ?)
+        )
+    `, [order.sub_id1, order.item_id, order.item_id, order.sub_id1, order.item_name, order.item_name, order.sub_id1]);
+
+    res.json({
+      order,
+      matchingConvertLogs: matchingLogs,
+      joinMatches: joinMatch,
+      diagnosis: {
+        orderSubId4: order.sub_id4,
+        hasJoinMatch: joinMatch.length > 0,
+        customJoinMatch: joinMatch.filter(j => j.cl_sub_id4 === 'from_custom').length > 0,
+        issue: order.sub_id4 !== 'from_custom' && order.channel === 'simulate'
+          ? 'BUG: sub_id4 was not passed to simulate route — order saved as from_direct instead of from_custom'
+          : joinMatch.length === 0
+            ? 'NO JOIN MATCH: item_id or item_name/product_name does not match any convert_log'
+            : 'OK',
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Fix: patch SIM order sub_id4 ──────────────────────
+app.patch('/api/debug/fix-order/:orderId', async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    const { subId4 } = req.body;
+    if (!subId4) return res.status(400).json({ error: 'subId4 is required' });
+
+    const order = await db.get('SELECT order_id, sub_id4, channel FROM orders WHERE order_id = ?', [orderId]);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    await db.run('UPDATE orders SET sub_id4 = ? WHERE order_id = ?', [subId4, orderId]);
+    await auditStore.log(req.admin?.username || 'system', 'FIX_ORDER_SUB_ID4', 'order', orderId, { old: order.sub_id4, new: subId4 }, req.ip);
+
+    res.json({ success: true, orderId, oldSubId4: order.sub_id4, newSubId4: subId4 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── Product Images API ─────────────────────────────────
