@@ -62,7 +62,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-// Listen for messages from popup + content scripts
+// Listen for messages from popup
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'toggle_bot') {
     botActive = msg.active;
@@ -88,161 +88,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
     sendResponse({ ok: true });
   }
-
-  // ─── Content Script Widget Handlers ─────────────────────────
-  // CREATE_AFFILIATE_LINK — from link widget on shopee.vn pages
-  if (msg.type === 'CREATE_AFFILIATE_LINK') {
-    (async () => {
-      try {
-        const originalLink = msg.originalLink;
-        const subIds = msg.subIds || {};
-        
-        // Find any affiliate.shopee.vn tab to execute the API call
-        const tabs = await chrome.tabs.query({ url: '*://affiliate.shopee.vn/*' });
-        if (tabs.length === 0) {
-          sendResponse({ success: false, error: 'UNAUTHORIZED' });
-          return;
-        }
-        
-        const tabId = tabs[0].id;
-        const results = await chrome.scripting.executeScript({
-          target: { tabId },
-          world: 'MAIN',
-          func: async (url, subs) => {
-            try {
-              const csrfMatch = document.cookie.match(/csrftoken=([^;]+)/);
-              const csrfToken = csrfMatch ? csrfMatch[1] : '';
-              const gqlBody = {
-                operationName: 'batchGetCustomLink',
-                query: `query batchGetCustomLink($linkParams: [CustomLinkParam!], $sourceCaller: SourceCaller){ batchCustomLink(linkParams: $linkParams, sourceCaller: $sourceCaller){ shortLink longLink failCode } }`,
-                variables: {
-                  linkParams: [{
-                    originalLink: url,
-                    advancedLinkParams: {
-                      subId1: subs.subId1 || '',
-                      subId2: subs.subId2 || '',
-                      subId3: subs.subId3 || '',
-                      subId4: subs.subId4 || '',
-                      subId5: subs.subId5 || '',
-                    },
-                  }],
-                  sourceCaller: 'CUSTOM_LINK_CALLER',
-                },
-              };
-              const resp = await fetch('/api/v3/gql?q=batchCustomLink', {
-                method: 'POST',
-                headers: {
-                  'accept': 'application/json, text/plain, */*',
-                  'content-type': 'application/json; charset=UTF-8',
-                  'affiliate-program-type': '1',
-                  'csrf-token': csrfToken,
-                },
-                credentials: 'include',
-                body: JSON.stringify(gqlBody),
-              });
-              const data = await resp.json();
-              if (data.errors && data.errors.length > 0) {
-                return { success: false, error: data.errors[0].message || 'GraphQL error' };
-              }
-              const result = data.data?.batchCustomLink?.[0];
-              if (!result) return { success: false, error: 'No result from API' };
-              if (result.failCode && result.failCode !== 0) return { success: false, error: `API fail code: ${result.failCode}` };
-              return { success: true, shortLink: result.shortLink || '', longLink: result.longLink || '' };
-            } catch (err) {
-              return { success: false, error: err.message };
-            }
-          },
-          args: [originalLink, subIds],
-        });
-        const result = results?.[0]?.result;
-        sendResponse(result || { success: false, error: 'Script returned no result' });
-      } catch (err) {
-        console.error('[BG] CREATE_AFFILIATE_LINK error:', err);
-        sendResponse({ success: false, error: err.message });
-      }
-    })();
-    return true; // async sendResponse
-  }
-
-  // GET_PRODUCT_COMMISSION — commission badge on product pages
-  if (msg.type === 'GET_PRODUCT_COMMISSION') {
-    (async () => {
-      try {
-        const itemId = msg.itemId;
-        // Try addlivetag API first (no affiliate tab needed)
-        const addlivetag = await fetchAddlivetagCommission(itemId);
-        if (addlivetag.found) {
-          sendResponse({
-            success: true,
-            data: {
-              status: 'success',
-              productInfo: {
-                commission: addlivetag.commissionAmount || 0,
-                commissionRate: addlivetag.commission || 0,
-                isXtra: addlivetag.isXtra || false,
-                sellerComFinal: 0,
-                shopeeComFinal: 0,
-                hasSellerCommission: false,
-                hasShopeeCommission: false,
-                isCapped: false,
-                cap: 0,
-                lastUpdate: new Date().toISOString(),
-              },
-            },
-          });
-        } else {
-          sendResponse({ success: false, error: 'No commission data found' });
-        }
-      } catch (err) {
-        sendResponse({ success: false, error: err.message });
-      }
-    })();
-    return true;
-  }
-
-  // CALCULATE_PRODUCT_STATS — widget icon badge
-  if (msg.type === 'CALCULATE_PRODUCT_STATS') {
-    // Return no stats for now — this requires order history from IndexedDB
-    sendResponse({ success: true, stats: { totalOrders: 0 } });
-  }
-
-  // FETCH_PRICE_TRACKING — price history chart
-  if (msg.type === 'FETCH_PRICE_TRACKING') {
-    (async () => {
-      try {
-        const { itemId, days, currency, productData } = msg;
-        const endpoint = `https://data-vultr.addlivetag.com/price-tracking/`;
-        const params = new URLSearchParams({
-          item_id: itemId,
-          days: days || 90,
-          currency: currency || 'VND',
-        });
-        // Also send product data if available (for price tracking service to store)
-        const body = productData ? JSON.stringify(productData) : null;
-        const resp = await fetch(`${endpoint}?${params}`, {
-          method: body ? 'POST' : 'GET',
-          headers: body ? { 'Content-Type': 'application/json' } : {},
-          body,
-        });
-        const data = await resp.json();
-        if (data && (data.prices || data.data)) {
-          sendResponse({ success: true, data: data.data || data });
-        } else {
-          sendResponse({ success: false, error: 'No price data' });
-        }
-      } catch (err) {
-        sendResponse({ success: false, error: err.message });
-      }
-    })();
-    return true;
-  }
-
-  // OPEN_OPTIONS_PAGE
-  if (msg.type === 'OPEN_OPTIONS_PAGE') {
-    chrome.runtime.openOptionsPage();
-    sendResponse({ ok: true });
-  }
-
   return true;
 });
 
@@ -409,7 +254,7 @@ async function executeExtractFull(tabId, payload, reqId) {
     try {
       // Try to find an existing shopee.vn tab first
       const existingTabs = await chrome.tabs.query({ url: 'https://shopee.vn/*' });
-      
+
       if (existingTabs.length > 0) {
         tempTabId = existingTabs[0].id;
         console.log('[BG] ExtractFull: Found existing shopee.vn tab:', tempTabId);
@@ -466,7 +311,7 @@ async function executeExtractFull(tabId, payload, reqId) {
 
       // Close temp tab only if we created it
       if (!existingTabs || existingTabs.length === 0) {
-        chrome.tabs.remove(tempTabId).catch(() => {});
+        chrome.tabs.remove(tempTabId).catch(() => { });
       }
 
       const result = results?.[0]?.result;
@@ -477,7 +322,7 @@ async function executeExtractFull(tabId, payload, reqId) {
       }
 
     } catch (err) {
-      if (tempTabId) chrome.tabs.remove(tempTabId).catch(() => {});
+      if (tempTabId) chrome.tabs.remove(tempTabId).catch(() => { });
       sendResult(reqId, { success: false, error: err.message });
     }
 
@@ -686,7 +531,7 @@ async function executeConvertInMainWorld(tabId, payload, reqId) {
         console.warn('[BG] Direct API failed, falling back to content script:', result.error);
         const targetUrl = 'https://affiliate.shopee.vn/offer/custom_link';
         const currentTab = await chrome.tabs.get(tabId);
-        
+
         // Auto-reload on cookie incorrect error
         if (result.error && typeof result.error === 'string' && result.error.includes('cookie incorrect')) {
           console.log('[BG] Detected cookie incorrect error, reloading tab...');
@@ -798,7 +643,7 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
       try {
         // Try to find an existing shopee.vn tab first (avoid creating new ones)
         const existingTabs = await chrome.tabs.query({ url: 'https://shopee.vn/*' });
-        
+
         if (existingTabs.length > 0) {
           // Use existing shopee.vn tab — no need to create
           tempTabId = existingTabs[0].id;
@@ -873,7 +718,7 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
 
         // Close temp tab only if we created it
         if (!existingTabs || existingTabs.length === 0) {
-          chrome.tabs.remove(tempTabId).catch(() => {});
+          chrome.tabs.remove(tempTabId).catch(() => { });
         }
 
         const nameResult = nameResults?.[0]?.result;
@@ -881,7 +726,7 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
           productInfo.searchKeyword = nameResult.name;
         }
       } catch (err) {
-        if (tempTabId) chrome.tabs.remove(tempTabId).catch(() => {});
+        if (tempTabId) chrome.tabs.remove(tempTabId).catch(() => { });
       }
     }
 
@@ -999,7 +844,7 @@ async function executeCheckAndConvert(tabId, payload, reqId) {
                 price = rawPrice ? new Intl.NumberFormat('vi-VN').format(rawPrice) + '₫' : '';
                 commissionAmount = Math.round((rawPrice * commission) / 100);
               }
-            } catch (e) {}
+            } catch (e) { }
 
             return { success: true, hasCommission: commission > 0, _needFallback: commission <= 0, productName, commission, commissionAmount, price, shortLink: linkResult.shortLink || linkResult.longLink, source: commission > 0 ? 'shopee' : 'shopee_zero' };
           }
