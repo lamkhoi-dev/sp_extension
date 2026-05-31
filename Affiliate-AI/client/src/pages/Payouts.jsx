@@ -352,7 +352,7 @@ export default function PayoutsPage() {
                                   <>
                                     {/* Sub-branch: Buyer Commission */}
                                     <div className="flex items-stretch">
-                                      <TreeLine isLast={completedReferrer.length === 0} />
+                                      <TreeLine isLast={completedReferrer.length === 0 && completedCustom.length === 0} />
                                       <div className="flex-1 ml-1 mb-1">
                                         <div className="flex items-center gap-1.5 py-1 px-2">
                                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -386,7 +386,7 @@ export default function PayoutsPage() {
 
                                     {/* Sub-branch: Referrer Commission */}
                                     <div className="flex items-stretch">
-                                      <TreeLine isLast={true} />
+                                      <TreeLine isLast={completedCustom.length === 0} />
                                       <div className="flex-1 ml-1 mb-1">
                                         <div className="flex items-center gap-1.5 py-1 px-2">
                                           <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
@@ -426,44 +426,44 @@ export default function PayoutsPage() {
                                         )}
                                       </div>
                                     </div>
+
+                                    {/* Sub-branch: Custom Commission */}
+                                    {completedCustom.length > 0 && (
+                                      <div className="flex items-stretch">
+                                        <TreeLine isLast={true} />
+                                        <div className="flex-1 ml-1 mb-1">
+                                          <div className="flex items-center gap-1.5 py-1 px-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                                            <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
+                                              ✨ Hoa hồng tuỳ chỉnh ({completedCustom.length})
+                                            </span>
+                                          </div>
+                                          {completedCustom.map((item, idx) => (
+                                            <div key={`cc-${idx}`} className="flex items-stretch">
+                                              <TreeLine isLast={idx === completedCustom.length - 1} />
+                                              <div className="flex-1 ml-1 mb-1 bg-purple-50/60 dark:bg-purple-900/15 rounded-lg border border-purple-200/60 dark:border-purple-800/30 px-3 py-2">
+                                                <div className="flex items-center justify-between gap-2">
+                                                  <div className="min-w-0 flex-1">
+                                                    <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.itemName}</p>
+                                                    <p className="text-[10px] text-slate-400">
+                                                      #{item.orderId} • {item.shopName} • 📱 {item.phone || '--'}
+                                                    </p>
+                                                  </div>
+                                                  <div className="flex-shrink-0 text-right">
+                                                    <p className="text-xs text-slate-500">HH: {formatVND(item.netCommission)}</p>
+                                                    <p className="text-sm font-bold text-purple-600">→ {formatVND(item.customCashback)}</p>
+                                                    <p className="text-[10px] text-purple-400">{customRate}%</p>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </>
                                 )}
                               </div>
-
-                              {/* Sub-branch: Custom Completed */}
-                              {completedCustom.length > 0 && (
-                                <div className="flex items-stretch mt-1">
-                                  <TreeLine isLast={true} />
-                                  <div className="flex-1 ml-1 mb-1">
-                                    <div className="flex items-center gap-1.5 py-1 px-2">
-                                      <div className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                                      <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
-                                        ✨ Hoa hồng tuỳ chỉnh ({completedCustom.length})
-                                      </span>
-                                    </div>
-                                    {completedCustom.map((item, idx) => (
-                                      <div key={`cc-${idx}`} className="flex items-stretch">
-                                        <TreeLine isLast={idx === completedCustom.length - 1} />
-                                        <div className="flex-1 ml-1 mb-1 bg-purple-50/60 dark:bg-purple-900/15 rounded-lg border border-purple-200/60 dark:border-purple-800/30 px-3 py-2">
-                                          <div className="flex items-center justify-between gap-2">
-                                            <div className="min-w-0 flex-1">
-                                              <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.itemName}</p>
-                                              <p className="text-[10px] text-slate-400">
-                                                #{item.orderId} • {item.shopName} • 📱 {item.phone || '--'}
-                                              </p>
-                                            </div>
-                                            <div className="flex-shrink-0 text-right">
-                                              <p className="text-xs text-slate-500">HH: {formatVND(item.netCommission)}</p>
-                                              <p className="text-sm font-bold text-purple-600">→ {formatVND(item.customCashback)}</p>
-                                              <p className="text-[10px] text-purple-400">{customRate}%</p>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
 
                               {/* ═══ PENDING SECTION ═══ */}
                               <div className="mt-2">
@@ -480,7 +480,7 @@ export default function PayoutsPage() {
                                   <>
                                     {/* Sub-branch: Buyer Pending */}
                                     <div className="flex items-stretch">
-                                      <TreeLine isLast={pendingReferrer.length === 0} />
+                                      <TreeLine isLast={pendingReferrer.length === 0 && pendingCustom.length === 0} />
                                       <div className="flex-1 ml-1 mb-1">
                                         <div className="flex items-center gap-1.5 py-1 px-2">
                                           <div className="w-1.5 h-1.5 rounded-full bg-amber-300" />
@@ -514,7 +514,7 @@ export default function PayoutsPage() {
 
                                     {/* Sub-branch: Referrer Pending */}
                                     <div className="flex items-stretch">
-                                      <TreeLine isLast={true} />
+                                      <TreeLine isLast={pendingCustom.length === 0} />
                                       <div className="flex-1 ml-1 mb-1">
                                         <div className="flex items-center gap-1.5 py-1 px-2">
                                           <div className="w-1.5 h-1.5 rounded-full bg-cyan-300" />
@@ -555,44 +555,44 @@ export default function PayoutsPage() {
                                         )}
                                       </div>
                                     </div>
+
+                                    {/* Sub-branch: Custom Pending */}
+                                    {pendingCustom.length > 0 && (
+                                      <div className="flex items-stretch">
+                                        <TreeLine isLast={true} />
+                                        <div className="flex-1 ml-1 mb-1">
+                                          <div className="flex items-center gap-1.5 py-1 px-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-purple-300" />
+                                            <span className="text-[10px] font-semibold text-purple-500 dark:text-purple-400 uppercase tracking-wider">
+                                              ✨ Hoa hồng tuỳ chỉnh ({pendingCustom.length})
+                                            </span>
+                                          </div>
+                                          {pendingCustom.map((item, idx) => (
+                                            <div key={`pc-${idx}`} className="flex items-stretch">
+                                              <TreeLine isLast={idx === pendingCustom.length - 1} />
+                                              <div className="flex-1 ml-1 mb-1 bg-purple-50/40 dark:bg-purple-900/10 rounded-lg border border-purple-200/40 dark:border-purple-800/20 px-3 py-2">
+                                                <div className="flex items-center justify-between gap-2">
+                                                  <div className="min-w-0 flex-1">
+                                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{item.itemName}</p>
+                                                    <p className="text-[10px] text-slate-400">
+                                                      #{item.orderId} • {item.shopName} • 📱 {item.phone || '--'}
+                                                    </p>
+                                                  </div>
+                                                  <div className="flex-shrink-0 text-right">
+                                                    <p className="text-xs text-slate-500">HH: {formatVND(item.netCommission)}</p>
+                                                    <p className="text-sm font-medium text-purple-500">→ {formatVND(item.customCashback)}</p>
+                                                    <p className="text-[10px] text-purple-400">{customRate}%</p>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </>
                                 )}
                               </div>
-
-                              {/* Sub-branch: Custom Pending */}
-                              {pendingCustom.length > 0 && (
-                                <div className="flex items-stretch mt-1">
-                                  <TreeLine isLast={true} />
-                                  <div className="flex-1 ml-1 mb-1">
-                                    <div className="flex items-center gap-1.5 py-1 px-2">
-                                      <div className="w-1.5 h-1.5 rounded-full bg-purple-300" />
-                                      <span className="text-[10px] font-semibold text-purple-500 dark:text-purple-400 uppercase tracking-wider">
-                                        ✨ Hoa hồng tuỳ chỉnh ({pendingCustom.length})
-                                      </span>
-                                    </div>
-                                    {pendingCustom.map((item, idx) => (
-                                      <div key={`pc-${idx}`} className="flex items-stretch">
-                                        <TreeLine isLast={idx === pendingCustom.length - 1} />
-                                        <div className="flex-1 ml-1 mb-1 bg-purple-50/40 dark:bg-purple-900/10 rounded-lg border border-purple-200/40 dark:border-purple-800/20 px-3 py-2">
-                                          <div className="flex items-center justify-between gap-2">
-                                            <div className="min-w-0 flex-1">
-                                              <p className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{item.itemName}</p>
-                                              <p className="text-[10px] text-slate-400">
-                                                #{item.orderId} • {item.shopName} • 📱 {item.phone || '--'}
-                                              </p>
-                                            </div>
-                                            <div className="flex-shrink-0 text-right">
-                                              <p className="text-xs text-slate-500">HH: {formatVND(item.netCommission)}</p>
-                                              <p className="text-sm font-medium text-purple-500">→ {formatVND(item.customCashback)}</p>
-                                              <p className="text-[10px] text-purple-400">{customRate}%</p>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
 
                                 {/* ═══ PAYOUT HISTORY ═══ */}
                                 <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700/30">
