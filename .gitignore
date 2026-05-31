@@ -5,15 +5,20 @@ chrome_profile/
 logs/
 curl_request.txt
 
-# Zalo Bot
+# Zalo Bot Sessions (mỗi môi trường có session riêng — không commit)
 zalo-session.json
+zalo-session-staging.json
 public/zalo-qr.png
 data/
 
-# Environment variables & secrets
+# Environment variables & secrets (.env.example được commit, .env thì không)
 .env
-.env.*
+.env.staging
+.env.production
 
 # DB Dumps
 *.sql
 *.dump
+
+# Frontend build output
+Affiliate-AI/client/dist/

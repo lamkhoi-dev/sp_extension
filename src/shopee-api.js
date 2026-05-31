@@ -56,7 +56,8 @@ class ShopeeAPI {
       const startTime = Date.now();
       logger.info('ShopeeAPI', `[direct] Converting: ${originalLink.slice(0, 60)}...`);
 
-      const enrichedSubIds = { ...subIds, sub4: `from_${this.mode}` };
+      // Allow caller to override sub4 (e.g. 'from_custom'); default is from_${mode}
+      const enrichedSubIds = { sub4: `from_${this.mode}`, ...subIds };
       const result = this.directLink.generateLink(originalLink, enrichedSubIds);
 
       const duration = Date.now() - startTime;
@@ -104,7 +105,8 @@ class ShopeeAPI {
       const startTime = Date.now();
       logger.info('ShopeeAPI', `[direct] Check & Convert: ${originalLink.slice(0, 60)}...`);
 
-      const enrichedSubIds = { ...subIds, sub4: `from_${this.mode}` };
+      // Allow caller to override sub4 (e.g. 'from_custom'); default is from_${mode}
+      const enrichedSubIds = { sub4: `from_${this.mode}`, ...subIds };
       const result = await this.directLink.checkAndGenerate(originalLink, enrichedSubIds);
 
       const duration = Date.now() - startTime;
@@ -137,7 +139,7 @@ class ShopeeAPI {
             sub1: subIds.sub1 || 'sub1',
             sub2: subIds.sub2 || 'sub2',
             sub3: subIds.sub3 || 'sub3',
-            sub4: `from_${this.mode}`,
+            sub4: subIds.sub4 || `from_${this.mode}`,
           },
         },
       });

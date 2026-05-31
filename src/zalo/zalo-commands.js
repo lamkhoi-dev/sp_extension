@@ -21,6 +21,7 @@ Xin chào! Gửi link Shopee hoặc tên sản phẩm, tôi sẽ tạo affiliate
 📌 Các lệnh:
 /link <URL shopee> — Tạo affiliate link
 /link <URL> <sub_id> — Tạo link có Sub ID
+/custom <URL shopee> <số_điện_thoại> — Tạo link tuỳ chỉnh cho khách (chỉ DM)
 /search <tên SP> — Tìm sản phẩm
 /thongke — Xem thống kê cá nhân (chat riêng)
 /status — Xem trạng thái hệ thống
@@ -29,7 +30,8 @@ Xin chào! Gửi link Shopee hoặc tên sản phẩm, tôi sẽ tạo affiliate
 💡 Ví dụ:
 /search Bông mút rửa mặt
 /link https://shopee.vn/product/1391725226/26326757902
-/link https://s.shopee.vn/qfmqIMWXN tele_bot`;
+/link https://s.shopee.vn/qfmqIMWXN tele_bot
+/custom https://shopee.vn/product/... 0912345678`;
 
 const WELCOME_NEW_FRIEND = (name) =>
   `👋 Chào ${name}!\n\nCảm ơn bạn đã kết bạn. Tôi là bot tạo affiliate link Shopee tự động.\n\nGõ /help để xem hướng dẫn nhé!`;
@@ -132,6 +134,13 @@ class ZaloCommands {
           await this.actions.humanReply(message, replyText, { react: false });
         } else {
           replyText = await this._handleLink(message, url, { subId1: parts[1] || '', subId2: parts[2] || '' });
+        }
+      } else if (text.startsWith('/custom')) {
+        if (isGroup) {
+          replyText = '⚠️ Lệnh /custom chỉ dùng trong tin nhắn riêng.';
+          await this.actions.humanReply(message, replyText, { react: false });
+        } else {
+          replyText = await this._handleCustom(message, text);
         }
       } else {
         // Auto-detect Shopee link
@@ -449,6 +458,163 @@ class ZaloCommands {
         sendMail(emails, subject, mailBody).catch(e => logger.error(`[Mailer] Error notifying error: ${e.message}`));
       }
 
+      const errText = `Hệ thống hiện tại đang quá tải, vui lòng thử lại sau ít phút`;
+      await this.actions.sendText(errText, message.threadId, message.type);
+      return errText;
+    }
+  }
+
+  async _handleCustom(message, text) {
+    const senderUid = message.data?.uidFrom || message.threadId;
+    const senderName = await this.actions.getDisplayName(senderUid);
+
+    // Parse: /custom <url> <phone>
+    const CUSTOM_GUIDE = `📌 Cú pháp lệnh /custom:\n\n` +
+      `/custom <link_shopee> <số_điện_thoại>\n\n` +
+      `Ví dụ:\n/custom https://shopee.vn/product/... 0912345678\n\n` +
+      `⚠️ Lưu ý:\n- Link phải là link sản phẩm Shopee hợp lệ\n- Số điện thoại 10-11 chữ số bắt đầu bằng 0`;
+
+    // Strip /custom prefix, then split by whitespace
+    const body = text.slice('/custom'.length).trim();
+    if (!body) {
+      await this.actions.humanReply(message, CUSTOM_GUIDE, { react: false });
+      return CUSTOM_GUIDE;
+    }
+
+    // Extract URL (first http(s) sequence) and phone (last token matching phone pattern)
+    const urlMatch = body.match(/(https?:\/\/\S+)/i);
+    const phoneMatch = body.match(/\b(0[0-9]{8,10})\b/);
+
+    if (!urlMatch || !phoneMatch) {
+      const errGuide = `⚠️ Thiếu thông tin. Vui lòng nhập đầy đủ:\n\n` + CUSTOM_GUIDE;
+      await this.actions.humanReply(message, errGuide, { react: false });
+      return errGuide;
+    }
+
+    const url = urlMatch[1];
+    const phone = phoneMatch[1];
+
+    const parsed = shopee.parseShopeeLink(url);
+    if (!parsed) {
+      const errText = '⚠️ URL không phải link Shopee hợp lệ.\nHỗ trợ: shopee.vn/product/..., s.shopee.vn/..., shopee.vn/ten-sp-i.xxx.xxx';
+      await this.actions.humanReply(message, errText, { react: false });
+      return errText;
+    }
+
+    logger.info('ZaloCommands', `[${senderName}] Custom link: ${url.slice(0, 60)}... phone=${phone}`);
+
+    this.actions.markSeen(message.threadId, message.type);
+    this.actions.reactHeart(message);
+    this.actions.fireTyping(message.threadId, message.type);
+
+    try {
+      // sub1 = F1 (người nhắn), sub2 = SĐT khách (F2), sub4 = from_custom
+      const result = await shopee.checkAndConvert(url, {
+        sub1: senderUid,
+        sub2: phone,
+        sub4: 'from_custom',
+      });
+
+      // No commission
+      if (result.noCommission) {
+        await convertLogStore.save({
+          userId: senderUid, userName: senderName,
+          originalLink: url, status: 'no_commission',
+          subId1: senderUid, subId2: phone, subId4: 'from_custom',
+        });
+        const noCommText = '❌ Sản phẩm không có hoàn tiền.';
+        await this.actions.sendText(noCommText, message.threadId, message.type);
+        return noCommText;
+      }
+
+      // Error
+      if (!result.success) {
+        await convertLogStore.save({
+          userId: senderUid, userName: senderName,
+          originalLink: url, status: 'error', errorMessage: result.error,
+          subId1: senderUid, subId2: phone, subId4: 'from_custom',
+        });
+        const errText = `Hệ thống hiện tại đang quá tải, vui lòng thử lại sau ít phút`;
+        await this.actions.sendText(errText, message.threadId, message.type);
+        return errText;
+      }
+
+      // Save convert log
+      const parsedIds = shopee.parseShopeeLink(result.originalLink || url);
+      const logId = await convertLogStore.save({
+        userId: senderUid,
+        userName: senderName,
+        originalLink: url,
+        affiliateLink: result.longLink || result.affiliateLink || '',
+        shortLink: result.shortLink || result.affiliateLink || '',
+        productName: result.productName || '',
+        commissionRate: result.commission || 0,
+        commissionAmount: result.commissionAmount || 0,
+        price: result.price || 0,
+        source: result.source || 'shopee',
+        subId1: senderUid,
+        subId2: phone,
+        subId3: String(result.commission || ''),
+        subId4: 'from_custom',
+        status: 'success',
+        itemId: result.itemId || parsedIds?.itemId || '',
+        shopId: result.shopId || parsedIds?.shopId || '',
+      });
+
+      // Build short redirect link
+      const serverUrl = process.env.SERVER_URL || '';
+      let linkToShow = result.shortLink || result.affiliateLink;
+      if (serverUrl && (result.longLink || result.affiliateLink)) {
+        try {
+          const affiliateLink = result.longLink || result.affiliateLink;
+          const { token, shortUrl } = await linkRedirectStore.create({
+            affiliateLink,
+            userId: senderUid,
+            userName: senderName,
+            itemId: result.itemId || parsedIds?.itemId || '',
+            productName: result.productName || '',
+            convertLogId: logId || null,
+          });
+          linkToShow = shortUrl;
+          if (logId && token) {
+            setImmediate(() => {
+              convertLogStore.updateRedirectToken(logId, token).catch(() => {});
+            });
+          }
+        } catch (redirectErr) {
+          logger.warn('ZaloCommands', `Custom short link failed, using original: ${redirectErr.message}`);
+        }
+      }
+
+      // Reply
+      const mentionTag = `@${senderName}`;
+      let commissionText = `${result.commission}%`;
+      if (result.commissionAmount > 0) {
+        commissionText += ` (~${new Intl.NumberFormat('vi-VN').format(result.commissionAmount)}đ)`;
+      }
+      const msg = `${mentionTag} ✅ Link tuỳ chỉnh đã tạo!\n\n` +
+        `📱 Khách: ${phone}\n` +
+        `✨ Link hoàn tiền:\n${linkToShow}\n` +
+        `💰 Hoa hồng ước tính: ${commissionText}\n\n` +
+        `⚠️ Lưu ý:\n` +
+        `1. Không xem VIDEO/LIVE sau khi click link\n` +
+        `2. Hãy xóa giỏ hàng nếu đã thêm trước đó\n\n` +
+        `🔔 Gửi link cho khách và nhắc đặt hàng trong hôm nay nhé 🎉`;
+
+      const msgContent = {
+        msg,
+        mentions: [{ pos: 0, uid: senderUid, len: mentionTag.length }],
+      };
+
+      await this.actions.sendStyled(msgContent, message.threadId, message.type);
+      return msg;
+    } catch (err) {
+      logger.error('ZaloCommands', `Error in /custom for ${senderUid}: ${err.message}`);
+      await convertLogStore.save({
+        userId: senderUid, userName: senderName,
+        originalLink: url, status: 'error', errorMessage: err.message,
+        subId1: senderUid, subId4: 'from_custom',
+      }).catch(e => logger.error(`[DB] Error saving custom error log: ${e.message}`));
       const errText = `Hệ thống hiện tại đang quá tải, vui lòng thử lại sau ít phút`;
       await this.actions.sendText(errText, message.threadId, message.type);
       return errText;

@@ -60,7 +60,8 @@ const SQLITE_SCHEMA = `
     cashback_buyer_rate REAL DEFAULT 60,
     cashback_referrer_rate REAL DEFAULT 20,
     referrer_earn_rate REAL DEFAULT 20,
-    is_special INTEGER DEFAULT 0
+    is_special INTEGER DEFAULT 0,
+    custom_rate REAL DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_users_msg_count ON users(message_count DESC);
   CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen DESC);
@@ -599,7 +600,34 @@ async function runMigrations(db) {
     }
   }
 
+  // Safe migration: Add custom_rate column for F1 CTV custom commission
+  try {
+    if (db.type === 'postgres') {
+      await db.exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_rate REAL DEFAULT 0;`);
+    } else {
+      await db.exec(`ALTER TABLE users ADD COLUMN custom_rate REAL DEFAULT 0;`);
+    }
+  } catch (err) {
+    if (!err.message.toLowerCase().includes('duplicate column') && !err.message.toLowerCase().includes('already exists') && !err.message.toLowerCase().includes('duplicate column name')) {
+      logger.warn('Migrations', `Failed to add custom_rate column: ${err.message}`);
+    }
+  }
+
+  // Safe migration: Add sub_id4 column to convert_logs (for from_custom tracking)
+  try {
+    if (db.type === 'postgres') {
+      await db.exec(`ALTER TABLE convert_logs ADD COLUMN IF NOT EXISTS sub_id4 TEXT DEFAULT '';`);
+    } else {
+      await db.exec(`ALTER TABLE convert_logs ADD COLUMN sub_id4 TEXT DEFAULT '';`);
+    }
+  } catch (err) {
+    if (!err.message.toLowerCase().includes('duplicate column') && !err.message.toLowerCase().includes('already exists') && !err.message.toLowerCase().includes('duplicate column name')) {
+      logger.warn('Migrations', `Failed to add sub_id4 column to convert_logs: ${err.message}`);
+    }
+  }
+
   // Safe: Resync PG sequences to prevent duplicate key errors after manual data imports
+
   if (db.type === 'postgres') {
     const seqTables = ['convert_logs', 'payouts', 'orders', 'link_redirects', 'link_click_events'];
     for (const table of seqTables) {

@@ -797,13 +797,14 @@ app.post('/api/payouts/upload-bill', billUpload.single('bill'), async (req, res)
 });
 
 app.patch('/api/users/:userId/cashback-rates', async (req, res) => {
-  const { buyerRate, referrerEarnRate } = req.body;
+  const { buyerRate, referrerEarnRate, customRate } = req.body;
   const result = await payoutStore.updateUserReferrerRate(
     req.params.userId,
     buyerRate !== undefined ? Number(buyerRate) : undefined,
-    referrerEarnRate !== undefined ? Number(referrerEarnRate) : undefined
+    referrerEarnRate !== undefined ? Number(referrerEarnRate) : undefined,
+    customRate !== undefined ? Number(customRate) : undefined
   );
-  await auditStore.log(req.admin?.username || 'system', 'UPDATE_USER_RATES', 'user', req.params.userId, { buyerRate, referrerEarnRate }, req.ip);
+  await auditStore.log(req.admin?.username || 'system', 'UPDATE_USER_RATES', 'user', req.params.userId, { buyerRate, referrerEarnRate, customRate }, req.ip);
   res.json(result);
 });
 

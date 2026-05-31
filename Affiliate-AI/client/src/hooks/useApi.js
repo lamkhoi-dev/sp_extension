@@ -377,10 +377,10 @@ export function usePayouts() {
 }
 
 // Update user cashback rates
-export async function updateUserCashbackRates(userId, buyerRate, referrerEarnRate) {
+export async function updateUserCashbackRates(userId, buyerRate, referrerEarnRate, customRate) {
   return apiFetch(`/users/${userId}/cashback-rates`, {
     method: 'PATCH',
-    body: JSON.stringify({ buyerRate, referrerEarnRate }),
+    body: JSON.stringify({ buyerRate, referrerEarnRate, customRate }),
   });
 }
 

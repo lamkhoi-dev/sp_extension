@@ -50,7 +50,7 @@ const simulateStore = {
           order_commission_new, order_bonus_new,
           mcn_name, mcn_contract, mcn_fee_rate, mcn_fee_amount,
           agreed_commission_rate, net_commission,
-          sub_id1, sub_id2, order_time, complete_time, channel
+          sub_id1, sub_id2, sub_id4, order_time, complete_time, channel
         ) VALUES (
           @orderId, @status, @itemId, @itemName, @shopId, @shopName,
           @price, @quantity, @orderValue, @refundAmount,
@@ -65,7 +65,7 @@ const simulateStore = {
           @orderCommissionNew, @orderBonusNew,
           @mcnName, @mcnContract, @mcnFeeRate, @mcnFeeAmount,
           @agreedRate, @netCommission,
-          @subId1, @subId2, @orderTime, @completeTime, @channel
+          @subId1, @subId2, @subId4, @orderTime, @completeTime, @channel
         )
       `, {
         orderId,
@@ -106,6 +106,7 @@ const simulateStore = {
         // Tracking
         subId1: data.subId1 || '',
         subId2: data.subId2 || '',
+        subId4: data.subId4 || 'from_direct',
         orderTime: data.orderTime || now,
         completeTime: data.status === 'Hoàn thành' ? (data.completeTime || now) : '',
         channel: 'simulate',

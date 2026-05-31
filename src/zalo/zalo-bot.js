@@ -7,7 +7,9 @@ const ConcurrentHandler = require('./concurrent-handler');
 const messageStore = require('./message-store');
 const userCache = require('./user-cache');
 
-const SESSION_PATH = path.join(__dirname, '../../zalo-session.json');
+const SESSION_PATH = process.env.ZALO_SESSION_PATH
+  ? path.resolve(process.env.ZALO_SESSION_PATH)
+  : path.join(__dirname, '../../zalo-session.json');
 const QR_PATH = path.join(__dirname, '../../public/zalo-qr.png');
 
 class ZaloBot {

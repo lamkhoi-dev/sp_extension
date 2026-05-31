@@ -18,8 +18,8 @@ const convertLogStore = {
   async save(data) {
     try {
       const result = await db.runNamed(`
-        INSERT INTO convert_logs (user_id, user_name, original_link, affiliate_link, short_link, product_name, commission_rate, commission_amount, price, source, sub_id1, sub_id2, sub_id3, status, error_message, item_id, shop_id)
-        VALUES (@userId, @userName, @originalLink, @affiliateLink, @shortLink, @productName, @commissionRate, @commissionAmount, @price, @source, @subId1, @subId2, @subId3, @status, @errorMessage, @itemId, @shopId)
+        INSERT INTO convert_logs (user_id, user_name, original_link, affiliate_link, short_link, product_name, commission_rate, commission_amount, price, source, sub_id1, sub_id2, sub_id3, sub_id4, status, error_message, item_id, shop_id)
+        VALUES (@userId, @userName, @originalLink, @affiliateLink, @shortLink, @productName, @commissionRate, @commissionAmount, @price, @source, @subId1, @subId2, @subId3, @subId4, @status, @errorMessage, @itemId, @shopId)
         RETURNING id
       `, {
         userId: data.userId || '',
@@ -35,6 +35,7 @@ const convertLogStore = {
         subId1: data.subId1 || '',
         subId2: data.subId2 || '',
         subId3: data.subId3 || '',
+        subId4: data.subId4 || '',
         status: data.status || 'success',
         errorMessage: data.errorMessage || '',
         itemId: data.itemId || '',

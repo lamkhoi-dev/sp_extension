@@ -15,7 +15,7 @@ export default function UsersPage() {
   const { users, loading, search, setSearch, refresh } = useUsers();
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [editingRates, setEditingRates] = useState({ buyer: 40, referrer: 30 });
+  const [editingRates, setEditingRates] = useState({ buyer: 60, referrer: 20, custom: 0 });
   const [savingAll, setSavingAll] = useState(false);
   const [allSaved, setAllSaved] = useState(false);
 
@@ -29,6 +29,7 @@ export default function UsersPage() {
     setEditingRates({
       buyer: row.cashback_buyer_rate ?? 60,
       referrer: row.referrer_earn_rate ?? 20,
+      custom: row.custom_rate ?? 0,
     });
     setEditingBank({
       bankName: row.bank_name || '',
@@ -227,12 +228,13 @@ export default function UsersPage() {
         );
       }
       tasks.push(
-        updateUserCashbackRates(selectedUser.user_id, editingRates.buyer, editingRates.referrer)
+        updateUserCashbackRates(selectedUser.user_id, editingRates.buyer, editingRates.referrer, editingRates.custom)
           .then(() => {
             setSelectedUser(prev => ({
               ...prev,
               cashback_buyer_rate: editingRates.buyer,
               referrer_earn_rate: editingRates.referrer,
+              custom_rate: editingRates.custom,
             }));
           })
       );
@@ -452,8 +454,33 @@ export default function UsersPage() {
                   </p>
                 </div>
               </div>
+              {/* Custom commission row */}
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-3 border border-purple-100 dark:border-purple-800/30">
+                  <p className="text-xs text-purple-600 dark:text-purple-400 mb-2">Hoa hồng tuỳ chỉnh (/custom)</p>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number" min="0" max="100" step="5"
+                      value={editingRates.custom}
+                      onChange={(e) => { setEditingRates(r => ({ ...r, custom: Number(e.target.value) })); setAllSaved(false); }}
+                      className="w-full px-2 py-1 text-lg font-bold text-purple-600 bg-white dark:bg-slate-800 rounded-lg border border-purple-200 dark:border-purple-700 text-center"
+                    />
+                    <span className="text-purple-600 font-bold">%</span>
+                  </div>
+                  <p className="text-[10px] text-purple-400 mt-1">Áp dụng cho đơn từ lệnh /custom</p>
+                </div>
+                <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-3 border border-amber-100 dark:border-amber-800/30 flex flex-col justify-center">
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mb-1">Ghi chú</p>
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    Hoa hồng tuỳ chỉnh độc lập với buyer/referrer.<br/>CTV F1 nhận % này cho toàn bộ đơn custom.
+                  </p>
+                </div>
+              </div>
               {(100 - editingRates.buyer - editingRates.referrer) < 0 && (
-                <p className="text-xs text-red-500 mt-2">⚠️ Tổng vượt quá 100%!</p>
+                <p className="text-xs text-red-500 mt-2">⚠️ Tổng Buyer + Referrer vượt quá 100%!</p>
+              )}
+              {editingRates.custom > 100 && (
+                <p className="text-xs text-red-500 mt-1">⚠️ Hoa hồng tuỳ chỉnh không được vượt 100%!</p>
               )}
             </div>
 
@@ -584,7 +611,7 @@ export default function UsersPage() {
                 variant={allSaved ? 'outline' : 'primary'}
                 className={`flex-1 ${allSaved ? '!bg-emerald-50 dark:!bg-emerald-900/20 !text-emerald-600 !border-emerald-200' : ''}`}
                 icon={allSaved ? Save : Edit2}
-                disabled={savingAll || (100 - editingRates.buyer - editingRates.referrer) < 0}
+                disabled={savingAll || (100 - editingRates.buyer - editingRates.referrer) < 0 || editingRates.custom > 100}
                 onClick={handleSaveAll}
               >
                 {savingAll ? 'Đang lưu...' : allSaved ? '✓ Đã lưu thành công' : 'Lưu tất cả'}
