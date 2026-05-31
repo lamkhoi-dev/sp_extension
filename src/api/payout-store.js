@@ -5,7 +5,16 @@ const logger = require('../logger');
 const COMPLETED_STATUSES = new Set(['Hoàn thành', 'Completed']);
 
 // Cancelled orders — excluded entirely from all cashback calculations
-const CANCELLED_STATUSES = new Set(['Đã huỷ', 'Cancelled']);
+// Vietnamese has two spellings: "hủy" (hook above ủ) vs "huỷ" (tilde+dot ỷ)
+const CANCELLED_STATUSES = new Set(['Đã hủy', 'Đã huỷ', 'Cancelled']);
+
+/** Robust cancelled check — handles Unicode variants + partial matches */
+function isCancelled(status) {
+  if (!status) return false;
+  if (CANCELLED_STATUSES.has(status)) return true;
+  const lower = status.toLowerCase();
+  return lower.includes('hủy') || lower.includes('huỷ') || lower.includes('cancelled') || lower.includes('cancel');
+}
 
 // SQL: Get all matched orders — fetch sub_id4 from orders directly + referrer_id from convert_logs
 const MATCHED_ORDERS_SQL = `
@@ -147,7 +156,7 @@ const payoutStore = {
 
         // Process standard buyer orders (custom already excluded from MATCHED_ORDERS_SQL)
         for (const o of orders) {
-          if (CANCELLED_STATUSES.has(o.order_status)) continue;
+          if (isCancelled(o.order_status)) continue;
           const nc = o.net_commission || 0;
           totalNetCommission += nc;
           if (COMPLETED_STATUSES.has(o.order_status)) {
@@ -172,7 +181,7 @@ const payoutStore = {
         let unpaidCustomCashback = 0;
 
         for (const o of customOrders) {
-          if (CANCELLED_STATUSES.has(o.order_status)) continue;
+          if (isCancelled(o.order_status)) continue;
           const nc = o.net_commission || 0;
           totalCustomNetCommission += nc;
           if (COMPLETED_STATUSES.has(o.order_status)) {
@@ -319,7 +328,7 @@ const payoutStore = {
 
       for (const o of orders) {
         // Skip cancelled orders entirely
-        if (CANCELLED_STATUSES.has(o.order_status)) continue;
+        if (isCancelled(o.order_status)) continue;
 
         const nc = o.net_commission || 0;
         const cb = Math.round(nc * refRate / 100);
@@ -385,7 +394,7 @@ const payoutStore = {
 
       for (const o of buyerOrders) {
         // Cancelled orders: skip cashback calc, don't add to completed or pending
-        if (CANCELLED_STATUSES.has(o.order_status)) continue;
+        if (isCancelled(o.order_status)) continue;
         // Skip custom orders from buyer section (handled separately below)
         if (o.cl_sub_id4 === 'from_custom') continue;
 
@@ -439,7 +448,7 @@ const payoutStore = {
 
       for (const o of refOrders) {
         // Cancelled orders: skip from referrer cashback entirely
-        if (CANCELLED_STATUSES.has(o.order_status)) continue;
+        if (isCancelled(o.order_status)) continue;
 
         const nc = o.net_commission || 0;
         const buyerUser = buyerMap[o.sub_id1];
@@ -480,7 +489,7 @@ const payoutStore = {
       const paidCustomIds = await _getPaidOrderIds(userId, 'custom');
 
       for (const o of customOrders) {
-        if (CANCELLED_STATUSES.has(o.order_status)) continue;
+        if (isCancelled(o.order_status)) continue;
         const nc = o.net_commission || 0;
         const item = {
           orderId: o.order_id,
@@ -584,7 +593,7 @@ const payoutStore = {
           const unpaid = [];
           for (const o of orders) {
             // Skip cancelled orders — no payout for cancelled
-            if (CANCELLED_STATUSES.has(o.order_status)) continue;
+            if (isCancelled(o.order_status)) continue;
             if (!COMPLETED_STATUSES.has(o.order_status) || paidIds.has(o.order_id)) continue;
             const nc = o.net_commission || 0;
             unpaid.push({ orderId: o.order_id, itemName: o.item_name, shopName: o.shop_name, netCommission: nc, cashback: Math.round(nc * buyerRate / 100), appliedRate: buyerRate, role: 'buyer' });
@@ -606,7 +615,7 @@ const payoutStore = {
           const unpaid = [];
           for (const o of refOrders) {
             // Skip cancelled orders — no referrer payout for cancelled
-            if (CANCELLED_STATUSES.has(o.order_status)) continue;
+            if (isCancelled(o.order_status)) continue;
             if (!COMPLETED_STATUSES.has(o.order_status) || paidIds.has(o.order_id)) continue;
             const nc = o.net_commission || 0;
             unpaid.push({ orderId: o.order_id, itemName: o.item_name, shopName: o.shop_name, netCommission: nc, cashback: Math.round(nc * refRate / 100), appliedRate: refRate, role: 'referrer', buyerId: o.sub_id1 });
