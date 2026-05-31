@@ -7,41 +7,37 @@ const COMPLETED_STATUSES = new Set(['Hoàn thành', 'Completed']);
 // Cancelled orders — excluded entirely from all cashback calculations
 const CANCELLED_STATUSES = new Set(['Đã huỷ', 'Cancelled']);
 
-// SQL: Get all matched orders — also fetch sub_id4 from convert_logs to identify custom orders
+// SQL: Get all matched orders — fetch sub_id4 from orders directly + referrer_id from convert_logs
 const MATCHED_ORDERS_SQL = `
-  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, cl.sub_id4 as cl_sub_id4
+  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id4 as cl_sub_id4
   FROM orders o
   INNER JOIN convert_logs cl ON (
     (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
     OR
     (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
   )
-  WHERE cl.status = 'success'
+  WHERE cl.status = 'success' AND COALESCE(o.sub_id4, '') != 'from_custom'
   ORDER BY o.order_time DESC
 `;
 
 const MATCHED_ORDERS_BY_USER_SQL = `
-  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, cl.sub_id4 as cl_sub_id4
+  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id4 as cl_sub_id4
   FROM orders o
   INNER JOIN convert_logs cl ON (
     (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
     OR
     (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
   )
-  WHERE cl.status = 'success' AND o.sub_id1 = ?
+  WHERE cl.status = 'success' AND o.sub_id1 = ? AND COALESCE(o.sub_id4, '') != 'from_custom'
   ORDER BY o.order_time DESC
 `;
 
-// Custom orders (F1 mode) — linked via sub_id1 = F1 uid AND cl.sub_id4 = 'from_custom'
+// Custom orders (F1 mode) — query directly on orders.sub_id4 = 'from_custom'
+// No INNER JOIN needed — order itself knows it's custom via sub_id4 field
 const CUSTOM_ORDERS_BY_USER_SQL = `
-  SELECT DISTINCT o.*, cl.sub_id2 as customer_phone, cl.sub_id4 as cl_sub_id4
+  SELECT o.*, o.sub_id2 as customer_phone, o.sub_id4 as cl_sub_id4
   FROM orders o
-  INNER JOIN convert_logs cl ON (
-    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-    OR
-    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-  )
-  WHERE cl.status = 'success' AND o.sub_id1 = ? AND cl.sub_id4 = 'from_custom'
+  WHERE o.sub_id1 = ? AND o.sub_id4 = 'from_custom'
   ORDER BY o.order_time DESC
 `;
 
@@ -64,13 +60,17 @@ const USERS_WITH_ORDERS_SQL = `
          u.referrer_id, u.referrer_name, u.custom_rate,
          u.bank_name, u.bank_account, u.qr_code
   FROM users u
-  INNER JOIN orders o ON o.sub_id1 = u.user_id
-  INNER JOIN convert_logs cl ON (
-    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-    OR
-    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+  WHERE u.user_id IN (
+    SELECT DISTINCT o.sub_id1 FROM orders o
+    INNER JOIN convert_logs cl ON (
+      (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
+      OR
+      (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+    )
+    WHERE cl.status = 'success'
+    UNION
+    SELECT DISTINCT o2.sub_id1 FROM orders o2 WHERE o2.sub_id4 = 'from_custom'
   )
-  WHERE cl.status = 'success'
 `;
 
 /**
@@ -116,7 +116,6 @@ const payoutStore = {
       for (const user of users) {
         const uid = user.user_id;
         const orders = ordersByUser[uid] || [];
-        if (orders.length === 0) continue;
 
         const buyerRate = user.cashback_buyer_rate ?? 60;
         const hasReferrer = !!(user.referrer_id && user.referrer_id !== '');
@@ -146,7 +145,25 @@ const payoutStore = {
         let pendingCount = 0;
         let unpaidCompletedCashback = 0;
 
-        // Custom commission totals
+        // Process standard buyer orders (custom already excluded from MATCHED_ORDERS_SQL)
+        for (const o of orders) {
+          if (CANCELLED_STATUSES.has(o.order_status)) continue;
+          const nc = o.net_commission || 0;
+          totalNetCommission += nc;
+          if (COMPLETED_STATUSES.has(o.order_status)) {
+            if (!paidOrderIds.has(o.order_id)) {
+              completedNetCommission += nc;
+              completedCount++;
+              unpaidCompletedCashback += Math.round(nc * buyerRate / 100);
+            }
+          } else {
+            pendingNetCommission += nc;
+            pendingCount++;
+          }
+        }
+
+        // Custom orders: query directly from orders table (no JOIN needed)
+        const customOrders = await db.all(CUSTOM_ORDERS_BY_USER_SQL, [uid]);
         let totalCustomNetCommission = 0;
         let completedCustomNetCommission = 0;
         let pendingCustomNetCommission = 0;
@@ -154,41 +171,24 @@ const payoutStore = {
         let pendingCustomCount = 0;
         let unpaidCustomCashback = 0;
 
-        for (const o of orders) {
-          // Skip cancelled orders entirely — don't count toward any totals
+        for (const o of customOrders) {
           if (CANCELLED_STATUSES.has(o.order_status)) continue;
-
-          const isCustom = o.cl_sub_id4 === 'from_custom';
           const nc = o.net_commission || 0;
-
-          if (isCustom) {
-            // Custom orders: use custom_rate, separate tracking
-            totalCustomNetCommission += nc;
-            if (COMPLETED_STATUSES.has(o.order_status)) {
-              if (!paidCustomIds.has(o.order_id)) {
-                completedCustomNetCommission += nc;
-                completedCustomCount++;
-                unpaidCustomCashback += Math.round(nc * customRate / 100);
-              }
-            } else {
-              pendingCustomNetCommission += nc;
-              pendingCustomCount++;
+          totalCustomNetCommission += nc;
+          if (COMPLETED_STATUSES.has(o.order_status)) {
+            if (!paidCustomIds.has(o.order_id)) {
+              completedCustomNetCommission += nc;
+              completedCustomCount++;
+              unpaidCustomCashback += Math.round(nc * customRate / 100);
             }
           } else {
-            // Normal buyer orders
-            totalNetCommission += nc;
-            if (COMPLETED_STATUSES.has(o.order_status)) {
-              if (!paidOrderIds.has(o.order_id)) {
-                completedNetCommission += nc;
-                completedCount++;
-                unpaidCompletedCashback += Math.round(nc * buyerRate / 100);
-              }
-            } else {
-              pendingNetCommission += nc;
-              pendingCount++;
-            }
+            pendingCustomNetCommission += nc;
+            pendingCustomCount++;
           }
         }
+
+        // Skip users with no orders at all
+        if (orders.length === 0 && customOrders.length === 0) continue;
 
         const totalBuyerCashback = Math.round(totalNetCommission * buyerRate / 100);
         const completedBuyerCashback = Math.round(completedNetCommission * buyerRate / 100);
@@ -225,13 +225,13 @@ const payoutStore = {
           pendingBuyerPayment: unpaidCompletedCashback,
           completedCount,
           pendingCount,
-          totalOrders: orders.length,
+          totalOrders: orders.length + customOrders.length,
           // Custom
           totalCustomCashback,
           completedCustomNetCommission: Math.round(completedCustomNetCommission),
           pendingCustomNetCommission: Math.round(pendingCustomNetCommission),
           pendingCustomPayment: unpaidCustomCashback,
-          customOrderCount: orders.filter(o => o.cl_sub_id4 === 'from_custom').length,
+          customOrderCount: customOrders.length,
           completedCustomCount,
           pendingCustomCount,
         });
