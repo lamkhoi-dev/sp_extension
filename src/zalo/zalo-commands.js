@@ -215,13 +215,41 @@ class ZaloCommands {
       const serverUrl = process.env.SERVER_URL || 'http://localhost:3456';
       const reportUrl = `${serverUrl}/s/${token}`;
 
-      const replyText = `📊 Thống kê của bạn:\n\n` +
-        `👤 ${data.user.displayName}\n` +
-        `💰 Tổng hoa hồng: ${formatVND(data.summary.totalNetCommission)}\n` +
-        `✅ Đã hoàn: ${formatVND(data.summary.totalPaid)}\n` +
-        `⏳ Chờ hoàn: ${formatVND(data.summary.pendingPayment)}\n` +
-        `📦 ${data.summary.totalOrders} đơn • ${data.summary.totalLinks} link\n\n` +
-        `🔗 Xem chi tiết:\n${reportUrl}\n\n` +
+      const customSection = data.summary.hasCustomOrders
+        ? `
+
+🎯 Đơn Custom (F1):
+` +
+          `   Tỷ lệ: ${data.summary.customRate}% • ${data.summary.totalCustomOrders} đơn
+` +
+          `   💜 Hoa hồng: ${formatVND(data.summary.totalCustomCashback)}
+` +
+          `   ✅ Đã nhận: ${formatVND(data.summary.totalCustomPaid)}
+` +
+          `   ⏳ Chờ duyệt: ${formatVND(data.summary.pendingCustomPayment)}
+` +
+          `   👤 ${data.summary.uniqueF2Count} khách F2`
+        : '';
+
+      const replyText = `📊 Thống kê của bạn:
+
+` +
+        `👤 ${data.user.displayName}
+` +
+        `💰 Tổng hoa hồng: ${formatVND(data.summary.totalNetCommission)}
+` +
+        `✅ Đã hoàn: ${formatVND(data.summary.totalPaid)}
+` +
+        `⏳ Chờ hoàn: ${formatVND(data.summary.pendingPayment)}
+` +
+        `📦 ${data.summary.totalOrders} đơn • ${data.summary.totalLinks} link` +
+        `${customSection}
+
+` +
+        `🔗 Xem chi tiết:
+${reportUrl}
+
+` +
         `⏰ Link có hiệu lực 24 giờ`;
 
       await this.actions.humanReply(message, replyText, { react: false });

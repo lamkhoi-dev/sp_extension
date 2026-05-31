@@ -16,12 +16,12 @@ class ReportGenerator {
       [userId]
     );
 
-    // 3. Matched orders ONLY (critical filter — only orders from user's sent links)
+    // 3. Matched orders ONLY (standard: buyer/referrer flow, exclude from_custom)
     const matchedOrders = await db.all(
       `SELECT DISTINCT o.order_id, o.item_name, o.shop_name, o.price, o.quantity,
               o.order_status, o.order_time, o.complete_time,
               o.net_commission, o.total_product_commission, o.total_product_commission_new,
-              o.order_value, o.refund_amount, o.sub_id1
+              o.order_value, o.refund_amount, o.sub_id1, o.sub_id2
        FROM orders o
        INNER JOIN convert_logs cl ON (
          (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
@@ -29,6 +29,8 @@ class ReportGenerator {
          (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
        )
        WHERE cl.user_id = ? AND cl.status = 'success'
+         AND COALESCE(o.sub_id4, '') != 'from_custom'
+         AND LOWER(COALESCE(o.order_status,'')) NOT LIKE '%hu%'
        ORDER BY o.order_time DESC`,
       [userId]
     );
@@ -38,6 +40,20 @@ class ReportGenerator {
       `SELECT amount, role, payment_method, bill_image, admin_note, status, paid_at
        FROM payouts WHERE user_id = ?
        ORDER BY paid_at DESC`,
+      [userId]
+    );
+
+    // 4b. Custom orders — đơn F1 gửi link cho F2 (sub_id4 = from_custom, sub_id1 = userId)
+    const customOrders = await db.all(
+      `SELECT o.order_id, o.item_name, o.shop_name, o.price, o.quantity,
+              o.order_status, o.order_time, o.complete_time,
+              o.net_commission, o.order_value, o.refund_amount,
+              o.sub_id1, o.sub_id2
+       FROM orders o
+       WHERE o.sub_id1 = ?
+         AND o.sub_id4 = 'from_custom'
+         AND LOWER(COALESCE(o.order_status,'')) NOT LIKE '%hu%'
+       ORDER BY o.order_time DESC`,
       [userId]
     );
 
@@ -150,6 +166,24 @@ class ReportGenerator {
     const ctvTotalCommission = formattedCtvList.reduce((s, c) => s + c.totalCommission, 0);
     const ctvReferrerEarnings = ctvTotalCommission * (user.referrer_earn_rate || 20) / 100;
 
+    // Custom orders summary (F1 role)
+    const customRate = user.custom_rate || 0;
+    const isCompletedCustom = (o) =>
+      o.order_status?.toLowerCase().includes('hoàn thành') ||
+      o.order_status?.toLowerCase().includes('completed') ||
+      o.order_status?.toLowerCase().includes('settled');
+    const completedCustomOrders = customOrders.filter(isCompletedCustom);
+    const pendingCustomOrders = customOrders.filter(o => !isCompletedCustom(o));
+    const totalCustomNetCommission = customOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
+    const completedCustomNetCommission = completedCustomOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
+    const totalCustomCashback = Math.round(totalCustomNetCommission * customRate / 100);
+    const completedCustomCashback = Math.round(completedCustomNetCommission * customRate / 100);
+    const totalCustomPaid = payouts.filter(p => p.role === 'custom').reduce((s, p) => s + (p.amount || 0), 0);
+    const pendingCustomPayment = Math.max(0, completedCustomCashback - totalCustomPaid);
+
+    // Unique F2 phones from sub_id2
+    const uniqueF2Phones = [...new Set(customOrders.map(o => o.sub_id2).filter(Boolean))];
+
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
@@ -162,6 +196,7 @@ class ReportGenerator {
         bankName: user.bank_name || '',
         bankAccount: user.bank_account || '',
         cashbackBuyerRate: buyerRate,
+        customRate,
       },
       referrer,
       ctvList: formattedCtvList,
@@ -179,13 +214,28 @@ class ReportGenerator {
         ctvCount: formattedCtvList.length,
         ctvTotalCommission,
         ctvReferrerEarnings,
+        // Custom summary
+        hasCustomOrders: customOrders.length > 0,
+        customRate,
+        totalCustomOrders: customOrders.length,
+        completedCustomCount: completedCustomOrders.length,
+        pendingCustomCount: pendingCustomOrders.length,
+        totalCustomNetCommission,
+        completedCustomNetCommission,
+        totalCustomCashback,
+        completedCustomCashback,
+        totalCustomPaid,
+        pendingCustomPayment,
+        uniqueF2Count: uniqueF2Phones.length,
       },
       links,
       matchedOrders,
+      customOrders,
       payouts,
       generatedAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
     };
+
   }
 }
 

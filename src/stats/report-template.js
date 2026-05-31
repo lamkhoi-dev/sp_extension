@@ -29,7 +29,7 @@ function statusBadge(status) {
 }
 
 function renderReport(data) {
-  const { user, referrer, ctvList = [], monthlyChart = [], summary, links, matchedOrders, payouts, generatedAt, expiresAt } = data;
+  const { user, referrer, ctvList = [], monthlyChart = [], summary, links, matchedOrders, customOrders = [], payouts, generatedAt, expiresAt } = data;
 
   const linksHtml = links.map((l, i) => `
     <tr data-row-links="${i}" style="display:none">
@@ -68,6 +68,23 @@ function renderReport(data) {
     </tr>
   `).join('');
 
+  const customOrdersHtml = customOrders.map((o, i) => `
+    <tr data-row-custom="${i}" style="display:none">
+      <td>
+        <div class="item-name truncate">${o.item_name || '--'}</div>
+        <div class="item-meta">Mã ĐH: ${o.order_id?.slice(-8) || '--'} • Shop: ${o.shop_name || '--'}</div>
+      </td>
+      <td class="text-center">
+        <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.25);padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap">
+          📱 ${o.sub_id2 || 'N/A'}
+        </span>
+      </td>
+      <td class="text-right">${formatVND(o.order_value || o.price)}</td>
+      <td class="text-center">${statusBadge(o.order_status)}</td>
+      <td class="text-right font-semibold" style="color:#c084fc">${formatVND(Math.round((o.net_commission || 0) * (summary.customRate || 0) / 100))}</td>
+    </tr>
+  `).join('');
+
   return `<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -88,6 +105,7 @@ function renderReport(data) {
       --green: #10b981;
       --yellow: #f59e0b;
       --cyan: #06b6d4;
+      --purple: #a855f7;
     }
     
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -259,6 +277,7 @@ function renderReport(data) {
     .stat-card.green::before { background: linear-gradient(90deg, #10b981, #34d399); }
     .stat-card.yellow::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
     .stat-card.cyan::before { background: linear-gradient(90deg, #06b6d4, #2dd4bf); }
+    .stat-card.purple::before { background: linear-gradient(90deg, #a855f7, #c084fc); }
 
     .stat-label { font-size: 11px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;}
     .stat-value { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
@@ -270,6 +289,7 @@ function renderReport(data) {
     .stat-card.green .stat-value { color: #34d399; }
     .stat-card.yellow .stat-value { color: #fbbf24; }
     .stat-card.cyan .stat-value { color: #22d3ee; }
+    .stat-card.purple .stat-value { color: #c084fc; }
     .stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
     @media (min-width: 768px) {
       .stat-sub { font-size: 13px; margin-top: 8px; }
@@ -615,6 +635,36 @@ function renderReport(data) {
         </div>
       </div>
 
+      ${summary.hasCustomOrders ? `
+      <!-- Custom Affiliate Summary Cards -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:-8px;padding:0 2px">
+        <div style="width:4px;height:20px;border-radius:2px;background:linear-gradient(180deg,#a855f7,#c084fc)"></div>
+        <span style="font-size:13px;font-weight:600;color:#c084fc;letter-spacing:0.5px;text-transform:uppercase">🎯 Đơn Hoa hồng Tuỳ chỉnh (Custom F1)</span>
+        <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.25);padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">${summary.totalCustomOrders} đơn • ${summary.uniqueF2Count} khách</span>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card purple">
+          <div class="stat-label">Tổng hoa hồng Custom</div>
+          <div class="stat-value">${formatVND(summary.totalCustomCashback)}</div>
+          <div class="stat-sub">Tỷ lệ ${summary.customRate}% • ${summary.totalCustomOrders} đơn</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-label">Đã hoàn Custom</div>
+          <div class="stat-value">${formatVND(summary.totalCustomPaid)}</div>
+          <div class="stat-sub">${summary.completedCustomCount} đơn hoàn thành</div>
+        </div>
+        <div class="stat-card yellow">
+          <div class="stat-label">Chờ duyệt Custom</div>
+          <div class="stat-value">${formatVND(summary.pendingCustomPayment)}</div>
+          <div class="stat-sub">${summary.pendingCustomCount} đơn đang xử lý</div>
+        </div>
+        <div class="stat-card cyan">
+          <div class="stat-label">Số khách F2</div>
+          <div class="stat-value">${summary.uniqueF2Count}</div>
+          <div class="stat-sub">SĐT duy nhất đã mua</div>
+        </div>
+      </div>` : ''}
+
       ${(() => {
         // SVG Revenue Chart (inline — no library needed)
         const maxCommission = Math.max(...monthlyChart.map(m => m.commission), 1);
@@ -746,6 +796,45 @@ function renderReport(data) {
         </div>`}
       </section>
 
+      ${summary.hasCustomOrders ? `
+      <!-- Custom Orders Section -->
+      <section class="data-section" style="border-color:rgba(168,85,247,0.2)">
+        <div class="section-header" style="border-color:rgba(168,85,247,0.15);background:rgba(168,85,247,0.04)">
+          <span class="section-title">🎯 Đơn Custom — F1 gửi link cho khách</span>
+          <span class="badge-count" style="background:rgba(168,85,247,0.2);color:#c084fc">${customOrders.length} đơn</span>
+          <span style="margin-left:auto;font-size:12px;color:#c084fc;background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.2);padding:4px 12px;border-radius:12px;font-weight:600">
+            Tỷ lệ hoa hồng: ${summary.customRate}%
+          </span>
+        </div>
+        <div style="padding:12px 20px;background:rgba(168,85,247,0.05);border-bottom:1px solid rgba(168,85,247,0.1);display:flex;flex-wrap:wrap;gap:16px;font-size:12px">
+          <span>📦 Tổng: <strong style="color:#c084fc">${summary.totalCustomOrders}</strong></span>
+          <span>✅ Hoàn thành: <strong style="color:#34d399">${summary.completedCustomCount}</strong></span>
+          <span>⏳ Đang xử lý: <strong style="color:#fbbf24">${summary.pendingCustomCount}</strong></span>
+          <span>💰 Hoa hồng tổng: <strong style="color:#c084fc">${formatVND(summary.totalCustomCashback)}</strong></span>
+          <span>✅ Đã nhận: <strong style="color:#34d399">${formatVND(summary.totalCustomPaid)}</strong></span>
+          <span>⏳ Chờ duyệt: <strong style="color:#fbbf24">${formatVND(summary.pendingCustomPayment)}</strong></span>
+          <span>👤 Số khách F2: <strong style="color:#22d3ee">${summary.uniqueF2Count}</strong></span>
+        </div>
+        <div class="table-container">
+          <table id="tbl-custom">
+            <thead>
+              <tr>
+                <th>Thông tin đơn hàng</th>
+                <th class="text-center">SĐT Khách (F2)</th>
+                <th class="text-right">Giá trị đơn</th>
+                <th class="text-center">Trạng thái</th>
+                <th class="text-right" style="color:#c084fc">Hoa hồng của bạn</th>
+              </tr>
+            </thead>
+            <tbody>${customOrdersHtml}</tbody>
+          </table>
+        </div>
+        <div class="pagination-bar" id="pg-custom" style="border-color:rgba(168,85,247,0.1)">
+          <span class="pagination-info" id="pg-custom-info"></span>
+          <div class="pagination-controls" id="pg-custom-ctrl"></div>
+        </div>
+      </section>` : ''}
+
       <!-- Payouts Section -->
       <section class="data-section">
         <div class="section-header">
@@ -845,6 +934,7 @@ function renderReport(data) {
       paginateTable('links',   'pg-links-info',   'pg-links-ctrl',   10);
       paginateTable('orders',  'pg-orders-info',  'pg-orders-ctrl',  10);
       paginateTable('payouts', 'pg-payouts-info', 'pg-payouts-ctrl', 10);
+      paginateTable('custom',  'pg-custom-info',  'pg-custom-ctrl',  10);
     });
   </script>
 </body>
