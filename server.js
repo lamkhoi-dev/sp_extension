@@ -1006,6 +1006,23 @@ app.patch('/api/debug/fix-order/:orderId', async (req, res) => {
   }
 });
 
+// ─── Delete order by ID ─────────────────────────────────
+app.delete('/api/orders/:orderId', async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    const order = await db.get('SELECT order_id, item_name, sub_id1, channel FROM orders WHERE order_id = ?', [orderId]);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    await db.run('DELETE FROM orders WHERE order_id = ?', [orderId]);
+    await auditStore.log(req.admin?.username || 'system', 'DELETE_ORDER', 'order', orderId, order, req.ip);
+    logger.info('Server', `Deleted order ${orderId} (${order.item_name})`);
+
+    res.json({ success: true, deleted: order });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Product Images API ─────────────────────────────────
 
 app.post('/api/product-images/batch', async (req, res) => {
