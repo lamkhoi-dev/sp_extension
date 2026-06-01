@@ -26,7 +26,7 @@ module.exports = {
       max_memory_restart: '512M',
       env_staging: {
         NODE_ENV: 'staging',
-        PORT: 3457,             // port khác tránh xung đột nếu chung 1 VPS
+        PORT: 3456,
       },
     },
   ],
