@@ -58,16 +58,21 @@ class ZaloActions {
     // 3. Fallback: API call (rare — only if never seen before)
     try {
       const info = await this.api.getUserInfo(userId);
-      let name = 'bạn';
+      let name = '';
       if (info && typeof info === 'object') {
         const userData = info[userId] || info.get?.(userId) || info;
-        name = userData?.displayName || userData?.zaloName || userData?.name || 'bạn';
+        name = userData?.displayName || userData?.zaloName || userData?.name || '';
+      }
+      // If API returned no usable name, use userId as fallback (traceable)
+      if (!name) {
+        logger.warn('ZaloActions', `getUserInfo returned no name for ${userId}, using ID as fallback`);
+        name = `user_${userId}`;
       }
       this.userNameCache.set(userId, name);
       return name;
     } catch (err) {
-      logger.warn('ZaloActions', `getUserInfo failed: ${err.message}`);
-      return 'bạn';
+      logger.warn('ZaloActions', `getUserInfo failed for ${userId}: ${err.message}`);
+      return `user_${userId}`;
     }
   }
 
