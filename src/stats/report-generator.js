@@ -30,7 +30,9 @@ class ReportGenerator {
        )
        WHERE cl.user_id = ? AND cl.status = 'success'
          AND COALESCE(o.sub_id4, '') != 'from_custom'
-         AND LOWER(COALESCE(o.order_status,'')) NOT LIKE '%hu%'
+         AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
+         AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
+         AND COALESCE(o.order_status,'') NOT LIKE '%Cancelled%'
        ORDER BY o.order_time DESC`,
       [userId]
     );
@@ -52,7 +54,9 @@ class ReportGenerator {
        FROM orders o
        WHERE o.sub_id1 = ?
          AND o.sub_id4 = 'from_custom'
-         AND LOWER(COALESCE(o.order_status,'')) NOT LIKE '%hu%'
+         AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
+         AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
+         AND COALESCE(o.order_status,'') NOT LIKE '%Cancelled%'
        ORDER BY o.order_time DESC`,
       [userId]
     );
