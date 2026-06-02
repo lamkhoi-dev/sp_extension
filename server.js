@@ -27,6 +27,7 @@ const reportStore = require('./src/stats/report-store');
 const { renderReport } = require('./src/stats/report-template');
 const healthMonitor = require('./src/cron/health-monitor');
 const linkRedirectStore = require('./src/api/link-redirect-store');
+const commissionRatesStore = require('./src/api/commission-rates-store');
 const withdrawalStore = require('./src/api/withdrawal-store');
 const ShopeeAPI = require('./src/shopee-api');
 
@@ -366,6 +367,27 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// ─── Public Ranking API (no auth, outside /api prefix) ─
+const rankingStore = require('./src/api/ranking-store');
+app.get('/ranking', async (req, res) => {
+  try {
+    const period = ['month', 'week', 'all'].includes(req.query.period) ? req.query.period : 'month';
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const data = await rankingStore.getRanking(period, limit);
+    res.json({ ok: true, period, data });
+  } catch (err) {
+    logger.error('Ranking', `Public ranking failed: ${err.message}`);
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+// Alias under /api for backward compat (placed before requireAuth — works if updated)
+app.get('/api/public/ranking', async (req, res) => {
+  const period = ['month', 'week', 'all'].includes(req.query.period) ? req.query.period : 'month';
+  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+  const data = await rankingStore.getRanking(period, limit).catch(() => []);
+  res.json({ ok: true, period, data });
+});
+
 // ═══════════════════════════════════════════════════════
 // AUTH MIDDLEWARE — protects all /api/* below this point
 // ═══════════════════════════════════════════════════════
@@ -670,26 +692,149 @@ app.get('/api/convert-logs/stats', async (req, res) => {
   res.json(await convertLogStore.getStats());
 });
 
+// Orders Helper: Enrich orders with their corresponding commission tree structure
+async function enrichOrdersWithCommissionChain(orders) {
+  if (!orders || orders.length === 0) return orders;
+
+  try {
+    const rates = await commissionRatesStore.getRates();
+    const users = await db.all('SELECT user_id, display_name, zalo_name, commission_mode, custom_rate, referrer_id FROM users');
+    const userMap = {};
+    for (const u of users) {
+      userMap[u.user_id] = {
+        userId: u.user_id,
+        displayName: u.display_name || u.zalo_name || u.user_id,
+        commissionMode: u.commission_mode || 'normal',
+        customRate: u.custom_rate || 0,
+        referrerId: u.referrer_id || null
+      };
+    }
+
+    const chainCache = {};
+
+    for (const order of orders) {
+      const status = (order.order_status || '').trim();
+      const isCancelled = status === 'Đã hủy' || status === 'Đã huỷ' || status.toLowerCase() === 'cancelled';
+
+      if (isCancelled || !order.sub_id1) {
+        order.commission_chain = null;
+        continue;
+      }
+
+      const buyerId = order.sub_id1;
+
+      if (chainCache[buyerId] === undefined) {
+        const buyer = userMap[buyerId];
+        if (!buyer) {
+          chainCache[buyerId] = null;
+        } else {
+          const isCustomMode = buyer.commissionMode === 'custom';
+
+          if (isCustomMode) {
+            chainCache[buyerId] = {
+              mode: 'custom',
+              buyer: { userId: buyer.userId, displayName: buyer.displayName, customRate: buyer.customRate },
+              referrers: []
+            };
+          } else {
+            const referrers = [];
+            let currentId = buyer.referrerId;
+
+            if (currentId && userMap[currentId]) {
+              const f1 = userMap[currentId];
+              if (f1.commissionMode !== 'custom') {
+                referrers.push({ level: 1, userId: f1.userId, displayName: f1.displayName, rate: rates.f1 });
+                currentId = f1.referrerId;
+
+                if (currentId && userMap[currentId]) {
+                  const f2 = userMap[currentId];
+                  if (f2.commissionMode !== 'custom') {
+                    referrers.push({ level: 2, userId: f2.userId, displayName: f2.displayName, rate: rates.f2 });
+                    currentId = f2.referrerId;
+
+                    if (currentId && userMap[currentId]) {
+                      const f3 = userMap[currentId];
+                      if (f3.commissionMode !== 'custom') {
+                        referrers.push({ level: 3, userId: f3.userId, displayName: f3.displayName, rate: rates.f3 });
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            chainCache[buyerId] = {
+              mode: 'normal',
+              buyer: { userId: buyer.userId, displayName: buyer.displayName },
+              referrers
+            };
+          }
+        }
+      }
+
+      const chainInfo = chainCache[buyerId];
+      if (chainInfo) {
+        const nc = order.net_commission || 0;
+        const isCustom = chainInfo.mode === 'custom';
+        const buyerRate = isCustom ? chainInfo.buyer.customRate : rates.f0;
+        const buyerAmount = Math.round(nc * buyerRate / 100);
+        let distributed = buyerAmount;
+
+        const referrers = [];
+        if (!isCustom) {
+          for (const ref of chainInfo.referrers) {
+            const refAmount = Math.round(nc * ref.rate / 100);
+            distributed += refAmount;
+            referrers.push({ userId: ref.userId, displayName: ref.displayName, level: ref.level, rate: ref.rate, amount: refAmount });
+          }
+        }
+
+        const adminAmount = nc - distributed;
+        let totalRefRates = 0;
+        if (!isCustom) chainInfo.referrers.forEach(r => totalRefRates += r.rate);
+        const adminRateVal = isCustom ? (100 - buyerRate) : (100 - rates.f0 - totalRefRates);
+
+        order.commission_chain = {
+          mode: chainInfo.mode,
+          buyer: { userId: chainInfo.buyer.userId, displayName: chainInfo.buyer.displayName, rate: buyerRate, amount: buyerAmount },
+          referrers,
+          admin: { rate: adminRateVal, amount: adminAmount }
+        };
+      } else {
+        order.commission_chain = null;
+      }
+    }
+  } catch (err) {
+    logger.error('Orders', `enrichOrdersWithCommissionChain failed: ${err.message}`);
+  }
+
+  return orders;
+}
+
 // Orders API
 app.get('/api/orders', async (req, res) => {
   const { search, status, limit = 200, offset = 0,
     timeField, dateFrom, dateTo, orderId, shopName, shopType,
-    productName, commissionType, channel } = req.query;
+    productName, commissionType, channel, userId } = req.query;
 
   const hasAdvancedFilter = timeField || dateFrom || dateTo || orderId
-    || shopName || shopType || productName || commissionType || channel
+    || shopName || shopType || productName || commissionType || channel || userId
     || (status && status !== 'Tất cả');
 
+  let orders = [];
   if (hasAdvancedFilter) {
-    res.json(await orderStore.getFiltered({
+    orders = await orderStore.getFiltered({
       timeField, dateFrom, dateTo, status, orderId,
-      shopName, shopType, productName, commissionType, channel
-    }, parseInt(limit)));
+      shopName, shopType, productName, commissionType, channel, userId
+    }, parseInt(limit));
   } else if (search) {
-    res.json(await orderStore.search(search, parseInt(limit)));
+    orders = await orderStore.search(search, parseInt(limit));
   } else {
-    res.json(await orderStore.getRecent(parseInt(limit), parseInt(offset)));
+    orders = await orderStore.getRecent(parseInt(limit), parseInt(offset));
   }
+
+  await enrichOrdersWithCommissionChain(orders);
+  res.json(orders);
 });
 
 app.get('/api/orders/filter-options', async (req, res) => {
@@ -809,6 +954,23 @@ app.patch('/api/users/:userId/cashback-rates', async (req, res) => {
   res.json(result);
 });
 
+app.patch('/api/users/:userId/commission-mode', async (req, res) => {
+  const { commissionMode, customRate } = req.body;
+  if (!commissionMode) {
+    return res.status(400).json({ error: 'commissionMode is required ("normal" or "custom")' });
+  }
+  const result = await payoutStore.updateUserCommissionMode(
+    req.params.userId,
+    commissionMode,
+    customRate !== undefined ? Number(customRate) : undefined
+  );
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  await auditStore.log(req.admin?.username || 'system', 'UPDATE_COMMISSION_MODE', 'user', req.params.userId, { commissionMode, customRate }, req.ip);
+  res.json(result);
+});
+
 app.patch('/api/users/:userId/bank-info', async (req, res) => {
   const { bankName, bankAccount } = req.body;
   if (!bankName || !bankAccount) {
@@ -867,6 +1029,35 @@ app.patch('/api/settings/vps', async (req, res) => {
   } catch (err) {
     logger.error('VPS', `Update settings failed: ${err.message}`);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── Commission Rates Settings API ─────────────────────
+app.get('/api/settings/commission-rates', async (req, res) => {
+  try {
+    const rates = await commissionRatesStore.getRates();
+    res.json({ rates, defaults: commissionRatesStore.DEFAULTS });
+  } catch (err) {
+    logger.error('CommissionRates', `Get settings failed: ${err.message}`);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.patch('/api/settings/commission-rates', async (req, res) => {
+  const adminUser = req.admin?.username || 'system';
+  try {
+    const { admin, f0, f1, f2, f3 } = req.body || {};
+    const { before, after } = await commissionRatesStore.updateRates({ admin, f0, f1, f2, f3 }, adminUser);
+    await auditStore.log(adminUser, 'COMMISSION_RATES_UPDATED', 'system', 'commission_rates', { before, after }, req.ip);
+    res.json({ success: true, rates: after });
+  } catch (err) {
+    const isValidation = /Tổng|hợp lệ/.test(err.message);
+    if (isValidation) {
+      res.status(400).json({ error: err.message });
+    } else {
+      logger.error('CommissionRates', `Update settings failed: ${err.message}`);
+      res.status(500).json({ error: 'Server error' });
+    }
   }
 });
 
@@ -1397,8 +1588,8 @@ async function start() {
   auditStore.cleanup(6).catch(() => {});
   reportStore.cleanup().catch(() => {});
 
-  server.listen(PORT, () => {
-    logger.info('Server', `Running at http://localhost:${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    logger.info('Server', `Running at http://0.0.0.0:${PORT}`);
     console.log(`\n🚀 Shopee Affiliate Bot running at \x1b[36mhttp://localhost:${PORT}\x1b[0m`);
     console.log(`⏳ Đang chờ Chrome Extension kết nối...`);
 
