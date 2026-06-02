@@ -933,6 +933,23 @@ app.patch('/api/users/:userId/cashback-rates', async (req, res) => {
   res.json(result);
 });
 
+app.patch('/api/users/:userId/commission-mode', async (req, res) => {
+  const { commissionMode, customRate } = req.body;
+  if (!commissionMode) {
+    return res.status(400).json({ error: 'commissionMode is required ("normal" or "custom")' });
+  }
+  const result = await payoutStore.updateUserCommissionMode(
+    req.params.userId,
+    commissionMode,
+    customRate !== undefined ? Number(customRate) : undefined
+  );
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  await auditStore.log(req.admin?.username || 'system', 'UPDATE_COMMISSION_MODE', 'user', req.params.userId, { commissionMode, customRate }, req.ip);
+  res.json(result);
+});
+
 app.patch('/api/users/:userId/bank-info', async (req, res) => {
   const { bankName, bankAccount } = req.body;
   if (!bankName || !bankAccount) {
