@@ -229,17 +229,18 @@ export default function UsersPage() {
             })
         );
       }
-      tasks.push(
-        updateUserCashbackRates(selectedUser.user_id, editingRates.buyer, editingRates.referrer, editingRates.custom)
-          .then(() => {
-            setSelectedUser(prev => ({
-              ...prev,
-              cashback_buyer_rate: editingRates.buyer,
-              referrer_earn_rate: editingRates.referrer,
-              custom_rate: editingRates.custom,
-            }));
-          })
-      );
+      // Only save custom_rate for custom mode users (F0-F3 rates are fixed)
+      if (selectedUser.commission_mode === 'custom') {
+        tasks.push(
+          updateUserCashbackRates(selectedUser.user_id, 40, 20, editingRates.custom)
+            .then(() => {
+              setSelectedUser(prev => ({
+                ...prev,
+                custom_rate: editingRates.custom,
+              }));
+            })
+        );
+      }
       const results = await Promise.allSettled(tasks);
       const failed = results.filter(r => r.status === 'rejected');
       if (failed.length > 0) {
@@ -445,71 +446,81 @@ export default function UsersPage() {
               </div>
             </div>
 
-            {/* Cashback Rates */}
+            {/* Commission Mode & Rates — F0-F3 Model */}
             <div className="pt-4 border-t border-slate-200 dark:border-slate-700/50">
               <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
                 <span className="w-4 h-4 rounded border border-slate-400 flex items-center justify-center text-[10px]">💰</span>
-                Tỷ lệ Cashback
+                Hoa hồng (F0-F3)
               </h4>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-3 border border-emerald-100 dark:border-emerald-800/30">
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mb-2">Hoa hồng mua</p>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number" min="0" max="100" step="5"
-                      value={editingRates.buyer}
-                      onChange={(e) => { setEditingRates(r => ({ ...r, buyer: Number(e.target.value) })); setAllSaved(false); }}
-                      className="w-full px-2 py-1 text-lg font-bold text-emerald-600 bg-white dark:bg-slate-800 rounded-lg border border-emerald-200 dark:border-emerald-700 text-center"
-                    />
-                    <span className="text-emerald-600 font-bold">%</span>
+
+              {/* Mode selector */}
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-xs text-slate-500">Chế độ:</span>
+                <span className={`px-2.5 py-1 text-xs font-bold rounded-lg ${
+                  selectedUser.commission_mode === 'custom'
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-700'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700'
+                }`}>
+                  {selectedUser.commission_mode === 'custom' ? '✨ Custom' : '🌳 Normal (F0-F3)'}
+                </span>
+              </div>
+
+              {selectedUser.commission_mode === 'custom' ? (
+                /* Custom mode — editable custom_rate */
+                <div className="space-y-3">
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-100 dark:border-amber-800/30">
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">Hoa hồng Custom</p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number" min="0" max="100" step="5"
+                        value={editingRates.custom}
+                        onChange={(e) => { setEditingRates(r => ({ ...r, custom: Number(e.target.value) })); setAllSaved(false); }}
+                        className="w-24 px-3 py-1.5 text-xl font-bold text-amber-600 bg-white dark:bg-slate-800 rounded-lg border border-amber-200 dark:border-amber-700 text-center"
+                      />
+                      <span className="text-amber-600 font-bold text-lg">%</span>
+                      <span className="text-xs text-slate-400 ml-2">→ Admin nhận {Math.max(0, 100 - editingRates.custom)}%</span>
+                    </div>
+                    <p className="text-[10px] text-amber-400 mt-2">User nhận % này cho toàn bộ đơn custom. Không qua chuỗi F0-F3.</p>
                   </div>
+                  {editingRates.custom > 100 && (
+                    <p className="text-xs text-red-500">⚠️ Hoa hồng không được vượt 100%!</p>
+                  )}
                 </div>
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 border border-blue-100 dark:border-blue-800/30">
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mb-2">Hoa hồng giới thiệu</p>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number" min="0" max="100" step="5"
-                      value={editingRates.referrer}
-                      onChange={(e) => { setEditingRates(r => ({ ...r, referrer: Number(e.target.value) })); setAllSaved(false); }}
-                      className="w-full px-2 py-1 text-lg font-bold text-blue-600 bg-white dark:bg-slate-800 rounded-lg border border-blue-200 dark:border-blue-700 text-center"
-                    />
-                    <span className="text-blue-600 font-bold">%</span>
-                  </div>
-                </div>
-                <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-3 border border-amber-100 dark:border-amber-800/30">
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">Admin</p>
-                  <p className="text-lg font-bold text-amber-600 dark:text-amber-400 text-center py-1">
-                    {Math.max(0, 100 - editingRates.buyer - editingRates.referrer)}%
+              ) : (
+                /* Normal mode — fixed F0-F3 rates, read-only */
+                <div className="space-y-2">
+                  {[
+                    { label: '🛒 F0 — Người mua', rate: 40, color: 'emerald', w: '40%' },
+                    { label: '🤝 F1 — Người giới thiệu', rate: 20, color: 'cyan', w: '20%' },
+                    { label: '🔗 F2 — Cấp 2', rate: 7, color: 'sky', w: '7%' },
+                    { label: '🌐 F3 — Cấp 3', rate: 3, color: 'indigo', w: '3%' },
+                    { label: '🏢 Admin', rate: 30, color: 'slate', w: '30%' },
+                  ].map(({ label, rate, color, w }) => (
+                    <div key={label} className="flex items-center gap-3">
+                      <span className="text-xs text-slate-500 dark:text-slate-400 w-[160px] flex-shrink-0">{label}</span>
+                      <div className="flex-1 h-6 bg-slate-100 dark:bg-slate-700/50 rounded-full overflow-hidden relative">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2"
+                          style={{
+                            width: w,
+                            background: {
+                              emerald: 'linear-gradient(90deg, #10b981, #34d399)',
+                              cyan: 'linear-gradient(90deg, #06b6d4, #22d3ee)',
+                              sky: 'linear-gradient(90deg, #0ea5e9, #38bdf8)',
+                              indigo: 'linear-gradient(90deg, #6366f1, #818cf8)',
+                              slate: 'linear-gradient(90deg, #64748b, #94a3b8)',
+                            }[color],
+                          }}
+                        >
+                          <span className="text-[10px] font-bold text-white drop-shadow">{rate}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-slate-400 mt-2 italic">
+                    Tỷ lệ cố định cho tất cả user Normal. Dựa trên vị trí trong chuỗi giới thiệu.
                   </p>
                 </div>
-              </div>
-              {/* Custom commission row */}
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <div className="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-3 border border-purple-100 dark:border-purple-800/30">
-                  <p className="text-xs text-purple-600 dark:text-purple-400 mb-2">Hoa hồng tuỳ chỉnh (/custom)</p>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number" min="0" max="100" step="5"
-                      value={editingRates.custom}
-                      onChange={(e) => { setEditingRates(r => ({ ...r, custom: Number(e.target.value) })); setAllSaved(false); }}
-                      className="w-full px-2 py-1 text-lg font-bold text-purple-600 bg-white dark:bg-slate-800 rounded-lg border border-purple-200 dark:border-purple-700 text-center"
-                    />
-                    <span className="text-purple-600 font-bold">%</span>
-                  </div>
-                  <p className="text-[10px] text-purple-400 mt-1">Áp dụng cho đơn từ lệnh /custom</p>
-                </div>
-                <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-3 border border-amber-100 dark:border-amber-800/30 flex flex-col justify-center">
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mb-1">Ghi chú</p>
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                    Hoa hồng tuỳ chỉnh độc lập với buyer/referrer.<br/>CTV F1 nhận % này cho toàn bộ đơn custom.
-                  </p>
-                </div>
-              </div>
-              {(100 - editingRates.buyer - editingRates.referrer) < 0 && (
-                <p className="text-xs text-red-500 mt-2">⚠️ Tổng Buyer + Referrer vượt quá 100%!</p>
-              )}
-              {editingRates.custom > 100 && (
-                <p className="text-xs text-red-500 mt-1">⚠️ Hoa hồng tuỳ chỉnh không được vượt 100%!</p>
               )}
             </div>
 
@@ -640,7 +651,7 @@ export default function UsersPage() {
                 variant={allSaved ? 'outline' : 'primary'}
                 className={`flex-1 ${allSaved ? '!bg-emerald-50 dark:!bg-emerald-900/20 !text-emerald-600 !border-emerald-200' : ''}`}
                 icon={allSaved ? Save : Edit2}
-                disabled={savingAll || (100 - editingRates.buyer - editingRates.referrer) < 0 || editingRates.custom > 100}
+                disabled={savingAll || editingRates.custom > 100}
                 onClick={handleSaveAll}
               >
                 {savingAll ? 'Đang lưu...' : allSaved ? '✓ Đã lưu thành công' : 'Lưu tất cả'}
