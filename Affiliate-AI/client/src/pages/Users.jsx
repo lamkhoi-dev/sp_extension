@@ -366,7 +366,7 @@ export default function UsersPage() {
         title="🌳 Sơ đồ Gia phả Referral"
         size="tree"
       >
-        <div className="h-[82vh] w-full relative -m-4 sm:-m-6 overflow-hidden rounded-b-2xl">
+        <div className="h-full w-full relative overflow-hidden">
           <ReferralTree
             users={users}
             onSelectUser={(u) => {

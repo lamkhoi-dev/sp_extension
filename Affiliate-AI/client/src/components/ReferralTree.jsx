@@ -40,11 +40,25 @@ function layoutGraph(nodes, edges) {
   });
 }
 
+// ─── Dark Mode Hook ──────────────────────────────────────
+function useDarkMode() {
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains('dark'));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+  return isDark;
+}
+
 function UserNode({ data }) {
   const { user, fLevel, dimmed, childCount, collapsed, onToggle, onClickUser, onSelectUser } = data;
+  const isDark = useDarkMode();
   const isCustom = user.commission_mode === 'custom';
   const fConfig = fLevel ? F_COLORS[fLevel] : null;
-  const borderColor = fConfig ? fConfig.border : (isCustom ? '#f59e0b' : '#334155');
+  const borderColor = fConfig ? fConfig.border : (isCustom ? '#f59e0b' : (isDark ? '#475569' : '#cbd5e1'));
   const isHighlighted = !!fLevel;
 
   return (
@@ -54,18 +68,24 @@ function UserNode({ data }) {
       onClick={(e) => { e.stopPropagation(); onClickUser?.(user); }}
     >
       {/* Incoming edge handle */}
-      <Handle type="target" position={Position.Top} className="!w-2 !h-2 !bg-slate-500" />
+      <Handle type="target" position={Position.Top} className="!w-2 !h-2 !bg-slate-400 dark:!bg-slate-500" />
 
       <div
-        className="rounded-xl px-4 py-3.5 shadow-lg transition-all duration-300 relative flex flex-col justify-center"
+        className="rounded-xl px-4 py-3.5 shadow-lg border transition-all duration-300 relative flex flex-col justify-center bg-white dark:bg-slate-800"
         style={{
           background: isHighlighted
-            ? `linear-gradient(135deg, ${fConfig.bg}15, ${fConfig.bg}08)`
-            : 'rgb(30 41 59)',
-          border: `2px solid ${borderColor}`,
+            ? (isDark
+                ? `linear-gradient(135deg, ${fConfig.bg}20, ${fConfig.bg}08)`
+                : `linear-gradient(135deg, ${fConfig.bg}12, ${fConfig.bg}04)`)
+            : (isDark ? 'rgb(30 41 59)' : '#ffffff'),
+          borderColor: isHighlighted
+            ? borderColor
+            : (isDark ? '#475569' : '#cbd5e1'),
           width: NODE_W,
           height: NODE_H,
-          boxShadow: isHighlighted ? `0 0 16px ${fConfig.bg}40` : '0 4px 12px rgba(0,0,0,0.3)',
+          boxShadow: isHighlighted
+            ? `0 0 16px ${fConfig.bg}${isDark ? '40' : '20'}`
+            : (isDark ? '0 4px 12px rgba(0,0,0,0.3)' : '0 4px 12px rgba(0,0,0,0.05)'),
         }}
       >
         {/* F-level badge */}
@@ -82,17 +102,17 @@ function UserNode({ data }) {
           <img
             src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.user_id}`}
             alt=""
-            className="w-11 h-11 rounded-xl object-cover flex-shrink-0 bg-slate-700"
+            className="w-11 h-11 rounded-xl object-cover flex-shrink-0 bg-slate-100 dark:bg-slate-700"
           />
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-1.5">
-              <p className="text-[14px] font-bold text-white truncate leading-tight flex-1">
+              <p className="text-[14px] font-bold text-slate-900 dark:text-white truncate leading-tight flex-1">
                 {user.display_name || user.zalo_name || 'Unknown'}
               </p>
               {onSelectUser && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onSelectUser(user); }}
-                  className="p-1 rounded hover:bg-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0"
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700/50 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 transition-colors flex-shrink-0"
                   title="Xem chi tiết"
                 >
                   <Eye className="w-4 h-4" />
@@ -105,12 +125,12 @@ function UserNode({ data }) {
                   Custom {user.custom_rate || 0}%
                 </span>
               ) : (
-                <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-600/50 text-slate-400 border border-slate-600">
+                <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 dark:bg-slate-600/50 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-600">
                   Normal
                 </span>
               )}
               {childCount > 0 && (
-                <span className="text-[11px] text-slate-400 font-medium">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                   {childCount} CTV
                 </span>
               )}
@@ -122,19 +142,19 @@ function UserNode({ data }) {
         {childCount > 0 && (
           <button
             onClick={(e) => { e.stopPropagation(); onToggle?.(user.user_id); }}
-            className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-slate-700 border-2 border-slate-500 flex items-center justify-center hover:bg-slate-600 hover:border-blue-400 transition-all z-10"
+            className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-white dark:bg-slate-700 border-2 border-slate-300 dark:border-slate-500 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-600 hover:border-slate-400 dark:hover:border-blue-400 transition-all z-10"
           >
             {collapsed ? (
-              <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+              <ChevronRight className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
             ) : (
-              <ChevronDown className="w-3.5 h-3.5 text-slate-300" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
             )}
           </button>
         )}
       </div>
 
       {/* Outgoing edge handle */}
-      <Handle type="source" position={Position.Bottom} className="!w-2 !h-2 !bg-slate-500" style={{ bottom: childCount > 0 ? -12 : -4 }} />
+      <Handle type="source" position={Position.Bottom} className="!w-2 !h-2 !bg-slate-400 dark:!bg-slate-500" style={{ bottom: childCount > 0 ? -12 : -4 }} />
     </div>
   );
 }
@@ -143,6 +163,7 @@ const nodeTypes = { userNode: UserNode };
 
 // ─── Main Component ─────────────────────────────────────
 export default function ReferralTree({ users, onSelectUser }) {
+  const isDark = useDarkMode();
   const [highlightedUserId, setHighlightedUserId] = useState(null);
   const [collapsedNodes, setCollapsedNodes] = useState(new Set());
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -254,7 +275,9 @@ export default function ReferralTree({ users, onSelectUser }) {
           target: u.user_id,
           type: 'default',
           style: {
-            stroke: isChainEdge ? F_COLORS[highlightChain.nodes?.[u.user_id]]?.border || '#64748b' : '#334155',
+            stroke: isChainEdge
+              ? F_COLORS[highlightChain.nodes?.[u.user_id]]?.border || '#64748b'
+              : (isDark ? '#334155' : '#cbd5e1'),
             strokeWidth: isChainEdge ? 3 : 1.5,
             opacity: dimmed ? 0.08 : 1,
             strokeDasharray: isChainEdge ? '8 4' : 'none',
@@ -304,25 +327,25 @@ export default function ReferralTree({ users, onSelectUser }) {
   }), [users]);
 
   return (
-    <div className="relative h-full">
+    <div className="relative h-full select-none">
       {/* Toolbar */}
       <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
         <button
           onClick={expandAll}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-700/90 text-slate-200 hover:bg-slate-600 border border-slate-600 backdrop-blur-sm transition-all"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white/95 dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 shadow-sm backdrop-blur-sm transition-all"
         >
           <Maximize2 className="w-3 h-3" /> Expand All
         </button>
         <button
           onClick={collapseAll}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-700/90 text-slate-200 hover:bg-slate-600 border border-slate-600 backdrop-blur-sm transition-all"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white/95 dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 shadow-sm backdrop-blur-sm transition-all"
         >
           <Minimize2 className="w-3 h-3" /> Collapse All
         </button>
         {highlightedUserId && (
           <button
             onClick={() => setHighlightedUserId(null)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-red-900/50 text-red-300 hover:bg-red-800/60 border border-red-700/50 backdrop-blur-sm transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 border border-rose-200 dark:border-rose-800/50 shadow-sm backdrop-blur-sm transition-all"
           >
             ✕ Bỏ highlight
           </button>
@@ -330,27 +353,27 @@ export default function ReferralTree({ users, onSelectUser }) {
       </div>
 
       {/* Stats badge */}
-      <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700/90 border border-slate-600 backdrop-blur-sm">
-        <Users className="w-3 h-3 text-slate-400" />
-        <span className="text-[11px] text-slate-300">
+      <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/95 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur-sm">
+        <Users className="w-3 h-3 text-slate-400 dark:text-slate-500" />
+        <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">
           {stats.roots} gốc · {stats.withRef} liên kết · {stats.total} tổng
         </span>
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-800/90 border border-slate-700 backdrop-blur-sm">
+      <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 px-3 py-2 rounded-lg bg-white/95 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 shadow-sm backdrop-blur-sm">
         {Object.entries(F_COLORS).map(([key, c]) => (
           <div key={key} className="flex items-center gap-1">
             <div className="w-2.5 h-2.5 rounded-full" style={{ background: c.bg }} />
-            <span className="text-[10px] text-slate-400">{c.label}</span>
+            <span className="text-[10px] text-slate-600 dark:text-slate-400 font-medium">{c.label}</span>
           </div>
         ))}
       </div>
 
       {/* Chain detail panel */}
       {highlightedUserId && highlightChain.nodes && (
-        <div className="absolute bottom-3 right-3 z-10 p-3 rounded-xl bg-slate-800/95 border border-slate-600 backdrop-blur-sm min-w-[180px]">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Commission Chain</p>
+        <div className="absolute bottom-3 right-3 z-10 p-3 rounded-xl bg-white/95 dark:bg-slate-800/95 border border-slate-200 dark:border-slate-700 shadow-lg backdrop-blur-sm min-w-[180px]">
+          <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Commission Chain</p>
           {Object.entries(highlightChain.nodes)
             .sort(([, a], [, b]) => a.localeCompare(b))
             .map(([uid, level]) => {
@@ -359,17 +382,17 @@ export default function ReferralTree({ users, onSelectUser }) {
               const rates = { f0: '40%', f1: '20%', f2: '7%', f3: '3%' };
               return (
                 <div key={uid} className="flex items-center justify-between gap-2 py-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2 h-2 rounded-full" style={{ background: fc.bg }} />
-                    <span className="text-xs text-slate-300 truncate max-w-[100px]">{u?.display_name || uid}</span>
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ background: fc.bg }} />
+                    <span className="text-xs text-slate-700 dark:text-slate-300 truncate max-w-[100px]">{u?.display_name || uid}</span>
                   </div>
                   <span className={`text-xs font-bold ${fc.text}`}>{rates[level]}</span>
                 </div>
               );
             })}
-          <div className="flex items-center justify-between gap-2 pt-1 mt-1 border-t border-slate-700">
-            <span className="text-xs text-slate-500">🏢 Admin</span>
-            <span className="text-xs font-bold text-slate-400">
+          <div className="flex items-center justify-between gap-2 pt-1.5 mt-1.5 border-t border-slate-100 dark:border-slate-700/50">
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">🏢 Admin</span>
+            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
               {100 - Object.values(highlightChain.nodes).reduce((sum, l) => sum + ({ f0: 40, f1: 20, f2: 7, f3: 3 }[l] || 0), 0)}%
             </span>
           </div>
@@ -389,12 +412,12 @@ export default function ReferralTree({ users, onSelectUser }) {
         proOptions={{ hideAttribution: true }}
         onPaneClick={() => setHighlightedUserId(null)}
         nodesDraggable={false}
-        className="!bg-slate-900"
+        className="bg-slate-50 dark:bg-slate-900"
       >
-        <Background color="#334155" gap={20} size={1} />
+        <Background color={isDark ? '#334155' : '#cbd5e1'} gap={20} size={1} />
         <Controls
           showInteractive={false}
-          className="!bg-slate-800 !border-slate-700 !rounded-lg !shadow-xl [&>button]:!bg-slate-700 [&>button]:!border-slate-600 [&>button]:!text-slate-300 [&>button:hover]:!bg-slate-600"
+          className="!bg-white dark:!bg-slate-800 !border-slate-200 dark:!border-slate-700 !rounded-lg !shadow-xl [&>button]:!bg-slate-50 [&>button]:dark:!bg-slate-700 [&>button]:!border-slate-200 [&>button]:dark:!border-slate-600 [&>button]:!text-slate-600 [&>button]:dark:!text-slate-300 [&>button:hover]:!bg-slate-100 [&>button:hover]:dark:!bg-slate-600"
         />
       </ReactFlow>
     </div>

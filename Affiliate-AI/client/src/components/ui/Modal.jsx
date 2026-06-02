@@ -57,16 +57,16 @@ export default function Modal({
               className={clsx(
                 'w-full bg-white dark:bg-slate-800 shadow-2xl',
                 'border border-slate-200 dark:border-slate-700',
-                'rounded-t-2xl sm:rounded-2xl',
+                'rounded-t-2xl sm:rounded-2xl overflow-hidden',
                 size === 'tree'
-                  ? 'max-h-[96vh] sm:max-h-[94vh] flex flex-col'
+                  ? 'h-[92vh] sm:h-[88vh] flex flex-col'
                   : 'max-h-[90vh] sm:max-h-[85vh] flex flex-col',
                 sizes[size]
               )}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Drag handle for mobile */}
-              <div className="flex justify-center pt-2 pb-1 sm:hidden">
+              <div className="flex justify-center pt-2 pb-1 sm:hidden flex-shrink-0">
                 <div className="w-10 h-1 bg-slate-300 dark:bg-slate-600 rounded-full" />
               </div>
 
@@ -90,7 +90,12 @@ export default function Modal({
               )}
 
               {/* Content */}
-              <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+              <div
+                className={clsx(
+                  'flex-1',
+                  size === 'tree' ? 'p-0 overflow-hidden flex flex-col' : 'p-4 sm:p-6 overflow-y-auto'
+                )}
+              >
                 {children}
               </div>
 
