@@ -626,6 +626,31 @@ async function runMigrations(db) {
     }
   }
 
+  // Safe migration: Add commission_mode column for multi-level F0-F3 system
+  try {
+    if (db.type === 'postgres') {
+      await db.exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_mode TEXT DEFAULT 'normal';`);
+    } else {
+      await db.exec(`ALTER TABLE users ADD COLUMN commission_mode TEXT DEFAULT 'normal';`);
+    }
+  } catch (err) {
+    if (!err.message.toLowerCase().includes('duplicate column') && !err.message.toLowerCase().includes('already exists') && !err.message.toLowerCase().includes('duplicate column name')) {
+      logger.warn('Migrations', `Failed to add commission_mode column: ${err.message}`);
+    }
+  }
+
+  // Safe migration: Update payouts role constraint for F0-F3 system
+  if (db.type === 'postgres') {
+    try {
+      await db.exec(`ALTER TABLE payouts DROP CONSTRAINT IF EXISTS payouts_role_check;`);
+      await db.exec(`ALTER TABLE payouts ADD CONSTRAINT payouts_role_check CHECK(role IN ('buyer','referrer','f0','f1','f2','f3','custom','combined'));`);
+    } catch (err) {
+      if (!err.message.includes('already exists')) {
+        logger.warn('Migrations', `Failed to update payouts role constraint: ${err.message}`);
+      }
+    }
+  }
+
   // Safe: Resync PG sequences to prevent duplicate key errors after manual data imports
 
   if (db.type === 'postgres') {

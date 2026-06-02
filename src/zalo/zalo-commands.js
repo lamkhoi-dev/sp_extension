@@ -540,7 +540,7 @@ ${reportUrl}
       const result = await shopee.checkAndConvert(url, {
         sub1: senderUid,
         sub2: phone,
-        sub4: 'from_custom',
+        sub4: 'custom',
       });
 
       // No commission
@@ -548,7 +548,7 @@ ${reportUrl}
         await convertLogStore.save({
           userId: senderUid, userName: senderName,
           originalLink: url, status: 'no_commission',
-          subId1: senderUid, subId2: phone, subId4: 'from_custom',
+          subId1: senderUid, subId2: phone, subId4: 'custom',
         });
         const noCommText = '❌ Sản phẩm không có hoàn tiền.';
         await this.actions.sendText(noCommText, message.threadId, message.type);
@@ -560,7 +560,7 @@ ${reportUrl}
         await convertLogStore.save({
           userId: senderUid, userName: senderName,
           originalLink: url, status: 'error', errorMessage: result.error,
-          subId1: senderUid, subId2: phone, subId4: 'from_custom',
+          subId1: senderUid, subId2: phone, subId4: 'custom',
         });
         const errText = `Hệ thống hiện tại đang quá tải, vui lòng thử lại sau ít phút`;
         await this.actions.sendText(errText, message.threadId, message.type);
@@ -583,7 +583,7 @@ ${reportUrl}
         subId1: senderUid,
         subId2: phone,
         subId3: String(result.commission || ''),
-        subId4: 'from_custom',
+        subId4: 'custom',
         status: 'success',
         itemId: result.itemId || parsedIds?.itemId || '',
         shopId: result.shopId || parsedIds?.shopId || '',
@@ -641,7 +641,7 @@ ${reportUrl}
       await convertLogStore.save({
         userId: senderUid, userName: senderName,
         originalLink: url, status: 'error', errorMessage: err.message,
-        subId1: senderUid, subId4: 'from_custom',
+        subId1: senderUid, subId4: 'custom',
       }).catch(e => logger.error(`[DB] Error saving custom error log: ${e.message}`));
       const errText = `Hệ thống hiện tại đang quá tải, vui lòng thử lại sau ít phút`;
       await this.actions.sendText(errText, message.threadId, message.type);

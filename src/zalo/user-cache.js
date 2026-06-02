@@ -169,6 +169,8 @@ class UserCache {
       cashbackReferrerRate: row.cashback_referrer_rate ?? 20,
       referrerEarnRate: row.referrer_earn_rate ?? 20,
       isSpecial: !!(row.is_special),
+      commissionMode: row.commission_mode || 'normal',
+      customRate: row.custom_rate || 0,
     };
   }
 

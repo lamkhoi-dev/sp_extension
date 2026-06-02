@@ -29,7 +29,7 @@ class ReportGenerator {
          (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
        )
        WHERE cl.user_id = ? AND cl.status = 'success'
-         AND COALESCE(o.sub_id4, '') != 'from_custom'
+         AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
          AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
          AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
          AND COALESCE(o.order_status,'') NOT LIKE '%Cancelled%'
@@ -53,7 +53,7 @@ class ReportGenerator {
               o.sub_id1, o.sub_id2
        FROM orders o
        WHERE o.sub_id1 = ?
-         AND o.sub_id4 = 'from_custom'
+         AND o.sub_id4 IN ('from_custom', 'custom')
          AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
          AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
          AND COALESCE(o.order_status,'') NOT LIKE '%Cancelled%'
@@ -144,9 +144,11 @@ class ReportGenerator {
       commission: revenueMap[m]?.commission || 0,
     }));
 
-    // 8. Calculate summary
-    const buyerRate = user.cashback_buyer_rate || 60;
-    const referrerRate = user.cashback_referrer_rate || 20;
+    // 8. Calculate summary using F0-F3 system
+    const commissionMode = user.commission_mode || 'normal';
+    const isCustomMode = commissionMode === 'custom';
+    const customRate = user.custom_rate || 0;
+    const f0Rate = isCustomMode ? customRate : 40; // F0 = 40% fixed
     const hasReferrer = !!(user.referrer_id && user.referrer_id !== '');
 
     const totalNetCommission = matchedOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
@@ -157,21 +159,18 @@ class ReportGenerator {
     );
     const completedNetCommission = completedOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
 
-    // Buyer always gets buyerRate (system-wide 60%), NOT buyer+referrer
-    const effectiveBuyerRate = buyerRate;
-    const totalBuyerCashback = totalNetCommission * effectiveBuyerRate / 100;
-    const completedBuyerCashback = completedNetCommission * effectiveBuyerRate / 100;
+    const totalBuyerCashback = totalNetCommission * f0Rate / 100;
+    const completedBuyerCashback = completedNetCommission * f0Rate / 100;
     const totalPaid = payouts
-      .filter(p => p.role === 'buyer')
+      .filter(p => ['buyer', 'f0'].includes(p.role))
       .reduce((s, p) => s + (p.amount || 0), 0);
     const pendingPayment = Math.max(0, completedBuyerCashback - totalPaid);
 
-    // CTV referrer earnings for this user
+    // CTV referrer earnings for this user (F1 = 20% fixed)
     const ctvTotalCommission = formattedCtvList.reduce((s, c) => s + c.totalCommission, 0);
-    const ctvReferrerEarnings = ctvTotalCommission * (user.referrer_earn_rate || 20) / 100;
+    const ctvReferrerEarnings = ctvTotalCommission * 20 / 100; // F1 = 20% fixed
 
-    // Custom orders summary (F1 role)
-    const customRate = user.custom_rate || 0;
+    // Custom orders summary
     const isCompletedCustom = (o) =>
       o.order_status?.toLowerCase().includes('hoàn thành') ||
       o.order_status?.toLowerCase().includes('completed') ||
