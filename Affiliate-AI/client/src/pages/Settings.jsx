@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
-import { Sun, Moon, Palette, Bell, Shield, User, Check, Key, Eye, EyeOff, X, Lock, Upload, Loader2, Camera, Server, Clock, Save, AlertTriangle } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { Sun, Moon, Palette, Bell, Shield, User, Check, Key, Eye, EyeOff, X, Lock, Upload, Loader2, Camera, Server, Clock, Save, AlertTriangle, Percent, RotateCcw } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { useCommissionRates } from '../hooks/useApi';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 
@@ -129,6 +130,158 @@ function ChangePasswordModal({ onClose }) {
         )}
       </div>
     </div>
+  );
+}
+
+const RATE_FIELDS = [
+  { key: 'f0', label: '🛒 F0 — Người mua', accent: 'emerald' },
+  { key: 'f1', label: '🤝 F1 — Giới thiệu cấp 1', accent: 'cyan' },
+  { key: 'f2', label: '🔗 F2 — Giới thiệu cấp 2', accent: 'sky' },
+  { key: 'f3', label: '🌐 F3 — Giới thiệu cấp 3', accent: 'indigo' },
+  { key: 'admin', label: '🏢 Admin', accent: 'slate' },
+];
+
+function CommissionRatesCard() {
+  const { rates, defaults, loading, save } = useCommissionRates();
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+
+  // Sync form when rates load
+  useEffect(() => {
+    if (rates && !form) {
+      setForm({ ...rates });
+    }
+  }, [rates, form]);
+
+  const sum = useMemo(() => {
+    if (!form) return 0;
+    return RATE_FIELDS.reduce((s, f) => s + (Number(form[f.key]) || 0), 0);
+  }, [form]);
+
+  const isValid = Math.abs(sum - 100) < 0.01;
+  const dirty = form && rates && RATE_FIELDS.some(f => Number(form[f.key]) !== Number(rates[f.key]));
+
+  const handleSave = async () => {
+    if (!isValid) { setError('Tổng phải bằng 100%'); return; }
+    setSaving(true); setError(''); setSuccess(false);
+    try {
+      await save({
+        admin: Number(form.admin),
+        f0: Number(form.f0),
+        f1: Number(form.f1),
+        f2: Number(form.f2),
+        f3: Number(form.f3),
+      });
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setError(err.message || 'Lưu thất bại');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = () => {
+    if (defaults) setForm({ ...defaults });
+    setError('');
+  };
+
+  if (loading || !form) {
+    return (
+      <Card className="p-6">
+        <div className="flex items-center gap-2 text-sm text-slate-400">
+          <Loader2 className="w-4 h-4 animate-spin" /> Đang tải tỷ lệ hoa hồng...
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="p-6">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-2 rounded-lg bg-violet-100 dark:bg-violet-900/30">
+          <Percent className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+        </div>
+        <div className="flex-1">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Tỷ lệ Hoa hồng</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Cấu hình % chia cho F0 → F3 và Admin (áp dụng toàn hệ thống)</p>
+        </div>
+        {success && (
+          <span className="inline-flex items-center gap-1 text-xs text-emerald-500 font-medium">
+            <Check className="w-3.5 h-3.5" /> Đã lưu!
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-3 mb-4">
+        {RATE_FIELDS.map(({ key, label }) => (
+          <div key={key} className="flex items-center justify-between gap-3">
+            <label className="text-sm text-slate-600 dark:text-slate-300 flex-1 font-medium">{label}</label>
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={form[key]}
+                onChange={e => {
+                  const v = e.target.value;
+                  setForm(p => ({ ...p, [key]: v === '' ? 0 : Number(v) }));
+                  setError('');
+                }}
+                className="w-24 px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 text-right font-semibold tabular-nums"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">%</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Live total */}
+      <div className={`flex items-center justify-between px-4 py-3 rounded-xl mb-4 border ${
+        isValid
+          ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800'
+          : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+      }`}>
+        <span className={`text-sm font-medium ${isValid ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
+          Tổng
+        </span>
+        <span className={`text-lg font-bold tabular-nums ${isValid ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+          {sum.toFixed(2)}% {isValid ? '✓' : '⚠ phải = 100%'}
+        </span>
+      </div>
+
+      {error && (
+        <div className="px-3 py-2 mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        </div>
+      )}
+
+      <p className="text-xs text-slate-400 dark:text-slate-500 mb-4 italic">
+        Áp dụng ngay cho mọi đơn chưa thanh toán. Đơn đã pay giữ nguyên số tiền cũ.
+      </p>
+
+      <div className="flex gap-2">
+        <button
+          onClick={handleSave}
+          disabled={saving || !isValid || !dirty}
+          className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-violet-500 hover:bg-violet-600 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {saving ? 'Đang lưu...' : 'Lưu tỷ lệ'}
+        </button>
+        <button
+          onClick={handleReset}
+          disabled={saving}
+          className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50"
+          title={`Khôi phục mặc định (F0 ${defaults?.f0 ?? 40}%, F1 ${defaults?.f1 ?? 20}%, F2 ${defaults?.f2 ?? 7}%, F3 ${defaults?.f3 ?? 3}%, Admin ${defaults?.admin ?? 30}%)`}
+        >
+          <RotateCcw className="w-4 h-4" /> Mặc định
+        </button>
+      </div>
+    </Card>
   );
 }
 
@@ -570,6 +723,8 @@ export default function SettingsPage() {
           </button>
         </div>
       </Card>
+
+      <CommissionRatesCard />
 
       {/* Security Settings */}
       <Card className="p-6">

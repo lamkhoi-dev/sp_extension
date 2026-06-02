@@ -6,7 +6,7 @@ import DataTable from '../components/ui/DataTable';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
-import { useUsers, formatVND, updateUserBankInfo, updateUserCustomQr, updateUserCommissionMode } from '../hooks/useApi';
+import { useUsers, formatVND, updateUserBankInfo, updateUserCustomQr, updateUserCommissionMode, useCommissionRates } from '../hooks/useApi';
 import { VIET_BANKS, getBankLogoUrl, buildVietQrUrl } from '../constants/banks';
 import BankSelect from '../components/ui/BankSelect';
 
@@ -14,6 +14,7 @@ const PAGE_SIZE = 20;
 
 export default function UsersPage() {
   const { users, loading, search, setSearch, refresh } = useUsers();
+  const { rates: commissionRates } = useCommissionRates();
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showTree, setShowTree] = useState(false);
@@ -369,6 +370,7 @@ export default function UsersPage() {
         <div className="h-full w-full relative overflow-hidden">
           <ReferralTree
             users={users}
+            rates={commissionRates}
             onSelectUser={(u) => {
               setShowTree(false);
               openDetail(u);
@@ -528,11 +530,11 @@ export default function UsersPage() {
                 /* Normal mode — fixed F0-F3 rates, read-only without progress bars, clean list view */
                 <div className="space-y-2 bg-slate-50 dark:bg-slate-900/20 rounded-xl p-4 border border-slate-100 dark:border-slate-800/30">
                   {[
-                    { label: '🛒 F0 — Người mua', rate: 40, color: 'text-emerald-600 dark:text-emerald-400' },
-                    { label: '🤝 F1 — Người giới thiệu', rate: 20, color: 'text-cyan-600 dark:text-cyan-400' },
-                    { label: '🔗 F2 — Cấp 2', rate: 7, color: 'text-sky-600 dark:text-sky-400' },
-                    { label: '🌐 F3 — Cấp 3', rate: 3, color: 'text-indigo-600 dark:text-indigo-400' },
-                    { label: '🏢 Admin', rate: 30, color: 'text-slate-600 dark:text-slate-400' },
+                    { label: '🛒 F0 — Người mua', rate: commissionRates.f0, color: 'text-emerald-600 dark:text-emerald-400' },
+                    { label: '🤝 F1 — Người giới thiệu', rate: commissionRates.f1, color: 'text-cyan-600 dark:text-cyan-400' },
+                    { label: '🔗 F2 — Cấp 2', rate: commissionRates.f2, color: 'text-sky-600 dark:text-sky-400' },
+                    { label: '🌐 F3 — Cấp 3', rate: commissionRates.f3, color: 'text-indigo-600 dark:text-indigo-400' },
+                    { label: '🏢 Admin', rate: commissionRates.admin, color: 'text-slate-600 dark:text-slate-400' },
                   ].map(({ label, rate, color }) => (
                     <div key={label} className="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
                       <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">{label}</span>

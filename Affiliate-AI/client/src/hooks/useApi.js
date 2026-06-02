@@ -523,3 +523,40 @@ export function useAuditLogs() {
 
   return { logs, stats, admins, loading, loadingMore, hasMore, filters, setFilters, loadMore };
 }
+
+// Commission Rates (F0-F3 + Admin) — global config from Settings
+export const COMMISSION_RATE_DEFAULTS = { admin: 30, f0: 40, f1: 20, f2: 7, f3: 3 };
+
+export function useCommissionRates() {
+  const [rates, setRates] = useState(COMMISSION_RATE_DEFAULTS);
+  const [defaults, setDefaults] = useState(COMMISSION_RATE_DEFAULTS);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      const data = await apiFetch('/settings/commission-rates');
+      if (data?.rates) setRates(data.rates);
+      if (data?.defaults) setDefaults(data.defaults);
+      setError('');
+    } catch (err) {
+      console.error('Commission rates fetch error:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = useCallback(async (next) => {
+    const data = await apiFetch('/settings/commission-rates', {
+      method: 'PATCH',
+      body: JSON.stringify(next),
+    });
+    if (data?.rates) setRates(data.rates);
+    return data;
+  }, []);
+
+  return { rates, defaults, loading, error, refresh: load, save };
+}

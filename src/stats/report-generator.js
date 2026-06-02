@@ -1,8 +1,10 @@
 const db = require('../db');
 const logger = require('../logger');
+const commissionRatesStore = require('../api/commission-rates-store');
 
 class ReportGenerator {
   async generateReport(userId) {
+    const rates = await commissionRatesStore.getRates();
     // 1. User info
     const user = await db.get('SELECT * FROM users WHERE user_id = ?', [userId]);
     if (!user) throw new Error('User not found');
@@ -155,7 +157,7 @@ class ReportGenerator {
     const commissionMode = user.commission_mode || 'normal';
     const isCustomMode = commissionMode === 'custom';
     const customRate = user.custom_rate || 0;
-    const f0Rate = isCustomMode ? customRate : 40; // F0 = 40% fixed
+    const f0Rate = isCustomMode ? customRate : rates.f0;
     const hasReferrer = !!(user.referrer_id && user.referrer_id !== '');
 
     const totalNetCommission = matchedOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
@@ -173,9 +175,9 @@ class ReportGenerator {
       .reduce((s, p) => s + (p.amount || 0), 0);
     const pendingPayment = Math.max(0, completedBuyerCashback - totalPaid);
 
-    // CTV referrer earnings for this user (F1 = 20% fixed)
+    // CTV referrer earnings for this user — F1 rate from settings
     const ctvTotalCommission = formattedCtvList.reduce((s, c) => s + c.totalCommission, 0);
-    const ctvReferrerEarnings = ctvTotalCommission * 20 / 100; // F1 = 20% fixed
+    const ctvReferrerEarnings = ctvTotalCommission * rates.f1 / 100;
 
     // Custom orders summary
     const isCompletedCustom = (o) =>

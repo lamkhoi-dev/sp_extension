@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ShoppingCart, Link2, User, DollarSign, CheckCircle, AlertCircle, Package, Hash, Percent, Calendar, Building2, Zap, Gift, Phone, ToggleLeft, ToggleRight } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import { useCommissionRates } from '../hooks/useApi';
 
 const API = '/api';
 const STATUS_OPTIONS = ['Đang chờ xử lý', 'Hoàn thành', 'Đã huỷ', 'Chờ đối soát'];
@@ -48,6 +49,7 @@ function PreviewRow({ label, value, color = '', bold = false, indent = false }) 
 }
 
 export default function SimulateOrderPage() {
+  const { rates: RATES } = useCommissionRates();
   const [users, setUsers] = useState([]);
   const [isCustomMode, setIsCustomMode] = useState(false);
   const [customPhone, setCustomPhone] = useState('');
@@ -92,8 +94,7 @@ export default function SimulateOrderPage() {
     return { f1: f1User, f2: f2User, f3: f3User };
   }, [selectedUser, users, isCustomMode]);
 
-  // Fixed commission rates (match backend COMMISSION_RATES)
-  const RATES = { f0: 40, f1: 20, f2: 7, f3: 3 };
+  // Commission rates come from Settings (global config) — see useCommissionRates()
   const customRate = isCustomMode ? (selectedUser?.custom_rate ?? 0) : 0;
 
   const extractFromLink = async (url) => {

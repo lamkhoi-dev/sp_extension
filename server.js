@@ -27,6 +27,7 @@ const reportStore = require('./src/stats/report-store');
 const { renderReport } = require('./src/stats/report-template');
 const healthMonitor = require('./src/cron/health-monitor');
 const linkRedirectStore = require('./src/api/link-redirect-store');
+const commissionRatesStore = require('./src/api/commission-rates-store');
 const ShopeeAPI = require('./src/shopee-api');
 
 
@@ -674,6 +675,7 @@ async function enrichOrdersWithCommissionChain(orders) {
   if (!orders || orders.length === 0) return orders;
 
   try {
+    const rates = await commissionRatesStore.getRates();
     const users = await db.all('SELECT user_id, display_name, zalo_name, commission_mode, custom_rate, referrer_id FROM users');
     const userMap = {};
     for (const u of users) {
@@ -720,21 +722,21 @@ async function enrichOrdersWithCommissionChain(orders) {
             if (currentId && userMap[currentId]) {
               const f1 = userMap[currentId];
               if (f1.commissionMode !== 'custom') {
-                referrers.push({ level: 1, userId: f1.userId, displayName: f1.displayName, rate: 20 });
+                referrers.push({ level: 1, userId: f1.userId, displayName: f1.displayName, rate: rates.f1 });
                 currentId = f1.referrerId;
 
                 // F2
                 if (currentId && userMap[currentId]) {
                   const f2 = userMap[currentId];
                   if (f2.commissionMode !== 'custom') {
-                    referrers.push({ level: 2, userId: f2.userId, displayName: f2.displayName, rate: 7 });
+                    referrers.push({ level: 2, userId: f2.userId, displayName: f2.displayName, rate: rates.f2 });
                     currentId = f2.referrerId;
 
                     // F3
                     if (currentId && userMap[currentId]) {
                       const f3 = userMap[currentId];
                       if (f3.commissionMode !== 'custom') {
-                        referrers.push({ level: 3, userId: f3.userId, displayName: f3.displayName, rate: 3 });
+                        referrers.push({ level: 3, userId: f3.userId, displayName: f3.displayName, rate: rates.f3 });
                       }
                     }
                   }
@@ -756,7 +758,7 @@ async function enrichOrdersWithCommissionChain(orders) {
         const nc = order.net_commission || 0;
         const isCustom = chainInfo.mode === 'custom';
 
-        const buyerRate = isCustom ? chainInfo.buyer.customRate : 40;
+        const buyerRate = isCustom ? chainInfo.buyer.customRate : rates.f0;
         const buyerAmount = Math.round(nc * buyerRate / 100);
         let distributed = buyerAmount;
 
@@ -780,7 +782,7 @@ async function enrichOrdersWithCommissionChain(orders) {
         if (!isCustom) {
           chainInfo.referrers.forEach(r => totalRefRates += r.rate);
         }
-        const adminRateVal = isCustom ? (100 - buyerRate) : (100 - 40 - totalRefRates);
+        const adminRateVal = isCustom ? (100 - buyerRate) : (100 - rates.f0 - totalRefRates);
 
         order.commission_chain = {
           mode: chainInfo.mode,
@@ -1026,6 +1028,39 @@ app.patch('/api/settings/vps', async (req, res) => {
   } catch (err) {
     logger.error('VPS', `Update settings failed: ${err.message}`);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── Commission Rates Settings API ─────────────────────
+app.get('/api/settings/commission-rates', async (req, res) => {
+  try {
+    const rates = await commissionRatesStore.getRates();
+    res.json({ rates, defaults: commissionRatesStore.DEFAULTS });
+  } catch (err) {
+    logger.error('CommissionRates', `Get settings failed: ${err.message}`);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.patch('/api/settings/commission-rates', async (req, res) => {
+  const adminUser = req.admin?.username || 'system';
+  try {
+    const { admin, f0, f1, f2, f3 } = req.body || {};
+    const { before, after } = await commissionRatesStore.updateRates(
+      { admin, f0, f1, f2, f3 },
+      adminUser
+    );
+    await auditStore.log(adminUser, 'COMMISSION_RATES_UPDATED', 'system', 'commission_rates', { before, after }, req.ip);
+    res.json({ success: true, rates: after });
+  } catch (err) {
+    // Validation errors → 400; everything else → 500
+    const isValidation = /Tổng|hợp lệ/.test(err.message);
+    if (isValidation) {
+      res.status(400).json({ error: err.message });
+    } else {
+      logger.error('CommissionRates', `Update settings failed: ${err.message}`);
+      res.status(500).json({ error: 'Server error' });
+    }
   }
 });
 

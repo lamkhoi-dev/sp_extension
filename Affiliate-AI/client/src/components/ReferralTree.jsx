@@ -162,7 +162,10 @@ function UserNode({ data }) {
 const nodeTypes = { userNode: UserNode };
 
 // ─── Main Component ─────────────────────────────────────
-export default function ReferralTree({ users, onSelectUser }) {
+const DEFAULT_RATES = { f0: 40, f1: 20, f2: 7, f3: 3, admin: 30 };
+
+export default function ReferralTree({ users, onSelectUser, rates: ratesProp }) {
+  const rates = { ...DEFAULT_RATES, ...(ratesProp || {}) };
   const isDark = useDarkMode();
   const [highlightedUserId, setHighlightedUserId] = useState(null);
   const [collapsedNodes, setCollapsedNodes] = useState(new Set());
@@ -379,21 +382,21 @@ export default function ReferralTree({ users, onSelectUser }) {
             .map(([uid, level]) => {
               const u = users.find((x) => x.user_id === uid);
               const fc = F_COLORS[level];
-              const rates = { f0: '40%', f1: '20%', f2: '7%', f3: '3%' };
+              const pct = rates[level];
               return (
                 <div key={uid} className="flex items-center justify-between gap-2 py-0.5">
                   <div className="flex items-center gap-1.5 font-medium">
                     <div className="w-2.5 h-2.5 rounded-full" style={{ background: fc.bg }} />
                     <span className="text-xs text-slate-700 dark:text-slate-300 truncate max-w-[100px]">{u?.display_name || uid}</span>
                   </div>
-                  <span className={`text-xs font-bold ${fc.text}`}>{rates[level]}</span>
+                  <span className={`text-xs font-bold ${fc.text}`}>{pct != null ? `${pct}%` : '—'}</span>
                 </div>
               );
             })}
           <div className="flex items-center justify-between gap-2 pt-1.5 mt-1.5 border-t border-slate-100 dark:border-slate-700/50">
             <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">🏢 Admin</span>
             <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-              {100 - Object.values(highlightChain.nodes).reduce((sum, l) => sum + ({ f0: 40, f1: 20, f2: 7, f3: 3 }[l] || 0), 0)}%
+              {100 - Object.values(highlightChain.nodes).reduce((sum, l) => sum + (Number(rates[l]) || 0), 0)}%
             </span>
           </div>
         </div>

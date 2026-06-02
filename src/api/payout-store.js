@@ -1,5 +1,6 @@
 const db = require('../db');
 const logger = require('../logger');
+const commissionRatesStore = require('./commission-rates-store');
 
 // Completed statuses for Shopee orders
 const COMPLETED_STATUSES = new Set(['Hoàn thành', 'Completed']);
@@ -17,8 +18,9 @@ function isCancelled(status) {
 }
 
 // ═══ Multi-level Commission System (F0-F3) ═══
-// Fixed rates for Normal mode — NOT configurable per user
-const COMMISSION_RATES = { admin: 30, f0: 40, f1: 20, f2: 7, f3: 3 };
+// Rates live in DB (system_settings.commission_rates). Each async entry-point
+// preloads them once via commissionRatesStore.getRates() then passes the
+// resolved object around — never read from a module-level constant.
 
 /**
  * Trace the referrer chain: F0 → F1 → F2 → F3
@@ -60,13 +62,14 @@ async function resolveCommissionChain(buyerId) {
 /**
  * Calculate commission split for Normal mode.
  * Missing F-levels have their % added to Admin.
+ * `rates` must be the object returned by commissionRatesStore.getRates().
  */
-function calculateNormalSplit(nc, chain) {
-  const f0 = Math.round(nc * COMMISSION_RATES.f0 / 100);
-  const f1 = chain.f1 ? Math.round(nc * COMMISSION_RATES.f1 / 100) : 0;
-  const f2 = chain.f2 ? Math.round(nc * COMMISSION_RATES.f2 / 100) : 0;
-  const f3 = chain.f3 ? Math.round(nc * COMMISSION_RATES.f3 / 100) : 0;
-  const admin = nc - f0 - f1 - f2 - f3; // Admin gets the remainder (base 30% + missing F%)
+function calculateNormalSplit(nc, chain, rates) {
+  const f0 = Math.round(nc * rates.f0 / 100);
+  const f1 = chain.f1 ? Math.round(nc * rates.f1 / 100) : 0;
+  const f2 = chain.f2 ? Math.round(nc * rates.f2 / 100) : 0;
+  const f3 = chain.f3 ? Math.round(nc * rates.f3 / 100) : 0;
+  const admin = nc - f0 - f1 - f2 - f3; // Admin gets the remainder (base admin% + missing F%)
   return { admin, f0, f1, f2, f3 };
 }
 
@@ -173,6 +176,7 @@ async function _getPaidOrderIds(userId, role) {
 const payoutStore = {
   async getSummary() {
     try {
+      const rates = await commissionRatesStore.getRates();
       const users = await db.all(USERS_WITH_ORDERS_SQL);
       const allOrders = await db.all(MATCHED_ORDERS_SQL);
 
@@ -192,7 +196,7 @@ const payoutStore = {
         const commissionMode = user.commission_mode || 'normal';
         const isCustomMode = commissionMode === 'custom';
         const customRate = user.custom_rate ?? 0;
-        const f0Rate = isCustomMode ? customRate : COMMISSION_RATES.f0;
+        const f0Rate = isCustomMode ? customRate : rates.f0;
 
         // Resolve F-chain for normal mode users
         const chain = isCustomMode ? { f1: null, f2: null, f3: null } : await resolveCommissionChain(uid);
@@ -276,7 +280,7 @@ const payoutStore = {
           customRate,
           chain,
           f0Rate,
-          adminRate: isCustomMode ? (100 - customRate) : COMMISSION_RATES.admin,
+          adminRate: isCustomMode ? (100 - customRate) : rates.admin,
           totalNetCommission: Math.round(totalNetCommission),
           completedNetCommission: Math.round(completedNetCommission),
           pendingNetCommission: Math.round(pendingNetCommission),
@@ -299,7 +303,7 @@ const payoutStore = {
       }
 
       // Merge F1/F2/F3 referrer earnings
-      const referrerSummaries = await this._calcReferrerSummaries(allOrders, users);
+      const referrerSummaries = await this._calcReferrerSummaries(allOrders, users, rates);
       const userMap = {};
       for (const b of summaries) {
         userMap[b.userId] = {
@@ -318,12 +322,12 @@ const payoutStore = {
             referrerId: '', referrerName: '', hasReferrer: false,
             commissionMode: r.commissionMode || 'normal', isCustomMode: false,
             customRate: 0, chain: { f1: null, f2: null, f3: null },
-            f0Rate: COMMISSION_RATES.f0, adminRate: COMMISSION_RATES.admin,
+            f0Rate: rates.f0, adminRate: rates.admin,
             totalNetCommission: 0, completedNetCommission: 0, pendingNetCommission: 0,
             totalBuyerCashback: 0, totalPaid: 0,
             pendingBuyerPayment: 0, completedCount: 0, pendingCount: 0, totalOrders: 0,
             pendingCustomPayment: 0, customOrderCount: 0, completedCustomCount: 0, pendingCustomCount: 0,
-            isSpecial: false, buyerRate: COMMISSION_RATES.f0, referrerRate: 0, referrerEarnRate: 0,
+            isSpecial: false, buyerRate: rates.f0, referrerRate: 0, referrerEarnRate: 0,
             pendingF1Payment: 0, f1OrderCount: 0, totalF1Cashback: 0,
             pendingF2Payment: 0, f2OrderCount: 0, totalF2Cashback: 0,
             pendingF3Payment: 0, f3OrderCount: 0, totalF3Cashback: 0,
@@ -351,7 +355,8 @@ const payoutStore = {
     }
   },
 
-  async _calcReferrerSummaries(allOrders, users) {
+  async _calcReferrerSummaries(allOrders, users, rates) {
+    if (!rates) rates = await commissionRatesStore.getRates();
     const userLookup = {};
     for (const u of users) userLookup[u.user_id] = u;
 
@@ -367,9 +372,9 @@ const payoutStore = {
       const chain = await resolveCommissionChain(buyerId);
 
       const fLevels = [
-        { id: chain.f1, level: 1, rate: COMMISSION_RATES.f1 },
-        { id: chain.f2, level: 2, rate: COMMISSION_RATES.f2 },
-        { id: chain.f3, level: 3, rate: COMMISSION_RATES.f3 },
+        { id: chain.f1, level: 1, rate: rates.f1 },
+        { id: chain.f2, level: 2, rate: rates.f2 },
+        { id: chain.f3, level: 3, rate: rates.f3 },
       ];
 
       for (const { id, level, rate } of fLevels) {
@@ -397,7 +402,7 @@ const payoutStore = {
         const legacyPaidIds = level === '1' ? await _getPaidOrderIds(userId, 'referrer') : new Set();
         const allPaidIds = new Set([...paidIds, ...legacyPaidIds]);
 
-        const rate = level === '1' ? COMMISSION_RATES.f1 : level === '2' ? COMMISSION_RATES.f2 : COMMISSION_RATES.f3;
+        const rate = level === '1' ? rates.f1 : level === '2' ? rates.f2 : rates.f3;
         let unpaid = 0;
 
         for (const o of data.orders) {
@@ -434,6 +439,7 @@ const payoutStore = {
 
   async getUserDetail(userId) {
     try {
+      const rates = await commissionRatesStore.getRates();
       // --- Buyer orders (this user bought) ---
       const buyerOrders = await db.all(MATCHED_ORDERS_BY_USER_SQL, [userId]);
       const userRow = await db.get(`
@@ -446,7 +452,7 @@ const payoutStore = {
       const commissionMode = userRow?.commission_mode || 'normal';
       const isCustomMode = commissionMode === 'custom';
       const customRate = userRow?.custom_rate ?? 0;
-      const f0Rate = isCustomMode ? customRate : COMMISSION_RATES.f0;
+      const f0Rate = isCustomMode ? customRate : rates.f0;
       const hasReferrer = !!(userRow?.referrer_id && userRow.referrer_id !== '');
 
       // Resolve chain for this user
@@ -478,10 +484,10 @@ const payoutStore = {
           completeTime: o.complete_time,
           netCommission: nc,
           buyerCashback: Math.round(nc * f0Rate / 100),
-          f1Cashback: chain.f1 ? Math.round(nc * COMMISSION_RATES.f1 / 100) : 0,
-          f2Cashback: chain.f2 ? Math.round(nc * COMMISSION_RATES.f2 / 100) : 0,
-          f3Cashback: chain.f3 ? Math.round(nc * COMMISSION_RATES.f3 / 100) : 0,
-          adminProfit: Math.round(nc - (nc * f0Rate / 100) - (chain.f1 ? nc * COMMISSION_RATES.f1 / 100 : 0) - (chain.f2 ? nc * COMMISSION_RATES.f2 / 100 : 0) - (chain.f3 ? nc * COMMISSION_RATES.f3 / 100 : 0)),
+          f1Cashback: chain.f1 ? Math.round(nc * rates.f1 / 100) : 0,
+          f2Cashback: chain.f2 ? Math.round(nc * rates.f2 / 100) : 0,
+          f3Cashback: chain.f3 ? Math.round(nc * rates.f3 / 100) : 0,
+          adminProfit: Math.round(nc - (nc * f0Rate / 100) - (chain.f1 ? nc * rates.f1 / 100 : 0) - (chain.f2 ? nc * rates.f2 / 100 : 0) - (chain.f3 ? nc * rates.f3 / 100 : 0)),
           type: 'f0',
         };
 
@@ -521,7 +527,7 @@ const payoutStore = {
 
         const nc = o.net_commission || 0;
         const buyerUser = buyerMap[o.sub_id1];
-        const refRate = COMMISSION_RATES.f1;
+        const refRate = rates.f1;
         const buyerDisplayName = buyerUser?.display_name || o.sub_id1;
 
         const item = {
@@ -632,7 +638,7 @@ const payoutStore = {
             orderTime: o.order_time,
             completeTime: o.complete_time,
             netCommission: nc,
-            fCashback: Math.round(nc * COMMISSION_RATES.f2 / 100),
+            fCashback: Math.round(nc * rates.f2 / 100),
             buyerName: bUser?.display_name || orderBuyerId,
             buyerId: orderBuyerId,
             buyerAvatar: bUser?.avatar || '',
@@ -659,7 +665,7 @@ const payoutStore = {
             orderTime: o.order_time,
             completeTime: o.complete_time,
             netCommission: nc,
-            fCashback: Math.round(nc * COMMISSION_RATES.f3 / 100),
+            fCashback: Math.round(nc * rates.f3 / 100),
             buyerName: bUser?.display_name || orderBuyerId,
             buyerId: orderBuyerId,
             buyerAvatar: bUser?.avatar || '',
@@ -694,7 +700,7 @@ const payoutStore = {
         f0Rate,
         customRate,
         chain,
-        adminRate: isCustomMode ? (100 - customRate) : COMMISSION_RATES.admin,
+        adminRate: isCustomMode ? (100 - customRate) : rates.admin,
         isSpecial: isCustomMode,
         hasReferrer,
         referrerId: userRow?.referrer_id || '',
@@ -728,6 +734,7 @@ const payoutStore = {
    */
   async calculateServerPayout(userId, role, paymentMethod, adminNote, billImage) {
     try {
+      const rates = await commissionRatesStore.getRates();
       return await db.transaction(async (tx) => {
         const userRow = await tx.get(
           'SELECT display_name, zalo_name, commission_mode, custom_rate FROM users WHERE user_id = $1',
@@ -753,7 +760,7 @@ const payoutStore = {
           const paidF0 = await getPaidIds('f0');
           paidF0.forEach(id => paidIds.add(id));
           const isCustom = userRow?.commission_mode === 'custom';
-          const rate = isCustom ? (userRow?.custom_rate || 40) : COMMISSION_RATES.f0;
+          const rate = isCustom ? (userRow?.custom_rate ?? rates.f0) : rates.f0;
           const orders = await tx.all(`
             SELECT DISTINCT o.* FROM orders o
             INNER JOIN convert_logs cl ON (
@@ -783,7 +790,7 @@ const payoutStore = {
               (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
             ) WHERE cl.status = 'success' AND cl.sub_id2 = $1 ORDER BY o.order_time ASC
           `, [userId]);
-          const refRate = COMMISSION_RATES.f1;
+          const refRate = rates.f1;
           const unpaid = [];
           for (const o of refOrders) {
             if (isCancelled(o.order_status)) continue;
@@ -885,6 +892,7 @@ const payoutStore = {
    */
   async updateUserCommissionMode(userId, commissionMode, customRate) {
     try {
+      const rates = await commissionRatesStore.getRates();
       if (!['normal', 'custom'].includes(commissionMode)) {
         return { success: false, error: 'Invalid commission mode. Must be "normal" or "custom".' };
       }
@@ -913,8 +921,8 @@ const payoutStore = {
         commissionMode,
         customRate: rate,
         isCustomMode: isCustom,
-        f0Rate: isCustom ? rate : COMMISSION_RATES.f0,
-        adminRate: isCustom ? (100 - rate) : COMMISSION_RATES.admin,
+        f0Rate: isCustom ? rate : rates.f0,
+        adminRate: isCustom ? (100 - rate) : rates.admin,
       };
     } catch (err) {
       logger.error('PayoutStore', `updateUserCommissionMode failed: ${err.message}`);

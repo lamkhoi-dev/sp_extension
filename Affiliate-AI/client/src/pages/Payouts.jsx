@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { Wallet, Check, Clock, ChevronDown, ChevronUp, ChevronRight, Upload, RefreshCw, Building2, FileText, ExternalLink, History, QrCode } from 'lucide-react';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
-import { usePayouts, formatVND } from '../hooks/useApi';
+import { usePayouts, formatVND, useCommissionRates } from '../hooks/useApi';
 import { buildVietQrUrl, getBankLogoUrl, VIET_BANKS } from '../constants/banks';
 
 // Tree connector line component
@@ -20,6 +20,7 @@ function TreeLine({ isLast, color = 'bg-slate-300 dark:bg-slate-600' }) {
 
 export default function PayoutsPage() {
   const { summary, history, loading, refresh, getUserDetail, createPayout, uploadBill } = usePayouts();
+  const { rates: commissionRates } = useCommissionRates();
   const [expandedUser, setExpandedUser] = useState(null);
   const [userDetail, setUserDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -353,10 +354,10 @@ export default function PayoutsPage() {
 
                           // F-level branch config for DRY rendering
                           const F_BRANCHES = [
-                            { key: 'f0', label: '🛒 F0 — Hoa hồng mua 40%', completed: unpaidCompleted, pending: userDetail.pending || [], dot: 'bg-emerald-400', text: 'text-emerald-500 dark:text-emerald-400', bg: 'bg-emerald-50/60 dark:bg-emerald-900/15', border: 'border-emerald-200/60 dark:border-emerald-800/30', cashbackField: 'buyerCashback', showBuyer: false },
-                            { key: 'f1', label: '🤝 F1 — Giới thiệu cấp 1 20%', completed: completedReferrer, pending: pendingReferrer, dot: 'bg-cyan-400', text: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50/60 dark:bg-cyan-900/15', border: 'border-cyan-200/60 dark:border-cyan-800/30', cashbackField: 'referrerCashback', showBuyer: true },
-                            { key: 'f2', label: '🔗 F2 — Giới thiệu cấp 2 7%', completed: completedF2, pending: pendingF2, dot: 'bg-sky-400', text: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50/60 dark:bg-sky-900/15', border: 'border-sky-200/60 dark:border-sky-800/30', cashbackField: 'fCashback', showBuyer: true },
-                            { key: 'f3', label: '🌐 F3 — Giới thiệu cấp 3 3%', completed: completedF3, pending: pendingF3, dot: 'bg-indigo-400', text: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50/60 dark:bg-indigo-900/15', border: 'border-indigo-200/60 dark:border-indigo-800/30', cashbackField: 'fCashback', showBuyer: true },
+                            { key: 'f0', label: `🛒 F0 — Hoa hồng mua ${commissionRates.f0}%`, completed: unpaidCompleted, pending: userDetail.pending || [], dot: 'bg-emerald-400', text: 'text-emerald-500 dark:text-emerald-400', bg: 'bg-emerald-50/60 dark:bg-emerald-900/15', border: 'border-emerald-200/60 dark:border-emerald-800/30', cashbackField: 'buyerCashback', showBuyer: false },
+                            { key: 'f1', label: `🤝 F1 — Giới thiệu cấp 1 ${commissionRates.f1}%`, completed: completedReferrer, pending: pendingReferrer, dot: 'bg-cyan-400', text: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50/60 dark:bg-cyan-900/15', border: 'border-cyan-200/60 dark:border-cyan-800/30', cashbackField: 'referrerCashback', showBuyer: true },
+                            { key: 'f2', label: `🔗 F2 — Giới thiệu cấp 2 ${commissionRates.f2}%`, completed: completedF2, pending: pendingF2, dot: 'bg-sky-400', text: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50/60 dark:bg-sky-900/15', border: 'border-sky-200/60 dark:border-sky-800/30', cashbackField: 'fCashback', showBuyer: true },
+                            { key: 'f3', label: `🌐 F3 — Giới thiệu cấp 3 ${commissionRates.f3}%`, completed: completedF3, pending: pendingF3, dot: 'bg-indigo-400', text: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50/60 dark:bg-indigo-900/15', border: 'border-indigo-200/60 dark:border-indigo-800/30', cashbackField: 'fCashback', showBuyer: true },
                             { key: 'custom', label: `⭐ Hoa hồng Custom ${customRate}%`, completed: completedCustom, pending: pendingCustom, dot: 'bg-amber-400', text: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50/60 dark:bg-amber-900/15', border: 'border-amber-200/60 dark:border-amber-800/30', cashbackField: 'customCashback', showBuyer: false, showPhone: true },
                           ];
                           // Only show branches that have data (completed or pending)
