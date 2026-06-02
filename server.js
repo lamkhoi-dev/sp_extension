@@ -367,20 +367,31 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// ─── Public Orders API (no auth, anonymized) ────────────
+// ─── Public Orders API (no auth, full data + product images) ──
 app.get('/public-orders', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 50, 100);
     const rows = await db.all(`
       SELECT
-        o.order_id, o.order_status, o.order_time, o.complete_time,
-        o.shop_name, o.item_name, o.price, o.quantity,
-        o.order_value, o.net_commission,
+        o.order_id, o.checkout_id, o.order_status,
+        o.order_time, o.complete_time, o.click_time,
+        o.shop_name, o.shop_id, o.shop_type,
+        o.item_id, o.item_name, o.model_id,
+        o.product_type, o.promotion_id,
+        o.category_l1, o.category_l2, o.category_l3,
+        o.price, o.quantity,
+        o.commission_type, o.campaign_partner,
+        o.order_value, o.refund_amount,
         o.shopee_product_commission_rate, o.shopee_product_commission,
         o.seller_product_commission_rate, o.xtra_product_commission,
-        o.total_product_commission, o.total_order_commission,
-        o.sub_id1
+        o.total_product_commission,
+        o.order_commission, o.order_bonus, o.total_order_commission,
+        o.mcn_name, o.mcn_fee_rate, o.mcn_fee_amount,
+        o.agreed_commission_rate, o.net_commission,
+        o.product_status, o.channel,
+        pi.img_code
       FROM orders o
+      LEFT JOIN product_images pi ON pi.item_id = o.item_id
       WHERE o.net_commission > 0
         AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
         AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
@@ -389,26 +400,46 @@ app.get('/public-orders', async (req, res) => {
       LIMIT $1
     `, [limit]);
 
-    // Enrich with commission chain, then anonymize
-    await enrichOrdersWithCommissionChain(rows);
     const data = rows.map(o => ({
-      orderId: o.order_id?.slice(-8) || '--',
+      orderId: o.order_id,
+      checkoutId: o.checkout_id,
       orderStatus: o.order_status,
       orderTime: o.order_time,
       completeTime: o.complete_time,
+      clickTime: o.click_time,
       shopName: o.shop_name,
+      shopId: o.shop_id,
+      shopType: o.shop_type,
+      itemId: o.item_id,
       itemName: o.item_name,
+      modelId: o.model_id,
+      productType: o.product_type,
+      promotionId: o.promotion_id,
+      categoryL1: o.category_l1,
+      categoryL2: o.category_l2,
+      categoryL3: o.category_l3,
       price: o.price,
       quantity: o.quantity,
+      commissionType: o.commission_type,
+      campaignPartner: o.campaign_partner,
       orderValue: o.order_value,
-      netCommission: o.net_commission,
+      refundAmount: o.refund_amount,
       shopeeRate: o.shopee_product_commission_rate,
       shopeeComm: o.shopee_product_commission,
       sellerRate: o.seller_product_commission_rate,
       xtraComm: o.xtra_product_commission,
       totalProductComm: o.total_product_commission,
+      orderComm: o.order_commission,
+      orderBonus: o.order_bonus,
       totalOrderComm: o.total_order_commission,
-      commissionChain: o.commission_chain || null,
+      mcnName: o.mcn_name,
+      mcnFeeRate: o.mcn_fee_rate,
+      mcnFeeAmount: o.mcn_fee_amount,
+      agreedRate: o.agreed_commission_rate,
+      netCommission: o.net_commission,
+      productStatus: o.product_status,
+      channel: o.channel,
+      imgCode: o.img_code || null,
     }));
     res.json({ ok: true, data });
   } catch (err) {
