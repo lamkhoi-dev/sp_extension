@@ -576,24 +576,7 @@ export default function PayoutsPage() {
                                           </div>
                                         )}
                                       </div>
-                                      <div className="flex gap-2">
-                                        <button
-                                          onClick={(e) => handleWithdrawalAction(wr.id, 'paid', e)}
-                                          disabled={isMarking}
-                                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors disabled:opacity-60"
-                                        >
-                                          {isMarking ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                                          Đã chuyển khoản
-                                        </button>
-                                        <button
-                                          onClick={(e) => handleWithdrawalAction(wr.id, 'rejected', e)}
-                                          disabled={isMarking}
-                                          className="flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 dark:border-red-800/50 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-60"
-                                        >
-                                          <X className="w-3 h-3" />
-                                          Từ chối
-                                        </button>
-                                      </div>
+                                      <p className="text-[10px] text-slate-400 italic">Xử lý qua trang thanh toán bên dưới.</p>
                                     </div>
                                   </div>
                                 );
