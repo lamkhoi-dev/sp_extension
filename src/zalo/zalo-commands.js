@@ -654,7 +654,8 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
         `💰 Hoa hồng ước tính: ${commissionText}\n\n` +
         `⚠️ Lưu ý:\n` +
         `1. Không xem VIDEO/LIVE sau khi click link\n` +
-        `2. Hãy xóa giỏ hàng nếu đã thêm trước đó\n\n` +
+        `2. Hãy xóa giỏ hàng nếu đã thêm trước đó\n` +
+        `3. Vui lòng xác nhận "Đã nhận được hàng" trên Shopee khi đơn đã giao thành công\n\n` +
         `🔔 Anh/chị ấn link và tiến hành đặt hàng trong hôm nay nhé 🎉\n` +
         `Ngày mai sẽ có BÁO CÁO hoa hồng chi tiết ạ!`;
 
@@ -830,7 +831,8 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
         `💰 Hoa hồng ước tính: ${commissionText}\n\n` +
         `⚠️ Lưu ý:\n` +
         `1. Không xem VIDEO/LIVE sau khi click link\n` +
-        `2. Hãy xóa giỏ hàng nếu đã thêm trước đó\n\n` +
+        `2. Hãy xóa giỏ hàng nếu đã thêm trước đó\n` +
+        `3. Vui lòng xác nhận "Đã nhận được hàng" trên Shopee khi đơn đã giao thành công\n\n` +
         `🔔 Gửi link cho khách và nhắc đặt hàng trong hôm nay nhé 🎉`;
 
       const msgContent = {
