@@ -202,6 +202,7 @@ export function useOrders() {
     productName: '',
     commissionType: 'Tất cả',
     channel: 'Tất cả',
+    userId: '',
   });
 
   const buildQueryParams = useCallback((f) => {
@@ -217,6 +218,7 @@ export function useOrders() {
     if (f.productName) params.set('productName', f.productName);
     if (f.commissionType && f.commissionType !== 'Tất cả') params.set('commissionType', f.commissionType);
     if (f.channel && f.channel !== 'Tất cả') params.set('channel', f.channel);
+    if (f.userId) params.set('userId', f.userId);
     return params.toString();
   }, []);
 

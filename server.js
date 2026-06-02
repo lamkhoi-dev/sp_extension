@@ -669,26 +669,168 @@ app.get('/api/convert-logs/stats', async (req, res) => {
   res.json(await convertLogStore.getStats());
 });
 
+// Orders Helper: Enrich orders with their corresponding commission tree structure
+async function enrichOrdersWithCommissionChain(orders) {
+  if (!orders || orders.length === 0) return orders;
+
+  try {
+    const users = await db.all('SELECT user_id, display_name, zalo_name, commission_mode, custom_rate, referrer_id FROM users');
+    const userMap = {};
+    for (const u of users) {
+      userMap[u.user_id] = {
+        userId: u.user_id,
+        displayName: u.display_name || u.zalo_name || u.user_id,
+        commissionMode: u.commission_mode || 'normal',
+        customRate: u.custom_rate || 0,
+        referrerId: u.referrer_id || null
+      };
+    }
+
+    const chainCache = {};
+
+    for (const order of orders) {
+      const status = (order.order_status || '').trim();
+      const isCancelled = status === 'Đã hủy' || status === 'Đã huỷ' || status.toLowerCase() === 'cancelled';
+
+      if (isCancelled || !order.sub_id1) {
+        order.commission_chain = null;
+        continue;
+      }
+
+      const buyerId = order.sub_id1;
+
+      if (chainCache[buyerId] === undefined) {
+        const buyer = userMap[buyerId];
+        if (!buyer) {
+          chainCache[buyerId] = null;
+        } else {
+          const isCustomMode = buyer.commissionMode === 'custom';
+
+          if (isCustomMode) {
+            chainCache[buyerId] = {
+              mode: 'custom',
+              buyer: { userId: buyer.userId, displayName: buyer.displayName, customRate: buyer.customRate },
+              referrers: []
+            };
+          } else {
+            const referrers = [];
+            let currentId = buyer.referrerId;
+
+            // F1
+            if (currentId && userMap[currentId]) {
+              const f1 = userMap[currentId];
+              if (f1.commissionMode !== 'custom') {
+                referrers.push({ level: 1, userId: f1.userId, displayName: f1.displayName, rate: 20 });
+                currentId = f1.referrerId;
+
+                // F2
+                if (currentId && userMap[currentId]) {
+                  const f2 = userMap[currentId];
+                  if (f2.commissionMode !== 'custom') {
+                    referrers.push({ level: 2, userId: f2.userId, displayName: f2.displayName, rate: 7 });
+                    currentId = f2.referrerId;
+
+                    // F3
+                    if (currentId && userMap[currentId]) {
+                      const f3 = userMap[currentId];
+                      if (f3.commissionMode !== 'custom') {
+                        referrers.push({ level: 3, userId: f3.userId, displayName: f3.displayName, rate: 3 });
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            chainCache[buyerId] = {
+              mode: 'normal',
+              buyer: { userId: buyer.userId, displayName: buyer.displayName },
+              referrers
+            };
+          }
+        }
+      }
+
+      const chainInfo = chainCache[buyerId];
+      if (chainInfo) {
+        const nc = order.net_commission || 0;
+        const isCustom = chainInfo.mode === 'custom';
+
+        const buyerRate = isCustom ? chainInfo.buyer.customRate : 40;
+        const buyerAmount = Math.round(nc * buyerRate / 100);
+        let distributed = buyerAmount;
+
+        const referrers = [];
+        if (!isCustom) {
+          for (const ref of chainInfo.referrers) {
+            const refAmount = Math.round(nc * ref.rate / 100);
+            distributed += refAmount;
+            referrers.push({
+              userId: ref.userId,
+              displayName: ref.displayName,
+              level: ref.level,
+              rate: ref.rate,
+              amount: refAmount
+            });
+          }
+        }
+
+        const adminAmount = nc - distributed;
+        let totalRefRates = 0;
+        if (!isCustom) {
+          chainInfo.referrers.forEach(r => totalRefRates += r.rate);
+        }
+        const adminRateVal = isCustom ? (100 - buyerRate) : (100 - 40 - totalRefRates);
+
+        order.commission_chain = {
+          mode: chainInfo.mode,
+          buyer: {
+            userId: chainInfo.buyer.userId,
+            displayName: chainInfo.buyer.displayName,
+            rate: buyerRate,
+            amount: buyerAmount
+          },
+          referrers,
+          admin: {
+            rate: adminRateVal,
+            amount: adminAmount
+          }
+        };
+      } else {
+        order.commission_chain = null;
+      }
+    }
+  } catch (err) {
+    console.error('Error enriching orders with commission chain:', err);
+  }
+
+  return orders;
+}
+
 // Orders API
 app.get('/api/orders', async (req, res) => {
   const { search, status, limit = 200, offset = 0,
     timeField, dateFrom, dateTo, orderId, shopName, shopType,
-    productName, commissionType, channel } = req.query;
+    productName, commissionType, channel, userId } = req.query;
 
   const hasAdvancedFilter = timeField || dateFrom || dateTo || orderId
-    || shopName || shopType || productName || commissionType || channel
+    || shopName || shopType || productName || commissionType || channel || userId
     || (status && status !== 'Tất cả');
 
+  let orders = [];
   if (hasAdvancedFilter) {
-    res.json(await orderStore.getFiltered({
+    orders = await orderStore.getFiltered({
       timeField, dateFrom, dateTo, status, orderId,
-      shopName, shopType, productName, commissionType, channel
-    }, parseInt(limit)));
+      shopName, shopType, productName, commissionType, channel, userId
+    }, parseInt(limit));
   } else if (search) {
-    res.json(await orderStore.search(search, parseInt(limit)));
+    orders = await orderStore.search(search, parseInt(limit));
   } else {
-    res.json(await orderStore.getRecent(parseInt(limit), parseInt(offset)));
+    orders = await orderStore.getRecent(parseInt(limit), parseInt(offset));
   }
+
+  await enrichOrdersWithCommissionChain(orders);
+  res.json(orders);
 });
 
 app.get('/api/orders/filter-options', async (req, res) => {
@@ -696,8 +838,8 @@ app.get('/api/orders/filter-options', async (req, res) => {
 });
 
 app.get('/api/orders/stats', async (req, res) => {
-  const { timeField, dateFrom, dateTo, status, orderId, shopName, shopType, productName, commissionType, channel } = req.query;
-  const stats = await orderStore.getStats({ timeField, dateFrom, dateTo, status, orderId, shopName, shopType, productName, commissionType, channel });
+  const { timeField, dateFrom, dateTo, status, orderId, shopName, shopType, productName, commissionType, channel, userId } = req.query;
+  const stats = await orderStore.getStats({ timeField, dateFrom, dateTo, status, orderId, shopName, shopType, productName, commissionType, channel, userId });
 
   // Add clicks from convert_logs (filtered by same date range)
   let clicks = 0;

@@ -218,6 +218,7 @@ const orderStore = {
     if (filters.productName) { conditions.push('item_name LIKE ?'); params.push(`%${filters.productName}%`); }
     if (filters.commissionType && filters.commissionType !== 'Tất cả') { conditions.push('commission_type = ?'); params.push(filters.commissionType); }
     if (filters.channel && filters.channel !== 'Tất cả') { conditions.push('channel = ?'); params.push(filters.channel); }
+    if (filters.userId) { conditions.push('sub_id1 = ?'); params.push(filters.userId); }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -317,6 +318,11 @@ const orderStore = {
       paramIdx++;
       conditions.push('channel = ?');
       params.push(filters.channel);
+    }
+    if (filters.userId) {
+      paramIdx++;
+      conditions.push('sub_id1 = ?');
+      params.push(filters.userId);
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
