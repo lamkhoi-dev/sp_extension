@@ -40,9 +40,8 @@ function layoutGraph(nodes, edges) {
   });
 }
 
-// ─── Custom Node ────────────────────────────────────────
 function UserNode({ data }) {
-  const { user, fLevel, dimmed, childCount, collapsed, onToggle, onClickUser } = data;
+  const { user, fLevel, dimmed, childCount, collapsed, onToggle, onClickUser, onSelectUser } = data;
   const isCustom = user.commission_mode === 'custom';
   const fConfig = fLevel ? F_COLORS[fLevel] : null;
   const borderColor = fConfig ? fConfig.border : (isCustom ? '#f59e0b' : '#334155');
@@ -85,9 +84,20 @@ function UserNode({ data }) {
             className="w-9 h-9 rounded-lg object-cover flex-shrink-0 bg-slate-700"
           />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-white truncate leading-tight">
-              {user.display_name || user.zalo_name || 'Unknown'}
-            </p>
+            <div className="flex items-center justify-between gap-1">
+              <p className="text-sm font-semibold text-white truncate leading-tight flex-1">
+                {user.display_name || user.zalo_name || 'Unknown'}
+              </p>
+              {onSelectUser && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onSelectUser(user); }}
+                  className="p-1 rounded hover:bg-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0"
+                  title="Xem chi tiết"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-1.5 mt-0.5">
               {isCustom ? (
                 <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
@@ -225,6 +235,7 @@ export default function ReferralTree({ users, onSelectUser }) {
         collapsed: collapsedNodes.has(u.user_id),
         onToggle: toggleNode,
         onClickUser: handleClickUser,
+        onSelectUser: onSelectUser,
       },
     }));
 
@@ -254,7 +265,7 @@ export default function ReferralTree({ users, onSelectUser }) {
     const laid = layoutGraph(rawNodes, rawEdges);
     setNodes(laid);
     setEdges(rawEdges);
-  }, [users, hiddenNodes, highlightChain, highlightedUserId, childMap, collapsedNodes, toggleNode, handleClickUser, setNodes, setEdges]);
+  }, [users, hiddenNodes, highlightChain, highlightedUserId, childMap, collapsedNodes, toggleNode, handleClickUser, onSelectUser, setNodes, setEdges]);
 
   // Expand / Collapse All
   const expandAll = useCallback(() => setCollapsedNodes(new Set()), []);
