@@ -584,6 +584,95 @@ const payoutStore = {
         }
       }
 
+      // --- F2/F3 referrer orders (this user is 2nd/3rd-level referrer) ---
+      // Iterate all matched orders and resolve chain to find where userId sits at F2 or F3
+      const allMatchedOrders = await db.all(MATCHED_ORDERS_SQL);
+      const completedF2 = [];
+      const pendingF2 = [];
+      const completedF3 = [];
+      const pendingF3 = [];
+
+      const paidF2Ids = await _getPaidOrderIds(userId, 'f2');
+      const paidF3Ids = await _getPaidOrderIds(userId, 'f3');
+
+      // Batch lookup all buyer IDs for F2/F3 display names
+      const allBuyerIds = [...new Set(allMatchedOrders.map(o => o.sub_id1).filter(Boolean))];
+      const allBuyerMap = { ...buyerMap }; // Start with existing buyerMap from F1
+      if (allBuyerIds.length > 0) {
+        const missingIds = allBuyerIds.filter(id => !allBuyerMap[id]);
+        if (missingIds.length > 0) {
+          const placeholders = missingIds.map((_, i) => `$${i + 1}`).join(',');
+          const rows = await db.all(
+            `SELECT user_id, display_name, avatar FROM users WHERE user_id IN (${placeholders})`,
+            missingIds
+          );
+          for (const r of rows) allBuyerMap[r.user_id] = r;
+        }
+      }
+
+      for (const o of allMatchedOrders) {
+        if (isCancelled(o.order_status)) continue;
+        const nc = o.net_commission || 0;
+        if (nc <= 0) continue;
+
+        const orderBuyerId = o.sub_id1;
+        const orderChain = await resolveCommissionChain(orderBuyerId);
+
+        // Check if this user is F2 for this order
+        if (orderChain.f2 === userId) {
+          const bUser = allBuyerMap[orderBuyerId];
+          const item = {
+            orderId: o.order_id,
+            itemId: o.item_id,
+            itemName: o.item_name,
+            shopName: o.shop_name,
+            price: o.price,
+            quantity: o.quantity,
+            orderStatus: o.order_status,
+            orderTime: o.order_time,
+            completeTime: o.complete_time,
+            netCommission: nc,
+            fCashback: Math.round(nc * COMMISSION_RATES.f2 / 100),
+            buyerName: bUser?.display_name || orderBuyerId,
+            buyerId: orderBuyerId,
+            buyerAvatar: bUser?.avatar || '',
+            type: 'f2',
+          };
+          if (COMPLETED_STATUSES.has(o.order_status)) {
+            if (!paidF2Ids.has(o.order_id)) completedF2.push(item);
+          } else {
+            pendingF2.push(item);
+          }
+        }
+
+        // Check if this user is F3 for this order
+        if (orderChain.f3 === userId) {
+          const bUser = allBuyerMap[orderBuyerId];
+          const item = {
+            orderId: o.order_id,
+            itemId: o.item_id,
+            itemName: o.item_name,
+            shopName: o.shop_name,
+            price: o.price,
+            quantity: o.quantity,
+            orderStatus: o.order_status,
+            orderTime: o.order_time,
+            completeTime: o.complete_time,
+            netCommission: nc,
+            fCashback: Math.round(nc * COMMISSION_RATES.f3 / 100),
+            buyerName: bUser?.display_name || orderBuyerId,
+            buyerId: orderBuyerId,
+            buyerAvatar: bUser?.avatar || '',
+            type: 'f3',
+          };
+          if (COMPLETED_STATUSES.has(o.order_status)) {
+            if (!paidF3Ids.has(o.order_id)) completedF3.push(item);
+          } else {
+            pendingF3.push(item);
+          }
+        }
+      }
+
       // --- Payout history (buyer, referrer, and custom roles) ---
       const payoutHistory = await db.all('SELECT * FROM payouts WHERE user_id = ? ORDER BY paid_at DESC', [userId]);
 
@@ -618,6 +707,10 @@ const payoutStore = {
         pending,
         completedReferrer,
         pendingReferrer,
+        completedF2,
+        pendingF2,
+        completedF3,
+        pendingF3,
         completedCustom,
         pendingCustom,
         payoutHistory,

@@ -107,9 +107,23 @@ export default function PayoutsPage() {
   const totalPending = users.reduce((s, u) => s + u.pendingPayment, 0);
   const totalPaid = users.reduce((s, u) => s + u.totalPaid, 0);
 
-  const filteredHistory = useMemo(() => history.filter(p =>
-    historyTab === 'all' || (historyTab === 'buyer' ? p.role !== 'referrer' : p.role === 'referrer')
-  ), [history, historyTab]);
+  const ROLE_CONFIG = {
+    f0: { label: '🛒 F0', color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20', dot: 'bg-emerald-400' },
+    f1: { label: '🤝 F1', color: 'text-cyan-600 bg-cyan-50 dark:bg-cyan-900/20', dot: 'bg-cyan-400' },
+    f2: { label: '🔗 F2', color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/20', dot: 'bg-sky-400' },
+    f3: { label: '🌐 F3', color: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20', dot: 'bg-indigo-400' },
+    custom: { label: '⭐ Custom', color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20', dot: 'bg-amber-400' },
+    buyer: { label: '🛒 F0', color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20', dot: 'bg-emerald-400' },
+    referrer: { label: '🤝 F1', color: 'text-cyan-600 bg-cyan-50 dark:bg-cyan-900/20', dot: 'bg-cyan-400' },
+    combined: { label: '💰 Tổng', color: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20', dot: 'bg-blue-400' },
+  };
+  const getRoleConfig = (role) => ROLE_CONFIG[role] || ROLE_CONFIG.f0;
+
+  const filteredHistory = useMemo(() => history.filter(p => {
+    if (historyTab === 'all') return true;
+    const normalizedRole = p.role === 'buyer' ? 'f0' : p.role === 'referrer' ? 'f1' : p.role;
+    return normalizedRole === historyTab;
+  }), [history, historyTab]);
 
   const totalHistoryPages = Math.ceil(filteredHistory.length / HISTORY_PAGE_SIZE);
   const pagedHistory = useMemo(() => {
@@ -227,7 +241,7 @@ export default function PayoutsPage() {
                       <p className="text-[10px] text-slate-400">
                         {user.totalOrders > 0 ? `${user.totalOrders} đơn` : ''}
                         {user.referrerOrderCount > 0 ? `${user.totalOrders > 0 ? ' • ' : ''}${user.referrerOrderCount} GT` : ''}
-                        {user.buyerRate > 0 ? ` • ${user.buyerRate}/${user.referrerRate}/${user.adminRate}%` : ''}
+                        {user.commissionMode === 'custom' ? <span className="text-amber-500 font-medium"> • ⭐ Custom {user.f0Rate}%</span> : ''}
                       </p>
                     </div>
                   </div>
@@ -238,10 +252,12 @@ export default function PayoutsPage() {
                   </div>
                   {/* Buyer+Referrer+Custom Cashback Breakdown */}
                   <div className="col-span-2 text-right space-y-0.5">
-                    {user.pendingBuyerPayment > 0 && <p className="text-[10px] font-semibold text-emerald-500">🛒 {formatVND(user.pendingBuyerPayment)}</p>}
-                    {user.pendingReferrerPayment > 0 && <p className="text-[10px] font-semibold text-cyan-500">🤝 {formatVND(user.pendingReferrerPayment)}</p>}
-                    {user.pendingCustomPayment > 0 && <p className="text-[10px] font-semibold text-purple-500">✨ {formatVND(user.pendingCustomPayment)}</p>}
-                    {user.pendingBuyerPayment === 0 && user.pendingReferrerPayment === 0 && !user.pendingCustomPayment && <p className="text-[10px] text-slate-400">—</p>}
+                    {user.pendingBuyerPayment > 0 && <p className="text-[10px] font-semibold text-emerald-500">🛒 F0 {formatVND(user.pendingBuyerPayment)}</p>}
+                    {user.pendingF1Payment > 0 && <p className="text-[10px] font-semibold text-cyan-500">🤝 F1 {formatVND(user.pendingF1Payment)}</p>}
+                    {user.pendingF2Payment > 0 && <p className="text-[10px] font-semibold text-sky-500">🔗 F2 {formatVND(user.pendingF2Payment)}</p>}
+                    {user.pendingF3Payment > 0 && <p className="text-[10px] font-semibold text-indigo-500">🌐 F3 {formatVND(user.pendingF3Payment)}</p>}
+                    {user.pendingCustomPayment > 0 && <p className="text-[10px] font-semibold text-amber-500">⭐ Custom {formatVND(user.pendingCustomPayment)}</p>}
+                    {user.pendingBuyerPayment === 0 && !user.pendingF1Payment && !user.pendingF2Payment && !user.pendingF3Payment && !user.pendingCustomPayment && <p className="text-[10px] text-slate-400">—</p>}
                   </div>
                   {/* Paid */}
                   <div className="col-span-2 text-right">
@@ -252,12 +268,8 @@ export default function PayoutsPage() {
                     <p className={`text-sm font-bold ${user.pendingPayment > 0 ? 'text-amber-500' : 'text-slate-400'}`}>
                       {formatVND(user.pendingPayment)}
                     </p>
-                    {user.pendingPayment > 0 && (
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        {user.buyerRate > 0 && <span className="text-emerald-500">{user.buyerRate}%</span>}
-                        {user.buyerRate > 0 && user.referrerRate > 0 && <span> + </span>}
-                        {user.referrerRate > 0 && <span className="text-cyan-500">{user.referrerRate}%</span>}
-                      </p>
+                    {user.pendingPayment > 0 && user.commissionMode === 'custom' && (
+                      <p className="text-[10px] text-amber-500 mt-0.5 font-medium">⭐ Custom {user.f0Rate}%</p>
                     )}
                   </div>
                   {/* Pay Button — per-user loading */}
@@ -329,11 +341,26 @@ export default function PayoutsPage() {
                           const unpaidCompleted = remainingOrders.reverse();
                           const completedReferrer = userDetail.completedReferrer || [];
                           const pendingReferrer = userDetail.pendingReferrer || [];
+                          const completedF2 = userDetail.completedF2 || [];
+                          const pendingF2 = userDetail.pendingF2 || [];
+                          const completedF3 = userDetail.completedF3 || [];
+                          const pendingF3 = userDetail.pendingF3 || [];
                           const completedCustom = userDetail.completedCustom || [];
                           const pendingCustom = userDetail.pendingCustom || [];
                           const customRate = userDetail.customRate || 0;
-                          const totalCompleted = unpaidCompleted.length + completedReferrer.length + completedCustom.length;
-                          const totalPending = (userDetail.pending?.length || 0) + pendingReferrer.length + pendingCustom.length;
+                          const totalCompleted = unpaidCompleted.length + completedReferrer.length + completedF2.length + completedF3.length + completedCustom.length;
+                          const totalPending = (userDetail.pending?.length || 0) + pendingReferrer.length + pendingF2.length + pendingF3.length + pendingCustom.length;
+
+                          // F-level branch config for DRY rendering
+                          const F_BRANCHES = [
+                            { key: 'f0', label: '🛒 F0 — Hoa hồng mua 40%', completed: unpaidCompleted, pending: userDetail.pending || [], dot: 'bg-emerald-400', text: 'text-emerald-500 dark:text-emerald-400', bg: 'bg-emerald-50/60 dark:bg-emerald-900/15', border: 'border-emerald-200/60 dark:border-emerald-800/30', cashbackField: 'buyerCashback', showBuyer: false },
+                            { key: 'f1', label: '🤝 F1 — Giới thiệu cấp 1 20%', completed: completedReferrer, pending: pendingReferrer, dot: 'bg-cyan-400', text: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50/60 dark:bg-cyan-900/15', border: 'border-cyan-200/60 dark:border-cyan-800/30', cashbackField: 'referrerCashback', showBuyer: true },
+                            { key: 'f2', label: '🔗 F2 — Giới thiệu cấp 2 7%', completed: completedF2, pending: pendingF2, dot: 'bg-sky-400', text: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50/60 dark:bg-sky-900/15', border: 'border-sky-200/60 dark:border-sky-800/30', cashbackField: 'fCashback', showBuyer: true },
+                            { key: 'f3', label: '🌐 F3 — Giới thiệu cấp 3 3%', completed: completedF3, pending: pendingF3, dot: 'bg-indigo-400', text: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50/60 dark:bg-indigo-900/15', border: 'border-indigo-200/60 dark:border-indigo-800/30', cashbackField: 'fCashback', showBuyer: true },
+                            { key: 'custom', label: `⭐ Hoa hồng Custom ${customRate}%`, completed: completedCustom, pending: pendingCustom, dot: 'bg-amber-400', text: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50/60 dark:bg-amber-900/15', border: 'border-amber-200/60 dark:border-amber-800/30', cashbackField: 'customCashback', showBuyer: false, showPhone: true },
+                          ];
+                          // Only show branches that have data (completed or pending)
+                          const activeBranches = F_BRANCHES.filter(b => b.completed.length > 0 || b.pending.length > 0);
 
                           return (
                             <>
@@ -350,117 +377,59 @@ export default function PayoutsPage() {
                                   <p className="text-xs text-slate-400 italic ml-8 py-1">— Trống (đã thanh toán hết hoặc chưa có đơn hoàn thành)</p>
                                 ) : (
                                   <>
-                                    {/* Sub-branch: Buyer Commission */}
-                                    <div className="flex items-stretch">
-                                      <TreeLine isLast={completedReferrer.length === 0 && completedCustom.length === 0} />
-                                      <div className="flex-1 ml-1 mb-1">
-                                        <div className="flex items-center gap-1.5 py-1 px-2">
-                                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                          <span className="text-[10px] font-semibold text-emerald-500 dark:text-emerald-400 uppercase tracking-wider">
-                                            🛒 Hoa hồng mua ({unpaidCompleted.length})
-                                          </span>
-                                        </div>
-                                        {unpaidCompleted.length > 0 ? unpaidCompleted.map((item, idx) => (
-                                          <div key={`cb-${idx}`} className="flex items-stretch">
-                                            <TreeLine isLast={idx === unpaidCompleted.length - 1} />
-                                            <div className="flex-1 ml-1 mb-1 bg-emerald-50/60 dark:bg-emerald-900/15 rounded-lg border border-emerald-200/60 dark:border-emerald-800/30 px-3 py-2">
-                                              <div className="flex items-center justify-between gap-2">
-                                                <div className="min-w-0 flex-1">
-                                                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.itemName}</p>
-                                                  <p className="text-[10px] text-slate-400">
-                                                    #{item.orderId} • {item.shopName} • {item.orderTime}
-                                                  </p>
-                                                </div>
-                                                <div className="flex-shrink-0 text-right">
-                                                  <p className="text-xs text-slate-500">HH: {formatVND(item.netCommission)}</p>
-                                                  <p className="text-sm font-bold text-emerald-600">→ {formatVND(item.buyerCashback)}</p>
-                                                </div>
-                                              </div>
+                                    {F_BRANCHES.map((branch, bIdx) => {
+                                      if (branch.completed.length === 0) return null;
+                                      const remainingBranches = F_BRANCHES.slice(bIdx + 1).filter(b => b.completed.length > 0);
+                                      const isLastBranch = remainingBranches.length === 0;
+                                      return (
+                                        <div key={`c-${branch.key}`} className="flex items-stretch">
+                                          <TreeLine isLast={isLastBranch} />
+                                          <div className="flex-1 ml-1 mb-1">
+                                            <div className="flex items-center gap-1.5 py-1 px-2">
+                                              <div className={`w-1.5 h-1.5 rounded-full ${branch.dot}`} />
+                                              <span className={`text-[10px] font-semibold ${branch.text} uppercase tracking-wider`}>
+                                                {branch.label} ({branch.completed.length})
+                                              </span>
                                             </div>
-                                          </div>
-                                        )) : (
-                                          <p className="text-xs text-slate-400 italic ml-8 py-1">— Trống</p>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {/* Sub-branch: Referrer Commission */}
-                                    <div className="flex items-stretch">
-                                      <TreeLine isLast={completedCustom.length === 0} />
-                                      <div className="flex-1 ml-1 mb-1">
-                                        <div className="flex items-center gap-1.5 py-1 px-2">
-                                          <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                                          <span className="text-[10px] font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">
-                                            🤝 Hoa hồng giới thiệu ({completedReferrer.length})
-                                          </span>
-                                        </div>
-                                        {completedReferrer.length > 0 ? completedReferrer.map((item, idx) => (
-                                          <div key={`cr-${idx}`} className="flex items-stretch">
-                                            <TreeLine isLast={idx === completedReferrer.length - 1} />
-                                            <div className="flex-1 ml-1 mb-1 bg-cyan-50/60 dark:bg-cyan-900/15 rounded-lg border border-cyan-200/60 dark:border-cyan-800/30 px-3 py-2">
-                                              <div className="flex items-center justify-between gap-2">
-                                                <div className="min-w-0 flex-1">
-                                                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.itemName}</p>
-                                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                                    {item.buyerAvatar ? (
-                                                      <img src={item.buyerAvatar} alt="" className="w-4 h-4 rounded-full object-cover border border-cyan-200" onError={e => e.target.style.display='none'} />
-                                                    ) : (
-                                                      <div className="w-4 h-4 rounded-full bg-cyan-100 dark:bg-cyan-800 flex items-center justify-center text-[8px] font-bold text-cyan-600">
-                                                        {(item.buyerName || '?').charAt(0).toUpperCase()}
+                                            {branch.completed.map((item, idx) => (
+                                              <div key={`c-${branch.key}-${idx}`} className="flex items-stretch">
+                                                <TreeLine isLast={idx === branch.completed.length - 1} />
+                                                <div className={`flex-1 ml-1 mb-1 ${branch.bg} rounded-lg border ${branch.border} px-3 py-2`}>
+                                                  <div className="flex items-center justify-between gap-2">
+                                                    <div className="min-w-0 flex-1">
+                                                      <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.itemName}</p>
+                                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                                        {branch.showBuyer && (
+                                                          <>
+                                                            {item.buyerAvatar ? (
+                                                              <img src={item.buyerAvatar} alt="" className="w-4 h-4 rounded-full object-cover border border-slate-200" onError={e => e.target.style.display='none'} />
+                                                            ) : (
+                                                              <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold ${branch.bg} ${branch.text}`}>
+                                                                {(item.buyerName || '?').charAt(0).toUpperCase()}
+                                                              </div>
+                                                            )}
+                                                          </>
+                                                        )}
+                                                        <p className="text-[10px] text-slate-400">
+                                                          #{item.orderId} • {item.shopName}
+                                                          {branch.showBuyer && item.buyerName ? ` • ${item.buyerName}` : ''}
+                                                          {branch.showPhone ? ` • 📱 ${item.phone || '--'}` : ''}
+                                                          {item.orderTime ? ` • ${item.orderTime}` : ''}
+                                                        </p>
                                                       </div>
-                                                    )}
-                                                    <p className="text-[10px] text-slate-400">
-                                                      #{item.orderId} • {item.shopName} • {item.buyerName}
-                                                    </p>
-                                                  </div>
-                                                </div>
-                                                <div className="flex-shrink-0 text-right">
-                                                  <p className="text-xs text-slate-500">HH: {formatVND(item.netCommission)}</p>
-                                                  <p className="text-sm font-bold text-cyan-600">→ {formatVND(item.referrerCashback)}</p>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )) : (
-                                          <p className="text-xs text-slate-400 italic ml-8 py-1">— Trống</p>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {/* Sub-branch: Custom Commission */}
-                                    {completedCustom.length > 0 && (
-                                      <div className="flex items-stretch">
-                                        <TreeLine isLast={true} />
-                                        <div className="flex-1 ml-1 mb-1">
-                                          <div className="flex items-center gap-1.5 py-1 px-2">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                                            <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
-                                              ✨ Hoa hồng tuỳ chỉnh ({completedCustom.length})
-                                            </span>
-                                          </div>
-                                          {completedCustom.map((item, idx) => (
-                                            <div key={`cc-${idx}`} className="flex items-stretch">
-                                              <TreeLine isLast={idx === completedCustom.length - 1} />
-                                              <div className="flex-1 ml-1 mb-1 bg-purple-50/60 dark:bg-purple-900/15 rounded-lg border border-purple-200/60 dark:border-purple-800/30 px-3 py-2">
-                                                <div className="flex items-center justify-between gap-2">
-                                                  <div className="min-w-0 flex-1">
-                                                    <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.itemName}</p>
-                                                    <p className="text-[10px] text-slate-400">
-                                                      #{item.orderId} • {item.shopName} • 📱 {item.phone || '--'}
-                                                    </p>
-                                                  </div>
-                                                  <div className="flex-shrink-0 text-right">
-                                                    <p className="text-xs text-slate-500">HH: {formatVND(item.netCommission)}</p>
-                                                    <p className="text-sm font-bold text-purple-600">→ {formatVND(item.customCashback)}</p>
-                                                    <p className="text-[10px] text-purple-400">{customRate}%</p>
+                                                    </div>
+                                                    <div className="flex-shrink-0 text-right">
+                                                      <p className="text-xs text-slate-500">HH: {formatVND(item.netCommission)}</p>
+                                                      <p className={`text-sm font-bold ${branch.text}`}>→ {formatVND(item[branch.cashbackField])}</p>
+                                                    </div>
                                                   </div>
                                                 </div>
                                               </div>
-                                            </div>
-                                          ))}
+                                            ))}
+                                          </div>
                                         </div>
-                                      </div>
-                                    )}
+                                      );
+                                    })}
                                   </>
                                 )}
                               </div>
@@ -478,118 +447,59 @@ export default function PayoutsPage() {
                                   <p className="text-xs text-slate-400 italic ml-8 py-1">— Trống (không có đơn đang xử lý)</p>
                                 ) : (
                                   <>
-                                    {/* Sub-branch: Buyer Pending */}
-                                    <div className="flex items-stretch">
-                                      <TreeLine isLast={pendingReferrer.length === 0 && pendingCustom.length === 0} />
-                                      <div className="flex-1 ml-1 mb-1">
-                                        <div className="flex items-center gap-1.5 py-1 px-2">
-                                          <div className="w-1.5 h-1.5 rounded-full bg-amber-300" />
-                                          <span className="text-[10px] font-semibold text-amber-500 dark:text-amber-400 uppercase tracking-wider">
-                                            🛒 Hoa hồng mua ({userDetail.pending?.length || 0})
-                                          </span>
-                                        </div>
-                                        {(userDetail.pending?.length || 0) > 0 ? userDetail.pending.map((item, idx) => (
-                                          <div key={`pb-${idx}`} className="flex items-stretch">
-                                            <TreeLine isLast={idx === userDetail.pending.length - 1} />
-                                            <div className="flex-1 ml-1 mb-1 bg-amber-50/40 dark:bg-amber-900/10 rounded-lg border border-amber-200/50 dark:border-amber-800/30 px-3 py-2 opacity-70">
-                                              <div className="flex items-center justify-between gap-2">
-                                                <div className="min-w-0 flex-1">
-                                                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.itemName}</p>
-                                                  <p className="text-[10px] text-slate-400">
-                                                    #{item.orderId} • {item.shopName} • {item.orderStatus}
-                                                  </p>
-                                                </div>
-                                                <div className="flex-shrink-0 text-right">
-                                                  <p className="text-xs text-slate-500">HH: {formatVND(item.netCommission)}</p>
-                                                  <p className="text-sm font-medium text-amber-500">→ {formatVND(item.buyerCashback)}</p>
-                                                </div>
-                                              </div>
+                                    {F_BRANCHES.map((branch, bIdx) => {
+                                      if (branch.pending.length === 0) return null;
+                                      const remainingBranches = F_BRANCHES.slice(bIdx + 1).filter(b => b.pending.length > 0);
+                                      const isLastBranch = remainingBranches.length === 0;
+                                      return (
+                                        <div key={`p-${branch.key}`} className="flex items-stretch">
+                                          <TreeLine isLast={isLastBranch} />
+                                          <div className="flex-1 ml-1 mb-1">
+                                            <div className="flex items-center gap-1.5 py-1 px-2">
+                                              <div className={`w-1.5 h-1.5 rounded-full ${branch.dot} opacity-60`} />
+                                              <span className={`text-[10px] font-semibold ${branch.text} uppercase tracking-wider opacity-80`}>
+                                                {branch.label} ({branch.pending.length})
+                                              </span>
                                             </div>
-                                          </div>
-                                        )) : (
-                                          <p className="text-xs text-slate-400 italic ml-8 py-1">— Trống</p>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {/* Sub-branch: Referrer Pending */}
-                                    <div className="flex items-stretch">
-                                      <TreeLine isLast={pendingCustom.length === 0} />
-                                      <div className="flex-1 ml-1 mb-1">
-                                        <div className="flex items-center gap-1.5 py-1 px-2">
-                                          <div className="w-1.5 h-1.5 rounded-full bg-cyan-300" />
-                                          <span className="text-[10px] font-semibold text-cyan-500 dark:text-cyan-400 uppercase tracking-wider">
-                                            🤝 Hoa hồng giới thiệu ({pendingReferrer.length})
-                                          </span>
-                                        </div>
-                                        {pendingReferrer.length > 0 ? pendingReferrer.map((item, idx) => (
-                                          <div key={`pr-${idx}`} className="flex items-stretch">
-                                            <TreeLine isLast={idx === pendingReferrer.length - 1} />
-                                            <div className="flex-1 ml-1 mb-1 bg-cyan-50/40 dark:bg-cyan-900/10 rounded-lg border border-cyan-200/50 dark:border-cyan-800/30 px-3 py-2 opacity-70">
-                                              <div className="flex items-center justify-between gap-2">
-                                                <div className="min-w-0 flex-1">
-                                                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.itemName}</p>
-                                                  <div className="flex items-center gap-1.5 mt-0.5">
-                                                    {item.buyerAvatar ? (
-                                                      <img src={item.buyerAvatar} alt="" className="w-4 h-4 rounded-full object-cover border border-cyan-200" onError={e => e.target.style.display='none'} />
-                                                    ) : (
-                                                      <div className="w-4 h-4 rounded-full bg-cyan-100 dark:bg-cyan-800 flex items-center justify-center text-[8px] font-bold text-cyan-600">
-                                                        {(item.buyerName || '?').charAt(0).toUpperCase()}
+                                            {branch.pending.map((item, idx) => (
+                                              <div key={`p-${branch.key}-${idx}`} className="flex items-stretch">
+                                                <TreeLine isLast={idx === branch.pending.length - 1} />
+                                                <div className={`flex-1 ml-1 mb-1 ${branch.bg} rounded-lg border ${branch.border} px-3 py-2 opacity-70`}>
+                                                  <div className="flex items-center justify-between gap-2">
+                                                    <div className="min-w-0 flex-1">
+                                                      <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.itemName}</p>
+                                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                                        {branch.showBuyer && (
+                                                          <>
+                                                            {item.buyerAvatar ? (
+                                                              <img src={item.buyerAvatar} alt="" className="w-4 h-4 rounded-full object-cover border border-slate-200" onError={e => e.target.style.display='none'} />
+                                                            ) : (
+                                                              <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold ${branch.bg} ${branch.text}`}>
+                                                                {(item.buyerName || '?').charAt(0).toUpperCase()}
+                                                              </div>
+                                                            )}
+                                                          </>
+                                                        )}
+                                                        <p className="text-[10px] text-slate-400">
+                                                          #{item.orderId} • {item.shopName}
+                                                          {branch.showBuyer && item.buyerName ? ` • ${item.buyerName}` : ''}
+                                                          {branch.showPhone ? ` • 📱 ${item.phone || '--'}` : ''}
+                                                          {item.orderStatus ? ` • ${item.orderStatus}` : ''}
+                                                        </p>
                                                       </div>
-                                                    )}
-                                                    <p className="text-[10px] text-slate-400">
-                                                      #{item.orderId} • {item.shopName} • {item.buyerName} • {item.orderStatus}
-                                                    </p>
-                                                  </div>
-                                                </div>
-                                                <div className="flex-shrink-0 text-right">
-                                                  <p className="text-xs text-slate-500">HH: {formatVND(item.netCommission)}</p>
-                                                  <p className="text-sm font-medium text-cyan-500">→ {formatVND(item.referrerCashback)}</p>
-                                                </div>
-                                              </div>
-
-                                            </div>
-                                          </div>
-                                        )) : (
-                                          <p className="text-xs text-slate-400 italic ml-8 py-1">— Trống</p>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {/* Sub-branch: Custom Pending */}
-                                    {pendingCustom.length > 0 && (
-                                      <div className="flex items-stretch">
-                                        <TreeLine isLast={true} />
-                                        <div className="flex-1 ml-1 mb-1">
-                                          <div className="flex items-center gap-1.5 py-1 px-2">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-purple-300" />
-                                            <span className="text-[10px] font-semibold text-purple-500 dark:text-purple-400 uppercase tracking-wider">
-                                              ✨ Hoa hồng tuỳ chỉnh ({pendingCustom.length})
-                                            </span>
-                                          </div>
-                                          {pendingCustom.map((item, idx) => (
-                                            <div key={`pc-${idx}`} className="flex items-stretch">
-                                              <TreeLine isLast={idx === pendingCustom.length - 1} />
-                                              <div className="flex-1 ml-1 mb-1 bg-purple-50/40 dark:bg-purple-900/10 rounded-lg border border-purple-200/40 dark:border-purple-800/20 px-3 py-2">
-                                                <div className="flex items-center justify-between gap-2">
-                                                  <div className="min-w-0 flex-1">
-                                                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{item.itemName}</p>
-                                                    <p className="text-[10px] text-slate-400">
-                                                      #{item.orderId} • {item.shopName} • 📱 {item.phone || '--'}
-                                                    </p>
-                                                  </div>
-                                                  <div className="flex-shrink-0 text-right">
-                                                    <p className="text-xs text-slate-500">HH: {formatVND(item.netCommission)}</p>
-                                                    <p className="text-sm font-medium text-purple-500">→ {formatVND(item.customCashback)}</p>
-                                                    <p className="text-[10px] text-purple-400">{customRate}%</p>
+                                                    </div>
+                                                    <div className="flex-shrink-0 text-right">
+                                                      <p className="text-xs text-slate-500">HH: {formatVND(item.netCommission)}</p>
+                                                      <p className={`text-sm font-medium ${branch.text}`}>→ {formatVND(item[branch.cashbackField])}</p>
+                                                    </div>
                                                   </div>
                                                 </div>
                                               </div>
-                                            </div>
-                                          ))}
+                                            ))}
+                                          </div>
                                         </div>
-                                      </div>
-                                    )}
+                                      );
+                                    })}
                                   </>
                                 )}
                               </div>
@@ -616,7 +526,7 @@ export default function PayoutsPage() {
                                               <div className="px-3 py-2 flex items-center justify-between gap-2">
                                                 <div className="min-w-0 flex-1">
                                                   <p className="text-sm font-medium text-slate-900 dark:text-white">
-                                                    {p.user_name || 'User'} — <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">{p.role || 'buyer'}</span>
+                                                    {p.user_name || 'User'} — <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${getRoleConfig(p.role).color}`}>{getRoleConfig(p.role).label}</span>
                                                   </p>
                                                   <p className="text-[10px] text-slate-400">
                                                     {new Date(p.paid_at).toLocaleString('vi-VN')} • {p.payment_method || '—'}
@@ -638,8 +548,8 @@ export default function PayoutsPage() {
                                                         <p className="text-xs text-slate-700 dark:text-slate-300 truncate">{mo.itemName}</p>
                                                       </div>
                                                       <div className="flex-shrink-0 text-right flex items-center gap-1.5">
-                                                        {mo.role === 'referrer' && <span className="text-[9px] px-1 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600">GT</span>}
-                                                        <p className={`text-[10px] font-medium ${mo.role === 'referrer' ? 'text-cyan-600/90' : 'text-emerald-600/90'}`}>+{formatVND(mo.cashback || mo.buyerCashback)}</p>
+                                                        {(() => { const moRc = getRoleConfig(mo.role); return mo.role && mo.role !== 'buyer' && mo.role !== 'f0' ? <span className={`text-[9px] px-1 py-0.5 rounded ${moRc.color}`}>{moRc.label}</span> : null; })()}
+                                                        <p className={`text-[10px] font-medium ${getRoleConfig(mo.role).color.split(' ')[0]}`}>+{formatVND(mo.cashback || mo.buyerCashback || mo.referrerCashback || mo.fCashback || 0)}</p>
                                                       </div>
                                                     </div>
                                                   ))}
@@ -715,20 +625,17 @@ export default function PayoutsPage() {
           {/* Tabs */}
           <div className="flex gap-1">
             {[
-              { key: 'all', label: 'Tất cả', count: history.length },
-              { key: 'buyer', label: '🛒 Buyer', count: history.filter(h => h.role !== 'referrer').length },
-              { key: 'referrer', label: '🤝 Referrer', count: history.filter(h => h.role === 'referrer').length },
+              { key: 'all', label: 'Tất cả', count: history.length, activeColor: 'bg-blue-500 text-white shadow-sm' },
+              { key: 'f0', label: '🛒 F0', count: history.filter(h => h.role === 'buyer' || h.role === 'f0').length, activeColor: 'bg-emerald-500 text-white shadow-sm' },
+              { key: 'f1', label: '🤝 F1', count: history.filter(h => h.role === 'referrer' || h.role === 'f1').length, activeColor: 'bg-cyan-500 text-white shadow-sm' },
+              { key: 'custom', label: '⭐ Custom', count: history.filter(h => h.role === 'custom').length, activeColor: 'bg-amber-500 text-white shadow-sm' },
             ].map(tab => (
               <button
                 key={tab.key}
                 onClick={() => { setHistoryTab(tab.key); setHistoryPage(1); }}
                 className={`px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
                   historyTab === tab.key
-                    ? tab.key === 'buyer'
-                      ? 'bg-emerald-500 text-white shadow-sm'
-                      : tab.key === 'referrer'
-                        ? 'bg-cyan-500 text-white shadow-sm'
-                        : 'bg-blue-500 text-white shadow-sm'
+                    ? tab.activeColor
                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
@@ -760,8 +667,7 @@ export default function PayoutsPage() {
                 } catch { return []; }
               })();
               const paidDate = p.paid_at ? new Date(p.paid_at) : null;
-              const roleLabel = p.role === 'referrer' ? '🤝 GT' : '🛒 Mua';
-              const roleColor = p.role === 'referrer' ? 'text-cyan-600 bg-cyan-50 dark:bg-cyan-900/20' : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20';
+              const rc = getRoleConfig(p.role);
               const isExpanded = expandedHistoryIds.has(p.id);
 
               return (
@@ -773,16 +679,14 @@ export default function PayoutsPage() {
                     <div className="flex items-start gap-3">
                       {/* Timeline dot */}
                       <div className="flex flex-col items-center mt-1">
-                        <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
-                          p.role === 'referrer' ? 'bg-cyan-400' : 'bg-emerald-400'
-                        }`} />
+                        <div className={`w-3 h-3 rounded-full flex-shrink-0 ${rc.dot}`} />
                       </div>
 
                       {/* Content */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-semibold text-slate-900 dark:text-white">{p.user_name || p.user_id}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${roleColor}`}>{roleLabel}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${rc.color}`}>{rc.label}</span>
                           <span className="text-sm font-bold text-emerald-600">−{formatVND(p.amount)}</span>
                           {p.payment_method && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-500">
