@@ -1192,7 +1192,8 @@ app.get('/api/redirect-stats', async (req, res) => {
 app.get('/api/users/select', async (req, res) => {
   const users = await db.all(`
     SELECT user_id, display_name, zalo_name, avatar, referrer_id, referrer_name,
-           cashback_buyer_rate, cashback_referrer_rate, referrer_earn_rate, is_special
+           cashback_buyer_rate, cashback_referrer_rate, referrer_earn_rate, is_special,
+           commission_mode, custom_rate
     FROM users ORDER BY display_name ASC
   `);
   res.json(users);
