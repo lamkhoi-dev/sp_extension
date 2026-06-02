@@ -295,7 +295,7 @@ ${reportUrl}
           errLine = `⚠️ Không nhận diện được ngân hàng "${parsed.value}". Vui lòng dùng mã ở danh sách bên dưới.`;
           break;
         case 'bad_account':
-          errLine = '⚠️ Số tài khoản không hợp lệ (cần 8–19 chữ số).';
+          errLine = '⚠️ Số tài khoản không hợp lệ (chỉ gồm chữ số).';
           break;
         case 'bad_holder':
           errLine = '⚠️ Tên chủ tài khoản quá ngắn. Vui lòng nhập đầy đủ.';

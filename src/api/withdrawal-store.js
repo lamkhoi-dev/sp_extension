@@ -109,8 +109,8 @@ function parseRuttienArgs(text) {
   const bankCode = normaliseBankCode(bankRaw);
   if (!bankCode) return { ok: false, error: 'unknown_bank', value: bankRaw };
 
-  // Account number: 8-19 digits
-  if (!/^\d{8,19}$/.test(accountRaw)) {
+  // Account number: 4-25 digits (covers short codes, phone, bank accounts)
+  if (!/^\d{4,25}$/.test(accountRaw)) {
     return { ok: false, error: 'bad_account' };
   }
 
@@ -125,9 +125,6 @@ function parseRuttienArgs(text) {
  * Compute the user's currently withdrawable amount by summing all unpaid
  * completed cashbacks across F0/F1/F2/F3/Custom roles. Re-uses payout-store's
  * canonical filter (excludes cancelled, excludes already-paid via paid_orders).
- *
- * NOTE: On older versions of payout-store (pre F2/F3), completedF2/completedF3
- * are undefined and treated as 0 — the function degrades gracefully.
  */
 async function computeUserPending(userId) {
   try {
