@@ -5,6 +5,7 @@ const reportGenerator = require('../stats/report-generator');
 const reportStore = require('../stats/report-store');
 const { sendMail } = require('../utils/mailer');
 const linkRedirectStore = require('../api/link-redirect-store');
+const withdrawalStore = require('../api/withdrawal-store');
 
 
 const shopee = new ShopeeAPI();
@@ -23,7 +24,8 @@ Xin chào! Gửi link Shopee hoặc tên sản phẩm, tôi sẽ tạo affiliate
 /link <URL> <sub_id> — Tạo link có Sub ID
 /custom <URL shopee> <số_điện_thoại> — Tạo link tuỳ chỉnh cho khách (chỉ DM)
 /search <tên SP> — Tìm sản phẩm
-/thongke — Xem thống kê cá nhân (chat riêng)
+/thongke — Xem thống kê cá nhân (chỉ DM)
+/ruttien — Yêu cầu rút hoa hồng (chỉ DM)
 /status — Xem trạng thái hệ thống
 /help — Hiển thị hướng dẫn
 
@@ -31,7 +33,8 @@ Xin chào! Gửi link Shopee hoặc tên sản phẩm, tôi sẽ tạo affiliate
 /search Bông mút rửa mặt
 /link https://shopee.vn/product/1391725226/26326757902
 /link https://s.shopee.vn/qfmqIMWXN tele_bot
-/custom https://shopee.vn/product/... 0912345678`;
+/custom https://shopee.vn/product/... 0912345678
+/ruttien VCB 1234567890 NGUYEN VAN A`;
 
 const WELCOME_NEW_FRIEND = (name) =>
   `👋 Chào ${name}!\n\nCảm ơn bạn đã kết bạn. Tôi là bot tạo affiliate link Shopee tự động.\n\nGõ /help để xem hướng dẫn nhé!`;
@@ -117,6 +120,13 @@ class ZaloCommands {
           await this.actions.humanReply(message, replyText, { react: false });
         } else {
           replyText = await this._handleThongke(message);
+        }
+      } else if (text === '/ruttien' || text.startsWith('/ruttien ')) {
+        if (isGroup) {
+          replyText = '⚠️ Lệnh /ruttien chỉ dùng trong tin nhắn riêng để bảo mật thông tin tài khoản.';
+          await this.actions.humanReply(message, replyText, { react: false });
+        } else {
+          replyText = await this._handleRuttien(message, text);
         }
       } else if (text.startsWith('/search ')) {
         const keyword = text.slice(8).trim();
@@ -215,42 +225,45 @@ class ZaloCommands {
       const serverUrl = process.env.SERVER_URL || 'http://localhost:3456';
       const reportUrl = `${serverUrl}/s/${token}`;
 
-      const customSection = data.summary.hasCustomOrders
-        ? `
+      const s = data.summary;
+      const isCustom = data.user.isCustomMode;
+      const f0Rate = data.user.f0Rate;
+      const rates = data.rates;
 
-🎯 Đơn Custom (F1):
-` +
-          `   Tỷ lệ: ${data.summary.customRate}% • ${data.summary.totalCustomOrders} đơn
-` +
-          `   💜 Hoa hồng: ${formatVND(data.summary.totalCustomCashback)}
-` +
-          `   ✅ Đã nhận: ${formatVND(data.summary.totalCustomPaid)}
-` +
-          `   ⏳ Chờ duyệt: ${formatVND(data.summary.pendingCustomPayment)}
-` +
-          `   👤 ${data.summary.uniqueF2Count} khách F2`
+      // ─ Buyer block (luôn show) ─
+      const buyerBlock = `🛒 Mua hàng (${isCustom ? 'Custom' : 'F0'} ${f0Rate}%)
+   Đơn: ${s.totalOrders} • Raw: ${formatVND(s.totalNetCommission)}
+   Bạn nhận: ${formatVND(s.totalBuyerCashback)}
+   Đã trả: ${formatVND(s.totalPaidAsBuyer)}
+   Chờ trả: ${formatVND(s.pendingBuyerPayment)}`;
+
+      // ─ Referrer block (chỉ show nếu có downline) ─
+      const referrerBlock = (s.ctvCount > 0)
+        ? `\n\n👥 Thu nhập từ CTV (${s.ctvCount} F1 trực tiếp)
+   F1 (×${rates.f1}%): ${formatVND(s.totalF1Earnings)}
+   F2 (×${rates.f2}%): ${formatVND(s.totalF2Earnings)}
+   F3 (×${rates.f3}%): ${formatVND(s.totalF3Earnings)}
+   Tổng: ${formatVND(s.totalReferrerEarnings)}`
         : '';
 
-      const replyText = `📊 Thống kê của bạn:
+      // ─ Custom block (chỉ show nếu có) ─
+      const customBlock = s.hasCustomOrders
+        ? `\n\n🎯 Đơn Custom (F1 — bạn gửi cho khách)
+   Tỷ lệ ${s.customRate}% • ${s.totalCustomOrders} đơn • ${s.uniqueF2Count} khách
+   Bạn nhận: ${formatVND(s.totalCustomCashback)}
+   Đã trả: ${formatVND(s.totalCustomPaid)}
+   Chờ trả: ${formatVND(s.pendingCustomPayment)}`
+        : '';
 
-` +
-        `👤 ${data.user.displayName}
-` +
-        `💰 Tổng hoa hồng: ${formatVND(data.summary.totalNetCommission)}
-` +
-        `✅ Đã hoàn: ${formatVND(data.summary.totalPaid)}
-` +
-        `⏳ Chờ hoàn: ${formatVND(data.summary.pendingPayment)}
-` +
-        `📦 ${data.summary.totalOrders} đơn • ${data.summary.totalLinks} link` +
-        `${customSection}
+      const replyText =
+`📊 Thống kê — ${data.user.displayName}
 
-` +
-        `🔗 Xem chi tiết:
+${buyerBlock}${referrerBlock}${customBlock}
+
+🔗 Chi tiết & sơ đồ CTV:
 ${reportUrl}
 
-` +
-        `⏰ Link có hiệu lực 24 giờ`;
+⏰ Link hiệu lực 24 giờ`;
 
       await this.actions.humanReply(message, replyText, { react: false });
       return replyText;
@@ -260,6 +273,198 @@ ${reportUrl}
       await this.actions.humanReply(message, errText, { react: false });
       return errText;
     }
+  }
+
+  async _handleRuttien(message, text) {
+    const senderUid = message.data?.uidFrom || message.data?.fromUid;
+    if (!senderUid) {
+      const errText = '❌ Không xác định được user.';
+      await this.actions.humanReply(message, errText, { react: false });
+      return errText;
+    }
+
+    const senderName = await this.actions.getDisplayName(senderUid);
+    const parsed = withdrawalStore.parseRuttienArgs(text);
+
+    // ─── Handle parse errors ─────────────────────────
+    if (parsed.ok === false) {
+      const guide = this._buildRuttienGuide();
+      let errLine;
+      switch (parsed.error) {
+        case 'syntax':
+          errLine = '⚠️ Cú pháp chưa đủ. Cần 3 phần: ngân hàng, số TK, tên chủ TK.';
+          break;
+        case 'unknown_bank':
+          errLine = `⚠️ Không nhận diện được ngân hàng "${parsed.value}". Vui lòng dùng mã ở danh sách bên dưới.`;
+          break;
+        case 'bad_account':
+          errLine = '⚠️ Số tài khoản không hợp lệ (chỉ gồm chữ số).';
+          break;
+        case 'bad_holder':
+          errLine = '⚠️ Tên chủ tài khoản quá ngắn. Vui lòng nhập đầy đủ.';
+          break;
+        default:
+          errLine = '⚠️ Lệnh không hợp lệ.';
+      }
+      const errText = `${errLine}\n\n${guide}`;
+      await this.actions.humanReply(message, errText, { react: false });
+      return errText;
+    }
+
+    try {
+      // ─── Check existing pending request ──────────────
+      const existing = await withdrawalStore.getActivePendingByUser(senderUid);
+      if (existing) {
+        const requestedAt = existing.requested_at
+          ? new Date(existing.requested_at).toLocaleString('vi-VN')
+          : '--';
+        const existsText = `⏳ Bạn đã có yêu cầu rút tiền đang chờ xử lý:
+
+💰 Số tiền: ${formatVND(existing.amount)}
+🏦 ${withdrawalStore.bankDisplayName(existing.bank_name)} • ${existing.bank_account}
+👤 ${existing.account_holder || '--'}
+📅 Gửi lúc: ${requestedAt}
+
+Hệ thống sẽ thanh toán trong thời gian sớm nhất. Vui lòng đợi nhé!`;
+        await this.actions.humanReply(message, existsText, { react: false });
+        return existsText;
+      }
+
+      // ─── Resolve bank info (from args or stored) ─────
+      let bankCode, accountNumber, accountHolder;
+      let bankInfoSource;
+      if (parsed.ok === true) {
+        // User provided new info → update users table
+        bankCode = parsed.bankCode;
+        accountNumber = parsed.accountNumber;
+        accountHolder = parsed.accountHolder;
+        await withdrawalStore.updateUserBankInfo(senderUid, { bankCode, accountNumber, accountHolder });
+        bankInfoSource = 'new';
+      } else {
+        // parsed.ok === 'no_args' — load from DB
+        const info = await withdrawalStore.getUserBankInfo(senderUid);
+        if (!info || !info.bank_name || !info.bank_account) {
+          const guide = this._buildRuttienGuide();
+          const noInfoText = `💳 Đăng ký rút tiền\n\nBạn chưa có thông tin tài khoản ngân hàng.\n\n${guide}`;
+          await this.actions.humanReply(message, noInfoText, { react: false });
+          return noInfoText;
+        }
+        bankCode = info.bank_name;
+        accountNumber = info.bank_account;
+        accountHolder = info.bank_account_holder || info.display_name || info.zalo_name || senderName;
+        bankInfoSource = 'stored';
+      }
+
+      // ─── Compute withdrawable amount ─────────────────
+      const pending = await withdrawalStore.computeUserPending(senderUid);
+      if (pending.total <= 0) {
+        const updateNote = bankInfoSource === 'new'
+          ? '\n\n✅ Đã cập nhật thông tin tài khoản của bạn.'
+          : '';
+        const noAmountText = `📭 Bạn hiện chưa có hoa hồng nào sẵn sàng rút.
+
+Có thể do:
+• Chưa có đơn nào "Hoàn thành"
+• Hoặc đã thanh toán hết
+
+Gửi /thongke để xem chi tiết.${updateNote}`;
+        await this.actions.humanReply(message, noAmountText, { react: false });
+        return noAmountText;
+      }
+
+      // ─── Create the request ──────────────────────────
+      const requestId = await withdrawalStore.createRequest({
+        userId: senderUid,
+        userName: senderName,
+        amount: pending.total,
+        breakdown: pending.breakdown,
+        bankCode,
+        accountNumber,
+        accountHolder,
+      });
+
+      if (!requestId) {
+        const errText = '❌ Hệ thống gặp lỗi khi tạo yêu cầu. Vui lòng thử lại sau.';
+        await this.actions.humanReply(message, errText, { react: false });
+        return errText;
+      }
+
+      // ─── Notify admin via email (best-effort, non-blocking) ─
+      const adminEmails = process.env.NOTIFY_EMAILS;
+      if (adminEmails) {
+        const breakdownLines = Object.entries(pending.breakdown)
+          .filter(([, v]) => v > 0)
+          .map(([k, v]) => `  - ${k.toUpperCase()}: ${formatVND(v)}`)
+          .join('\n');
+        const subject = `[Rút tiền] ${senderName} yêu cầu ${formatVND(pending.total)}`;
+        const body = `User vừa gửi yêu cầu rút tiền:
+
+- Tên: ${senderName}
+- ID Zalo: ${senderUid}
+- Số tiền: ${formatVND(pending.total)}
+- Ngân hàng: ${withdrawalStore.bankDisplayName(bankCode)} (${bankCode})
+- Số TK: ${accountNumber}
+- Chủ TK: ${accountHolder}
+- Request ID: ${requestId}
+- Thời gian: ${new Date().toLocaleString('vi-VN')}
+
+Breakdown:
+${breakdownLines || '  (không có chi tiết)'}
+
+Vào trang Admin → Payouts để xử lý.`;
+        sendMail(adminEmails, subject, body).catch(e => logger.error('Mailer', `Withdrawal notify failed: ${e.message}`));
+      }
+
+      // ─── Build success reply ─────────────────────────
+      const breakdownBlock = Object.entries(pending.breakdown)
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => `   ${k.toUpperCase()}: ${formatVND(v)}`)
+        .join('\n');
+      const updateNote = bankInfoSource === 'new'
+        ? '\n\n✅ Thông tin tài khoản đã được cập nhật.'
+        : '';
+      const replyText = `✅ Đã ghi nhận yêu cầu rút tiền!
+
+💰 Số tiền: ${formatVND(pending.total)}
+${breakdownBlock}
+
+🏦 ${withdrawalStore.bankDisplayName(bankCode)} • ${accountNumber}
+👤 ${accountHolder}
+
+⏳ Hệ thống sẽ thanh toán trong thời gian sớm nhất.${updateNote}
+
+💡 Gửi /thongke để xem lịch sử chi tiết.`;
+
+      await this.actions.humanReply(message, replyText, { react: false });
+      logger.info('ZaloCommands', `Withdrawal request #${requestId}: ${senderName} (${senderUid}) requested ${pending.total}đ to ${bankCode}:${accountNumber}`);
+      return replyText;
+    } catch (err) {
+      logger.error('ZaloCommands', `_handleRuttien failed for ${senderUid}: ${err.stack || err.message}`);
+      const errText = '❌ Hệ thống gặp lỗi. Vui lòng thử lại sau ít phút.';
+      await this.actions.humanReply(message, errText, { react: false });
+      return errText;
+    }
+  }
+
+  _buildRuttienGuide() {
+    return `📌 Cú pháp lệnh /ruttien:
+
+/ruttien <NGÂN_HÀNG> <SỐ_TK> <TÊN_CHỦ_TK>
+
+Ví dụ:
+• /ruttien VCB 1234567890 NGUYEN VAN A
+• /ruttien Techcombank 9876543210 TRAN THI B
+• /ruttien MBBank 123456789012 LE VAN C
+
+🏦 Ngân hàng hỗ trợ (gõ mã hoặc tên):
+VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcombank) · MB (MBBank) · ACB · VPB (VPBank) · TPB (TPBank) · STB (Sacombank) · HDB · VIB · SHB · EIB (Eximbank) · MSB · OCB · LPB (LPBank) · SeABank · ABBank · SCB · MoMo · CAKE · Timo · ...
+
+📝 Lưu ý:
+• Tên chủ TK ghi như trên thẻ ngân hàng (KHÔNG dấu, IN HOA)
+• Số TK đúng để tránh chuyển nhầm
+• Sau khi đăng ký, hệ thống tự ghi nhận yêu cầu rút hoa hồng hiện có
+
+🔁 Nếu đã đăng ký, lần sau chỉ cần gõ /ruttien là đủ.`;
   }
 
   async _buildStatusText() {

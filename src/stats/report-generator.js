@@ -2,9 +2,119 @@ const db = require('../db');
 const logger = require('../logger');
 const commissionRatesStore = require('../api/commission-rates-store');
 
+// SQL: Load a user's direct downline (CTVs) with their order/commission stats.
+// Excludes cancelled orders. `referrerId` = userId of the parent.
+const DOWNLINE_SQL = `
+  SELECT u.user_id, u.display_name, u.zalo_name, u.avatar,
+         u.first_contact, u.commission_mode,
+         COALESCE((
+           SELECT COUNT(DISTINCT o.order_id)
+           FROM orders o
+           INNER JOIN convert_logs cl ON (
+             (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
+             OR
+             (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+           )
+           WHERE cl.user_id = u.user_id AND cl.status = 'success'
+             AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
+             AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
+             AND COALESCE(o.order_status,'') NOT LIKE '%Cancelled%'
+         ), 0) AS order_count,
+         COALESCE((
+           SELECT SUM(o2.net_commission)
+           FROM orders o2
+           INNER JOIN convert_logs cl3 ON (
+             (o2.item_id != '' AND o2.item_id = cl3.item_id AND o2.sub_id1 = cl3.sub_id1)
+             OR
+             (cl3.item_id = '' AND o2.item_name != '' AND o2.item_name = cl3.product_name AND o2.sub_id1 = cl3.sub_id1)
+           )
+           WHERE cl3.user_id = u.user_id AND cl3.status = 'success'
+             AND COALESCE(o2.order_status,'') NOT LIKE '%hủy%'
+             AND COALESCE(o2.order_status,'') NOT LIKE '%huỷ%'
+             AND COALESCE(o2.order_status,'') NOT LIKE '%Cancelled%'
+         ), 0) AS total_commission
+  FROM users u
+  WHERE u.referrer_id = $1
+  ORDER BY total_commission DESC
+`;
+
+function mapDownlineRow(r) {
+  return {
+    userId: r.user_id,
+    displayName: r.display_name || r.zalo_name || 'Unknown',
+    avatar: r.avatar || '',
+    joinDate: r.first_contact || '',
+    commissionMode: r.commission_mode || 'normal',
+    orderCount: Number(r.order_count) || 0,
+    totalCommission: Number(r.total_commission) || 0,
+  };
+}
+
+/**
+ * Recursively load downline with earnings the report user collects at each level.
+ * Stops at depth 3 (F1 → F2 → F3) — matches the system's F-tier cap.
+ * If a node is in 'custom' mode, the chain breaks below it (no F2/F3 from that branch).
+ */
+async function loadDownlineTree(userId, rates) {
+  const f1Rows = await db.all(DOWNLINE_SQL, [userId]);
+  const f1List = [];
+  let totalF1Earnings = 0;
+  let totalF2Earnings = 0;
+  let totalF3Earnings = 0;
+
+  for (const r of f1Rows) {
+    const f1 = mapDownlineRow(r);
+    f1.earnings = Math.round(f1.totalCommission * rates.f1 / 100);
+    totalF1Earnings += f1.earnings;
+
+    // If F1 is custom mode, the user doesn't earn F2/F3 from this branch
+    if (f1.commissionMode === 'custom') {
+      f1.subCtvs = [];
+      f1List.push(f1);
+      continue;
+    }
+
+    // Load F2 (CTVs of this F1 — these are F2 from the report user's perspective)
+    const f2Rows = await db.all(DOWNLINE_SQL, [f1.userId]);
+    const subCtvs = [];
+    for (const r2 of f2Rows) {
+      const f2 = mapDownlineRow(r2);
+      f2.earnings = Math.round(f2.totalCommission * rates.f2 / 100);
+      totalF2Earnings += f2.earnings;
+
+      if (f2.commissionMode === 'custom') {
+        f2.subCtvs = [];
+        subCtvs.push(f2);
+        continue;
+      }
+
+      // Load F3 (CTVs of this F2)
+      const f3Rows = await db.all(DOWNLINE_SQL, [f2.userId]);
+      const f3SubCtvs = f3Rows.map(r3 => {
+        const f3 = mapDownlineRow(r3);
+        f3.earnings = Math.round(f3.totalCommission * rates.f3 / 100);
+        totalF3Earnings += f3.earnings;
+        return f3;
+      });
+      f2.subCtvs = f3SubCtvs;
+      subCtvs.push(f2);
+    }
+    f1.subCtvs = subCtvs;
+    f1List.push(f1);
+  }
+
+  return {
+    list: f1List,
+    totalF1Earnings,
+    totalF2Earnings,
+    totalF3Earnings,
+  };
+}
+
 class ReportGenerator {
   async generateReport(userId) {
     const rates = await commissionRatesStore.getRates();
+
     // 1. User info
     const user = await db.get('SELECT * FROM users WHERE user_id = ?', [userId]);
     if (!user) throw new Error('User not found');
@@ -18,7 +128,7 @@ class ReportGenerator {
       [userId]
     );
 
-    // 3. Matched orders ONLY (standard: buyer/referrer flow, exclude from_custom)
+    // 3. Matched orders ONLY (standard buyer/referrer flow, exclude from_custom)
     const matchedOrders = await db.all(
       `SELECT DISTINCT o.order_id, o.item_name, o.shop_name, o.price, o.quantity,
               o.order_status, o.order_time, o.complete_time,
@@ -47,7 +157,7 @@ class ReportGenerator {
       [userId]
     );
 
-    // 4b. Custom orders — đơn F1 gửi link cho F2 (sub_id4 = from_custom, sub_id1 = userId)
+    // 4b. Custom orders — F1 gửi link cho F2 (sub_id4 = from_custom)
     const customOrders = await db.all(
       `SELECT o.order_id, o.item_name, o.shop_name, o.price, o.quantity,
               o.order_status, o.order_time, o.complete_time,
@@ -79,45 +189,11 @@ class ReportGenerator {
       }
     }
 
-    // 6. CTV list (user này đã mời những ai) + thống kê đơn hàng/hoa hồng từng CTV
-    const ctvList = await db.all(
-      `SELECT u.user_id, u.display_name, u.zalo_name, u.avatar, u.first_contact,
-              COALESCE((
-                SELECT COUNT(DISTINCT o.order_id)
-                FROM orders o
-                INNER JOIN convert_logs cl2 ON (
-                  (o.item_id != '' AND o.item_id = cl2.item_id AND o.sub_id1 = cl2.sub_id1)
-                  OR
-                  (cl2.item_id = '' AND o.item_name != '' AND o.item_name = cl2.product_name AND o.sub_id1 = cl2.sub_id1)
-                )
-                WHERE cl2.user_id = u.user_id AND cl2.status = 'success'
-              ), 0) as order_count,
-              COALESCE((
-                SELECT SUM(o2.net_commission)
-                FROM orders o2
-                INNER JOIN convert_logs cl3 ON (
-                  (o2.item_id != '' AND o2.item_id = cl3.item_id AND o2.sub_id1 = cl3.sub_id1)
-                  OR
-                  (cl3.item_id = '' AND o2.item_name != '' AND o2.item_name = cl3.product_name AND o2.sub_id1 = cl3.sub_id1)
-                )
-                WHERE cl3.user_id = u.user_id AND cl3.status = 'success'
-              ), 0) as total_commission
-       FROM users u
-       WHERE u.referrer_id = ?
-       ORDER BY total_commission DESC`,
-      [userId]
-    );
+    // 6. Downline tree (F1 + F2 + F3) with earnings at each level
+    const downline = await loadDownlineTree(userId, rates);
+    const ctvList = downline.list;
 
-    const formattedCtvList = ctvList.map(c => ({
-      userId: c.user_id,
-      displayName: c.display_name || c.zalo_name || 'Unknown',
-      avatar: c.avatar || '',
-      joinDate: c.first_contact || '',
-      orderCount: Number(c.order_count) || 0,
-      totalCommission: Number(c.total_commission) || 0,
-    }));
-
-    // 7. Monthly revenue chart (last 6 months)
+    // 7. Monthly revenue chart (last 6 months) — based on user's own orders only
     const monthlyRevenue = await db.all(
       `SELECT LEFT(o.order_time, 7) as month,
               COUNT(DISTINCT o.order_id) as orders,
@@ -135,12 +211,11 @@ class ReportGenerator {
       [userId]
     );
 
-    // Fill missing months to ensure 6-month contiguous chart
     const chartMonths = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date();
       d.setMonth(d.getMonth() - i);
-      chartMonths.push(d.toISOString().slice(0, 7)); // 'YYYY-MM'
+      chartMonths.push(d.toISOString().slice(0, 7));
     }
     const revenueMap = {};
     for (const r of monthlyRevenue) {
@@ -153,39 +228,45 @@ class ReportGenerator {
       commission: revenueMap[m]?.commission || 0,
     }));
 
-    // 8. Calculate summary using F0-F3 system
+    // 8. Buyer (F0) cashback calculation
     const commissionMode = user.commission_mode || 'normal';
     const isCustomMode = commissionMode === 'custom';
     const customRate = user.custom_rate || 0;
     const f0Rate = isCustomMode ? customRate : rates.f0;
     const hasReferrer = !!(user.referrer_id && user.referrer_id !== '');
 
-    const totalNetCommission = matchedOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
-    const completedOrders = matchedOrders.filter(o =>
-      o.order_status?.toLowerCase().includes('hoàn thành') ||
-      o.order_status?.toLowerCase().includes('completed') ||
-      o.order_status?.toLowerCase().includes('settled')
-    );
-    const completedNetCommission = completedOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
-
-    const totalBuyerCashback = totalNetCommission * f0Rate / 100;
-    const completedBuyerCashback = completedNetCommission * f0Rate / 100;
-    const totalPaid = payouts
-      .filter(p => ['buyer', 'f0'].includes(p.role))
-      .reduce((s, p) => s + (p.amount || 0), 0);
-    const pendingPayment = Math.max(0, completedBuyerCashback - totalPaid);
-
-    // CTV referrer earnings for this user — F1 rate from settings
-    const ctvTotalCommission = formattedCtvList.reduce((s, c) => s + c.totalCommission, 0);
-    const ctvReferrerEarnings = ctvTotalCommission * rates.f1 / 100;
-
-    // Custom orders summary
-    const isCompletedCustom = (o) =>
+    const isCompleted = (o) =>
       o.order_status?.toLowerCase().includes('hoàn thành') ||
       o.order_status?.toLowerCase().includes('completed') ||
       o.order_status?.toLowerCase().includes('settled');
-    const completedCustomOrders = customOrders.filter(isCompletedCustom);
-    const pendingCustomOrders = customOrders.filter(o => !isCompletedCustom(o));
+
+    const completedOrders = matchedOrders.filter(isCompleted);
+    const pendingOrders = matchedOrders.filter(o => !isCompleted(o));
+
+    const totalNetCommission = matchedOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
+    const completedNetCommission = completedOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
+    const pendingNetCommission = pendingOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
+
+    // What the user actually receives (raw × F0%) — this is the headline number
+    const totalBuyerCashback = Math.round(totalNetCommission * f0Rate / 100);
+    const completedBuyerCashback = Math.round(completedNetCommission * f0Rate / 100);
+    const pendingBuyerCashback = Math.round(pendingNetCommission * f0Rate / 100);
+
+    const totalPaidAsBuyer = payouts
+      .filter(p => ['buyer', 'f0'].includes(p.role))
+      .reduce((s, p) => s + (p.amount || 0), 0);
+    const pendingBuyerPayment = Math.max(0, completedBuyerCashback - totalPaidAsBuyer);
+
+    // 9. Referrer earnings (F1+F2+F3 from downline)
+    const totalReferrerEarnings =
+      downline.totalF1Earnings + downline.totalF2Earnings + downline.totalF3Earnings;
+    const totalPaidAsReferrer = payouts
+      .filter(p => ['referrer', 'f1', 'f2', 'f3'].includes(p.role))
+      .reduce((s, p) => s + (p.amount || 0), 0);
+
+    // 10. Custom orders summary
+    const completedCustomOrders = customOrders.filter(isCompleted);
+    const pendingCustomOrders = customOrders.filter(o => !isCompleted(o));
     const totalCustomNetCommission = customOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
     const completedCustomNetCommission = completedCustomOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
     const totalCustomCashback = Math.round(totalCustomNetCommission * customRate / 100);
@@ -193,7 +274,6 @@ class ReportGenerator {
     const totalCustomPaid = payouts.filter(p => p.role === 'custom').reduce((s, p) => s + (p.amount || 0), 0);
     const pendingCustomPayment = Math.max(0, completedCustomCashback - totalCustomPaid);
 
-    // Unique F2 phones from sub_id2
     const uniqueF2Phones = [...new Set(customOrders.map(o => o.sub_id2).filter(Boolean))];
 
     const now = new Date();
@@ -207,26 +287,47 @@ class ReportGenerator {
         phone: user.phone_number || '',
         bankName: user.bank_name || '',
         bankAccount: user.bank_account || '',
-        cashbackBuyerRate: f0Rate,
+        commissionMode,
+        isCustomMode,
+        f0Rate,
         customRate,
+        // Backward compat
+        cashbackBuyerRate: f0Rate,
       },
+      rates,           // full F0/F1/F2/F3/Admin (for tooltips + sidebar breakdown)
       referrer,
-      ctvList: formattedCtvList,
+      ctvList,         // nested F1 → F2 → F3 with earnings
       monthlyChart,
       summary: {
+        // Raw totals (giúp user biết quy mô)
         totalNetCommission,
         completedNetCommission,
-        totalBuyerCashback,
-        completedBuyerCashback,
-        totalPaid,
-        pendingPayment,
+        pendingNetCommission,
         totalOrders: matchedOrders.length,
         completedCount: completedOrders.length,
+        pendingCount: pendingOrders.length,
         totalLinks: links.length,
-        ctvCount: formattedCtvList.length,
-        ctvTotalCommission,
-        ctvReferrerEarnings,
-        // Custom summary
+
+        // Buyer (F0) cashback — số tiền thực user nhận
+        totalBuyerCashback,
+        completedBuyerCashback,
+        pendingBuyerCashback,
+        totalPaidAsBuyer,
+        pendingBuyerPayment,
+
+        // Referrer (F1+F2+F3) earnings — số tiền nhận từ downline
+        totalF1Earnings: downline.totalF1Earnings,
+        totalF2Earnings: downline.totalF2Earnings,
+        totalF3Earnings: downline.totalF3Earnings,
+        totalReferrerEarnings,
+        totalPaidAsReferrer,
+        ctvCount: ctvList.length,
+
+        // Combined (legacy compat)
+        totalPaid: totalPaidAsBuyer + totalPaidAsReferrer + totalCustomPaid,
+        pendingPayment: pendingBuyerPayment,
+
+        // Custom orders summary
         hasCustomOrders: customOrders.length > 0,
         customRate,
         totalCustomOrders: customOrders.length,
@@ -247,7 +348,6 @@ class ReportGenerator {
       generatedAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
     };
-
   }
 }
 

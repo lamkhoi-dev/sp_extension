@@ -1,11 +1,19 @@
 /**
  * Server-side HTML template for /thongke stat reports.
- * Self-contained: inline CSS, mobile-first, dark theme.
+ * Self-contained: inline CSS + Lucide SVG icons, mobile-first, dark theme.
  */
 
+// ─── Helpers ─────────────────────────────────────────────
 function formatVND(val) {
   if (!val && val !== 0) return '0đ';
   return new Intl.NumberFormat('vi-VN').format(Math.round(val)) + 'đ';
+}
+
+function formatShortVND(val) {
+  const v = Math.round(val || 0);
+  if (v >= 1_000_000) return (v / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (v >= 1_000) return Math.round(v / 1_000) + 'k';
+  return String(v);
 }
 
 function formatDate(dateStr) {
@@ -18,79 +26,282 @@ function formatDate(dateStr) {
   } catch { return dateStr; }
 }
 
-function statusBadge(status) {
-  if (!status) return '<span class="status-badge status-default">--</span>';
-  const s = status.toLowerCase();
-  if (s.includes('hoàn thành') || s.includes('completed') || s.includes('settled'))
-    return `<span class="status-badge status-completed">${status}</span>`;
-  if (s.includes('hủy') || s.includes('cancel'))
-    return `<span class="status-badge status-cancelled">${status}</span>`;
-  return `<span class="status-badge status-pending">${status}</span>`;
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function renderReport(data) {
-  const { user, referrer, ctvList = [], monthlyChart = [], summary, links, matchedOrders, customOrders = [], payouts, generatedAt, expiresAt } = data;
+function statusBadge(status) {
+  if (!status) return '<span class="status-badge status-default"><span class="status-dot"></span>--</span>';
+  const s = status.toLowerCase();
+  if (s.includes('hoàn thành') || s.includes('completed') || s.includes('settled'))
+    return `<span class="status-badge status-completed"><span class="status-dot"></span>${escapeHtml(status)}</span>`;
+  if (s.includes('hủy') || s.includes('cancel'))
+    return `<span class="status-badge status-cancelled"><span class="status-dot"></span>${escapeHtml(status)}</span>`;
+  return `<span class="status-badge status-pending"><span class="status-dot"></span>${escapeHtml(status)}</span>`;
+}
 
-  const linksHtml = links.map((l, i) => `
+// ─── Lucide SVG icons (24×24, stroke based, currentColor) ─
+// Trimmed copies from lucide.dev — only paths needed, no library dep.
+const ICON = {
+  wallet: '<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/><path d="M22 11h-4a2 2 0 1 0 0 4h4v-4Z"/>',
+  package: '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+  trendingUp: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  creditCard: '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
+  checkCircle: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  chevronRight: '<polyline points="9 18 15 12 9 6"/>',
+  chevronDown: '<polyline points="6 9 12 15 18 9"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  shoppingBag: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" x2="21" y1="6" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+  barChart: '<line x1="12" x2="12" y1="20" y2="10"/><line x1="18" x2="18" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="16"/>',
+  award: '<circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>',
+  zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+  layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+};
+
+function icon(name, size = 16, extraClass = '') {
+  const path = ICON[name];
+  if (!path) return '';
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lc-icon ${extraClass}">${path}</svg>`;
+}
+
+// ─── Stat card with tooltip ──────────────────────────────
+function statCard({ accent, iconName, label, value, sub, formula, breakdown }) {
+  const tooltip = formula ? `
+    <button class="info-btn" data-tip>${icon('info', 14)}</button>
+    <div class="info-popover" hidden>
+      <div class="info-title">${escapeHtml(label)}</div>
+      <div class="info-formula">${formula}</div>
+      ${breakdown ? `<div class="info-breakdown">${breakdown}</div>` : ''}
+    </div>` : '';
+  return `
+    <div class="stat-card ${accent}">
+      <div class="stat-card-head">
+        <span class="stat-icon">${icon(iconName, 18)}</span>
+        ${tooltip}
+      </div>
+      <div class="stat-label">${escapeHtml(label)}</div>
+      <div class="stat-value">${value}</div>
+      ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
+    </div>`;
+}
+
+// ─── CTV node (recursive: F1 → F2 → F3) ─────────────────
+function renderCtvNode(node, level, rates) {
+  const levelKey = `f${level}`;
+  const levelRate = rates[levelKey] ?? 0;
+  const subList = (node.subCtvs || []).filter(s => (s.orderCount > 0 || s.totalCommission > 0));
+  const hasChildren = subList.length > 0 && level < 3;
+  const avatarHtml = node.avatar
+    ? `<img src="${escapeHtml(node.avatar)}" class="ctv-avatar" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+    : '';
+  const initials = (node.displayName || '?')[0].toUpperCase();
+  const tagLabel = node.commissionMode === 'custom' ? 'Custom' : levelKey.toUpperCase();
+  return `
+    <div class="ctv-node level-${level}">
+      <div class="ctv-row ${hasChildren ? 'is-expandable' : ''}" ${hasChildren ? 'data-toggle-children' : ''}>
+        ${hasChildren ? `<span class="ctv-chevron">${icon('chevronRight', 14)}</span>` : '<span class="ctv-chevron-spacer"></span>'}
+        ${avatarHtml}
+        <div class="ctv-avatar-placeholder" ${node.avatar ? 'style="display:none"' : ''}>${escapeHtml(initials)}</div>
+        <div class="ctv-info">
+          <div class="ctv-name-row">
+            <span class="ctv-name">${escapeHtml(node.displayName)}</span>
+            <span class="level-tag level-tag-${level}">${tagLabel}</span>
+          </div>
+          <div class="ctv-stats">
+            <span>${icon('package', 11)} <span class="ctv-stat-value">${node.orderCount}</span> đơn</span>
+            <span class="ctv-sep">·</span>
+            <span>Đã phát sinh ${formatVND(node.totalCommission)}</span>
+          </div>
+        </div>
+        <div class="ctv-earnings" title="Bạn nhận ${levelRate}% từ commission của CTV này">
+          <div class="ctv-earnings-label">Bạn nhận ${levelRate}%</div>
+          <div class="ctv-earnings-value">+${formatVND(node.earnings || 0)}</div>
+        </div>
+      </div>
+      ${hasChildren ? `
+      <div class="ctv-children" hidden>
+        ${subList.map(child => renderCtvNode(child, level + 1, rates)).join('')}
+      </div>` : ''}
+    </div>`;
+}
+
+// ─── Rate breakdown row (sidebar) ────────────────────────
+function rateBreakdownRow(label, value, accent) {
+  return `
+    <div class="rate-row">
+      <span class="rate-label ${accent || ''}">${escapeHtml(label)}</span>
+      <span class="rate-pct">${value}%</span>
+    </div>`;
+}
+
+// ─── Main render ─────────────────────────────────────────
+function renderReport(data) {
+  const {
+    user,
+    rates = { admin: 30, f0: 40, f1: 20, f2: 7, f3: 3 },
+    referrer,
+    ctvList = [],
+    monthlyChart = [],
+    summary,
+    links,
+    matchedOrders,
+    customOrders = [],
+    payouts,
+    generatedAt,
+  } = data;
+
+  const f0Rate = user.f0Rate ?? rates.f0;
+  const isCustomMode = !!user.isCustomMode;
+  const customRate = user.customRate || 0;
+
+  // Per-order cashback in tables (×F0% — the "what you actually receive")
+  const linksHtml = links.map((l, i) => {
+    const userCashback = Math.round((l.commission_amount || 0) * f0Rate / 100);
+    return `
     <tr data-row-links="${i}" style="display:none">
       <td>
-        <a href="${l.short_link || l.affiliate_link || l.original_link}" target="_blank" class="link-primary" title="${l.product_name || l.original_link}">
-          <span class="truncate">${l.product_name || l.original_link}</span>
+        <a href="${escapeHtml(l.short_link || l.affiliate_link || l.original_link)}" target="_blank" rel="noopener" class="link-primary" title="${escapeHtml(l.product_name || l.original_link)}">
+          <span class="truncate">${escapeHtml(l.product_name || l.original_link)}</span>
         </a>
       </td>
-      <td class="text-right font-semibold" style="color: #60a5fa">${formatVND(l.commission_amount)}</td>
+      <td class="text-right">
+        <div class="ts-stack">
+          <span class="ts-strong">${formatVND(userCashback)}</span>
+          <span class="ts-muted">raw ${formatVND(l.commission_amount)}</span>
+        </div>
+      </td>
       <td class="text-right text-muted">${formatDate(l.created_at)}</td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 
-  const ordersHtml = matchedOrders.map((o, i) => `
+  const ordersHtml = matchedOrders.map((o, i) => {
+    const userCashback = Math.round((o.net_commission || 0) * f0Rate / 100);
+    return `
     <tr data-row-orders="${i}" style="display:none">
       <td>
-        <div class="item-name truncate">${(o.item_name || '')}</div>
-        <div class="item-meta">Mã ĐH: ${o.order_id?.slice(-8) || '--'} • Shop: ${o.shop_name || '--'}</div>
+        <div class="item-name truncate">${escapeHtml(o.item_name || '')}</div>
+        <div class="item-meta">Mã ĐH: ${escapeHtml(o.order_id?.slice(-8) || '--')} · Shop: ${escapeHtml(o.shop_name || '--')}</div>
       </td>
       <td class="text-right">${formatVND(o.order_value || o.price)}</td>
       <td class="text-center">${statusBadge(o.order_status)}</td>
-      <td class="text-right font-semibold" style="color: #34d399">${formatVND(o.net_commission)}</td>
-    </tr>
-  `).join('');
+      <td class="text-right">
+        <div class="ts-stack">
+          <span class="ts-strong" style="color:#34d399">${formatVND(userCashback)}</span>
+          <span class="ts-muted">raw ${formatVND(o.net_commission)}</span>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
 
   const payoutsHtml = payouts.map((p, i) => `
     <tr data-row-payouts="${i}" style="display:none">
       <td>${formatDate(p.paid_at)}</td>
-      <td class="text-right font-semibold" style="color: #34d399">+${formatVND(p.amount)}</td>
+      <td class="text-right font-semibold" style="color:#34d399">+${formatVND(p.amount)}</td>
       <td>
-        <span style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; font-size: 12px;">
-          ${p.payment_method || 'Chuyển khoản'}
-        </span>
+        <span class="chip-soft">${escapeHtml(p.payment_method || 'Chuyển khoản')}</span>
       </td>
-      <td class="text-muted">${p.admin_note || '--'}</td>
-    </tr>
-  `).join('');
+      <td><span class="chip-role">${escapeHtml((p.role || 'buyer').toUpperCase())}</span></td>
+      <td class="text-muted">${escapeHtml(p.admin_note || '--')}</td>
+    </tr>`).join('');
 
-  const customOrdersHtml = customOrders.map((o, i) => `
+  const customOrdersHtml = customOrders.map((o, i) => {
+    const userCashback = Math.round((o.net_commission || 0) * (customRate || 0) / 100);
+    return `
     <tr data-row-custom="${i}" style="display:none">
       <td>
-        <div class="item-name truncate">${o.item_name || '--'}</div>
-        <div class="item-meta">Mã ĐH: ${o.order_id?.slice(-8) || '--'} • Shop: ${o.shop_name || '--'}</div>
+        <div class="item-name truncate">${escapeHtml(o.item_name || '--')}</div>
+        <div class="item-meta">Mã ĐH: ${escapeHtml(o.order_id?.slice(-8) || '--')} · Shop: ${escapeHtml(o.shop_name || '--')}</div>
       </td>
       <td class="text-center">
-        <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.25);padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap">
-          📱 ${o.sub_id2 || 'N/A'}
-        </span>
+        <span class="chip-purple">${escapeHtml(o.sub_id2 || 'N/A')}</span>
       </td>
       <td class="text-right">${formatVND(o.order_value || o.price)}</td>
       <td class="text-center">${statusBadge(o.order_status)}</td>
-      <td class="text-right font-semibold" style="color:#c084fc">${formatVND(Math.round((o.net_commission || 0) * (summary.customRate || 0) / 100))}</td>
-    </tr>
-  `).join('');
+      <td class="text-right font-semibold" style="color:#c084fc">${formatVND(userCashback)}</td>
+    </tr>`;
+  }).join('');
+
+  // ── Stat cards content ──
+  const cardCashback = statCard({
+    accent: 'green',
+    iconName: 'wallet',
+    label: 'Hoa hồng bạn nhận',
+    value: formatVND(summary.totalBuyerCashback),
+    sub: `${summary.completedCount}/${summary.totalOrders} đơn hoàn thành`,
+    formula: `<code>= Σ (net_commission × ${f0Rate}%)</code>`,
+    breakdown: `
+      <div class="kv"><span>Tổng net</span><span>${formatVND(summary.totalNetCommission)}</span></div>
+      <div class="kv"><span>${isCustomMode ? 'Custom rate' : 'F0 rate'}</span><span>${f0Rate}%</span></div>
+      <div class="kv-strong"><span>Bạn nhận</span><span>${formatVND(summary.totalBuyerCashback)}</span></div>`,
+  });
+
+  const cardOrders = statCard({
+    accent: 'blue',
+    iconName: 'package',
+    label: 'Đơn phát sinh',
+    value: String(summary.totalOrders),
+    sub: `Raw commission: ${formatVND(summary.totalNetCommission)}`,
+    formula: `<code>COUNT(orders WHERE link đã convert)</code>`,
+    breakdown: `
+      <div class="kv"><span>Hoàn thành</span><span>${summary.completedCount}</span></div>
+      <div class="kv"><span>Đang xử lý</span><span>${summary.pendingCount}</span></div>
+      <div class="kv-strong"><span>Tổng</span><span>${summary.totalOrders}</span></div>`,
+  });
+
+  const cardPaid = statCard({
+    accent: 'cyan',
+    iconName: 'creditCard',
+    label: 'Đã thanh toán',
+    value: formatVND(summary.totalPaid),
+    sub: `${payouts.length} lần nhận tiền`,
+    formula: `<code>Σ amount FROM payouts WHERE user_id = bạn</code>`,
+    breakdown: `
+      <div class="kv"><span>Buyer (F0)</span><span>${formatVND(summary.totalPaidAsBuyer)}</span></div>
+      <div class="kv"><span>Referrer (F1+F2+F3)</span><span>${formatVND(summary.totalPaidAsReferrer)}</span></div>
+      ${summary.totalCustomPaid > 0 ? `<div class="kv"><span>Custom</span><span>${formatVND(summary.totalCustomPaid)}</span></div>` : ''}
+      <div class="kv-strong"><span>Tổng đã trả</span><span>${formatVND(summary.totalPaid)}</span></div>`,
+  });
+
+  const cardPending = statCard({
+    accent: 'yellow',
+    iconName: 'clock',
+    label: 'Chờ duyệt',
+    value: formatVND(summary.pendingBuyerPayment),
+    sub: `${summary.completedCount} đơn hoàn thành chờ trả`,
+    formula: `<code>= cashback đơn hoàn thành − đã trả</code>`,
+    breakdown: `
+      <div class="kv"><span>Cashback hoàn thành</span><span>${formatVND(summary.completedBuyerCashback)}</span></div>
+      <div class="kv"><span>Đã trả</span><span>${formatVND(summary.totalPaidAsBuyer)}</span></div>
+      <div class="kv-strong"><span>Chờ trả</span><span>${formatVND(summary.pendingBuyerPayment)}</span></div>`,
+  });
+
+  // F1+F2+F3 earnings card (only if user has downline)
+  const cardReferrer = (ctvList.length > 0) ? statCard({
+    accent: 'purple',
+    iconName: 'layers',
+    label: 'Thu nhập từ CTV',
+    value: formatVND(summary.totalReferrerEarnings),
+    sub: `${summary.ctvCount} CTV trực tiếp`,
+    formula: `<code>= F1×${rates.f1}% + F2×${rates.f2}% + F3×${rates.f3}%</code>`,
+    breakdown: `
+      <div class="kv"><span>F1 (trực tiếp)</span><span>${formatVND(summary.totalF1Earnings)}</span></div>
+      <div class="kv"><span>F2 (cấp 2)</span><span>${formatVND(summary.totalF2Earnings)}</span></div>
+      <div class="kv"><span>F3 (cấp 3)</span><span>${formatVND(summary.totalF3Earnings)}</span></div>
+      <div class="kv-strong"><span>Tổng từ CTV</span><span>${formatVND(summary.totalReferrerEarnings)}</span></div>`,
+  }) : '';
 
   return `<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Thống kê Affiliate - ${user.displayName}</title>
+  <title>Thống kê Affiliate · ${escapeHtml(user.displayName)}</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -100,16 +311,18 @@ function renderReport(data) {
       --glass-hover: rgba(255, 255, 255, 0.06);
       --text-main: #f8fafc;
       --text-muted: #94a3b8;
+      --text-dim: #64748b;
       --accent: #3b82f6;
       --accent-glow: rgba(59, 130, 246, 0.5);
       --green: #10b981;
       --yellow: #f59e0b;
       --cyan: #06b6d4;
       --purple: #a855f7;
+      --rose: #f43f5e;
     }
-    
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    
+
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background-color: var(--bg-color);
@@ -117,324 +330,326 @@ function renderReport(data) {
       min-height: 100vh;
       overflow-x: hidden;
       position: relative;
+      line-height: 1.4;
     }
 
-    /* Animated Background Orbs */
+    /* Background orbs */
     .bg-orb {
-      position: fixed;
-      border-radius: 50%;
-      filter: blur(80px);
-      z-index: -1;
-      opacity: 0.4;
-      animation: float 10s infinite ease-in-out alternate;
+      position: fixed; border-radius: 50%; filter: blur(80px);
+      z-index: -1; opacity: 0.4;
+      animation: float 12s infinite ease-in-out alternate;
     }
-    .orb-1 { top: -100px; left: -100px; width: 400px; height: 400px; background: rgba(59, 130, 246, 0.3); }
-    .orb-2 { bottom: -100px; right: -100px; width: 500px; height: 500px; background: rgba(16, 185, 129, 0.2); animation-delay: -5s; }
-
-    @keyframes float {
-      0% { transform: translate(0, 0); }
-      100% { transform: translate(30px, 50px); }
-    }
+    .orb-1 { top: -100px; left: -100px; width: 400px; height: 400px; background: rgba(59, 130, 246, 0.25); }
+    .orb-2 { bottom: -100px; right: -100px; width: 500px; height: 500px; background: rgba(16, 185, 129, 0.18); animation-delay: -5s; }
+    @keyframes float { 0% { transform: translate(0,0); } 100% { transform: translate(30px,50px); } }
 
     /* Layout */
-    .dashboard {
-      display: flex;
-      flex-direction: column;
-      min-height: 100vh;
-    }
-
+    .dashboard { display: flex; flex-direction: column; min-height: 100vh; }
     @media (min-width: 1024px) {
-      .dashboard {
-        flex-direction: row;
-        padding: 24px;
-        gap: 32px;
-        max-width: 1920px;
-        margin: 0 auto;
-        width: 100%;
-      }
+      .dashboard { flex-direction: row; padding: 24px; gap: 32px; max-width: 1920px; margin: 0 auto; width: 100%; }
     }
 
     /* Sidebar */
     .sidebar {
       background: var(--glass-bg);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--glass-border);
-      padding: 32px 24px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      animation: slideDown 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+      padding: 28px 20px;
+      display: flex; flex-direction: column; align-items: center; text-align: center;
+      animation: slideDown 0.5s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    
     @media (min-width: 1024px) {
       .sidebar {
-        width: 320px;
-        height: calc(100vh - 48px);
-        position: sticky;
-        top: 24px;
+        width: 320px; height: calc(100vh - 48px);
+        position: sticky; top: 24px;
         border: 1px solid var(--glass-border);
-        border-radius: 24px;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-        animation: slideRight 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        border-radius: 20px;
+        box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+        animation: slideRight 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        overflow-y: auto;
       }
     }
 
-    .avatar-wrapper {
-      position: relative;
-      margin-bottom: 20px;
-    }
+    .avatar-wrapper { position: relative; margin-bottom: 18px; }
     .avatar {
-      width: 100px;
-      height: 100px;
-      border-radius: 50%;
-      object-fit: cover;
+      width: 90px; height: 90px; border-radius: 50%; object-fit: cover;
       border: 2px solid transparent;
       background: linear-gradient(var(--bg-color), var(--bg-color)) padding-box,
                   linear-gradient(135deg, var(--accent), var(--cyan)) border-box;
-      box-shadow: 0 0 20px var(--accent-glow);
+      box-shadow: 0 0 24px var(--accent-glow);
     }
     .avatar-placeholder {
-      width: 100px;
-      height: 100px;
-      border-radius: 50%;
+      width: 90px; height: 90px; border-radius: 50%;
       background: linear-gradient(135deg, var(--accent), var(--cyan));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 36px;
-      font-weight: 700;
-      box-shadow: 0 0 20px var(--accent-glow);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 32px; font-weight: 700;
+      box-shadow: 0 0 24px var(--accent-glow);
     }
-    
-    .user-name { font-size: 24px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.5px; }
-    .user-sub { font-size: 14px; color: var(--text-muted); font-weight: 400; }
 
+    .user-name { font-size: 22px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.4px; }
+    .user-sub { font-size: 13px; color: var(--text-muted); font-weight: 400; }
+    .mode-tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      margin-top: 8px; padding: 3px 10px;
+      font-size: 11px; font-weight: 600;
+      border-radius: 12px;
+      background: rgba(168,85,247,0.12); color: #c084fc;
+      border: 1px solid rgba(168,85,247,0.25);
+    }
+    .mode-tag.normal {
+      background: rgba(16,185,129,0.10); color: #34d399;
+      border-color: rgba(16,185,129,0.22);
+    }
+
+    /* Rate breakdown card */
     .rate-card {
-      margin-top: 32px;
-      background: rgba(59, 130, 246, 0.1);
-      border: 1px solid rgba(59, 130, 246, 0.2);
-      border-radius: 16px;
-      padding: 20px;
+      margin-top: 24px;
+      background: rgba(59,130,246,0.08);
+      border: 1px solid rgba(59,130,246,0.18);
+      border-radius: 14px;
+      padding: 14px 16px;
       width: 100%;
     }
-    .rate-card .label { font-size: 13px; color: #93c5fd; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 8px;}
-    .rate-card .value { font-size: 32px; font-weight: 700; color: #fff; background: linear-gradient(to right, #60a5fa, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;}
-    .rate-card .desc { font-size: 12px; color: #7dd3fc; margin-top: 8px; opacity: 0.8; }
+    .rate-card-title {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.6px;
+      color: #93c5fd; text-transform: uppercase;
+      margin-bottom: 10px; text-align: left;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .rate-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 5px 0; font-size: 12px;
+      border-bottom: 1px dashed rgba(255,255,255,0.05);
+    }
+    .rate-row:last-child { border-bottom: none; padding-top: 8px; margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.06); }
+    .rate-label { color: var(--text-muted); display: inline-flex; align-items: center; gap: 6px; }
+    .rate-label.f0 { color: #34d399; }
+    .rate-label.f1 { color: #22d3ee; }
+    .rate-label.f2 { color: #60a5fa; }
+    .rate-label.f3 { color: #a78bfa; }
+    .rate-label.admin { color: var(--text-muted); }
+    .rate-pct { font-weight: 700; color: #f8fafc; font-size: 13px; tabular-nums: 1; }
 
-    /* Main Content */
+    .referrer-card {
+      margin-top: 16px;
+      background: rgba(16,185,129,0.07);
+      border: 1px solid rgba(16,185,129,0.15);
+      border-radius: 12px;
+      padding: 12px;
+      width: 100%;
+      display: flex; align-items: center; gap: 10px;
+      text-align: left;
+    }
+    .referrer-avatar {
+      width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
+      border: 2px solid rgba(16,185,129,0.3); flex-shrink: 0;
+    }
+    .referrer-avatar-placeholder {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--green), #059669);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; color: #fff;
+      flex-shrink: 0;
+    }
+    .referrer-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 4px; }
+    .referrer-name { font-size: 13px; font-weight: 600; color: #34d399; margin-top: 2px; }
+
+    .ctv-chip {
+      margin-top: 16px;
+      background: rgba(168,85,247,0.07);
+      border: 1px solid rgba(168,85,247,0.18);
+      border-radius: 12px;
+      padding: 12px 14px;
+      width: 100%; text-align: center;
+    }
+    .ctv-chip-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    }
+    .ctv-chip-item .num { font-size: 22px; font-weight: 700; color: #c084fc; }
+    .ctv-chip-item .lbl { font-size: 10px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Main */
     .main-content {
-      flex: 1;
-      min-width: 0;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-      animation: fadeIn 0.8s ease-out 0.2s both;
+      flex: 1; min-width: 0; padding: 16px;
+      display: flex; flex-direction: column; gap: 20px;
+      animation: fadeIn 0.6s ease-out 0.15s both;
     }
-    @media (min-width: 768px) {
-      .main-content { padding: 24px; gap: 32px; }
-    }
-    @media (min-width: 1024px) {
-      .main-content { padding: 0; }
-    }
+    @media (min-width: 768px) { .main-content { padding: 24px; gap: 28px; } }
+    @media (min-width: 1024px) { .main-content { padding: 0; } }
 
-    /* Stat Grid */
-    .stat-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-    }
-    @media (min-width: 768px) {
-      .stat-grid { grid-template-columns: repeat(4, 1fr); gap: 20px; }
-    }
+    /* Stat grid */
+    .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    @media (min-width: 768px) { .stat-grid { grid-template-columns: repeat(4, 1fr); gap: 16px; } }
+    @media (min-width: 1280px) { .stat-grid.has-5 { grid-template-columns: repeat(5, 1fr); } }
 
     .stat-card {
       background: var(--glass-bg);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
       border: 1px solid var(--glass-border);
-      border-radius: 16px;
-      padding: 14px;
-      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s;
-      position: relative;
-      overflow: hidden;
+      border-radius: 14px; padding: 14px;
+      position: relative; overflow: visible;
+      transition: transform 0.25s cubic-bezier(0.16,1,0.3,1), background 0.25s, border-color 0.25s;
     }
-    @media (min-width: 768px) {
-      .stat-card { padding: 20px; border-radius: 20px; }
-    }
-    .stat-card:hover {
-      transform: translateY(-5px);
-      background: var(--glass-hover);
-    }
+    @media (min-width: 768px) { .stat-card { padding: 16px; border-radius: 16px; } }
+    .stat-card:hover { transform: translateY(-2px); background: var(--glass-hover); }
     .stat-card::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; width: 100%; height: 4px;
+      content: ''; position: absolute; top: 0; left: 14px; right: 14px; height: 2px; border-radius: 0 0 4px 4px;
     }
-    .stat-card.blue::before { background: linear-gradient(90deg, #3b82f6, #06b6d4); }
-    .stat-card.green::before { background: linear-gradient(90deg, #10b981, #34d399); }
-    .stat-card.yellow::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
-    .stat-card.cyan::before { background: linear-gradient(90deg, #06b6d4, #2dd4bf); }
-    .stat-card.purple::before { background: linear-gradient(90deg, #a855f7, #c084fc); }
+    .stat-card.blue::before { background: linear-gradient(90deg,#3b82f6,#06b6d4); }
+    .stat-card.green::before { background: linear-gradient(90deg,#10b981,#34d399); }
+    .stat-card.yellow::before { background: linear-gradient(90deg,#f59e0b,#fbbf24); }
+    .stat-card.cyan::before { background: linear-gradient(90deg,#06b6d4,#2dd4bf); }
+    .stat-card.purple::before { background: linear-gradient(90deg,#a855f7,#c084fc); }
+    .stat-card.rose::before { background: linear-gradient(90deg,#f43f5e,#fb7185); }
 
-    .stat-label { font-size: 11px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;}
-    .stat-value { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
-    @media (min-width: 768px) {
-      .stat-label { font-size: 13px; margin-bottom: 8px; }
-      .stat-value { font-size: 28px; }
+    .stat-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .stat-icon {
+      width: 30px; height: 30px; border-radius: 8px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--glass-border);
     }
+    .stat-card.blue .stat-icon { color: #60a5fa; background: rgba(59,130,246,0.10); border-color: rgba(59,130,246,0.20); }
+    .stat-card.green .stat-icon { color: #34d399; background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.20); }
+    .stat-card.yellow .stat-icon { color: #fbbf24; background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.20); }
+    .stat-card.cyan .stat-icon { color: #22d3ee; background: rgba(6,182,212,0.10); border-color: rgba(6,182,212,0.20); }
+    .stat-card.purple .stat-icon { color: #c084fc; background: rgba(168,85,247,0.10); border-color: rgba(168,85,247,0.20); }
+
+    .info-btn {
+      background: transparent; border: 1px solid var(--glass-border);
+      width: 22px; height: 22px; border-radius: 6px;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: var(--text-muted); cursor: pointer; transition: all 0.2s;
+      padding: 0;
+    }
+    .info-btn:hover, .info-btn[aria-expanded="true"] {
+      background: rgba(255,255,255,0.06); color: var(--text-main); border-color: rgba(255,255,255,0.15);
+    }
+
+    .info-popover {
+      position: absolute; top: calc(100% + 6px); right: 8px;
+      min-width: 220px; max-width: 280px;
+      background: #0a0a0a; border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 10px; padding: 12px; z-index: 50;
+      box-shadow: 0 12px 40px -8px rgba(0,0,0,0.6);
+      animation: popIn 0.16s ease-out;
+    }
+    .info-popover[hidden] { display: none; }
+    .info-title { font-size: 12px; font-weight: 600; color: #fff; margin-bottom: 6px; }
+    .info-formula { font-size: 11px; color: #94a3b8; margin-bottom: 8px; }
+    .info-formula code { background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; color: #cbd5e1; font-size: 11px; }
+    .info-breakdown { border-top: 1px solid var(--glass-border); padding-top: 8px; }
+    .kv, .kv-strong { display: flex; justify-content: space-between; align-items: center; font-size: 11px; padding: 3px 0; }
+    .kv { color: var(--text-muted); }
+    .kv-strong { color: #fff; font-weight: 600; border-top: 1px dashed rgba(255,255,255,0.08); margin-top: 4px; padding-top: 6px; }
+    @keyframes popIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .stat-label { font-size: 11px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+    .stat-value { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+    @media (min-width: 768px) { .stat-label { font-size: 11px; } .stat-value { font-size: 22px; } }
     .stat-card.blue .stat-value { color: #60a5fa; }
     .stat-card.green .stat-value { color: #34d399; }
     .stat-card.yellow .stat-value { color: #fbbf24; }
     .stat-card.cyan .stat-value { color: #22d3ee; }
     .stat-card.purple .stat-value { color: #c084fc; }
     .stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
-    @media (min-width: 768px) {
-      .stat-sub { font-size: 13px; margin-top: 8px; }
-    }
-
-    /* Content Grid — all sections full width for table readability */
-    .content-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 24px;
-    }
-    @media (min-width: 768px) {
-      .content-grid { gap: 32px; }
-    }
 
     /* Sections */
     .data-section {
       background: var(--glass-bg);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
       border: 1px solid var(--glass-border);
-      border-radius: 24px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
+      border-radius: 18px; overflow: hidden;
+      display: flex; flex-direction: column;
     }
-    
     .section-header {
-      padding: 20px 24px;
+      padding: 16px 20px;
       border-bottom: 1px solid var(--glass-border);
-      display: flex;
-      align-items: center;
-      gap: 12px;
+      display: flex; align-items: center; gap: 10px;
       background: rgba(255,255,255,0.01);
     }
-    .section-title {
-      font-size: 18px; font-weight: 600;
+    .section-title-wrap { display: flex; align-items: center; gap: 8px; }
+    .section-icon {
+      width: 28px; height: 28px; border-radius: 7px;
+      background: rgba(59,130,246,0.10); color: #60a5fa;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid rgba(59,130,246,0.20);
     }
+    .section-icon.green { background: rgba(16,185,129,0.10); color: #34d399; border-color: rgba(16,185,129,0.20); }
+    .section-icon.purple { background: rgba(168,85,247,0.10); color: #c084fc; border-color: rgba(168,85,247,0.20); }
+    .section-icon.cyan { background: rgba(6,182,212,0.10); color: #22d3ee; border-color: rgba(6,182,212,0.20); }
+    .section-icon.yellow { background: rgba(245,158,11,0.10); color: #fbbf24; border-color: rgba(245,158,11,0.20); }
+    .section-title { font-size: 15px; font-weight: 600; }
     .badge-count {
-      background: rgba(255,255,255,0.1);
-      color: #fff;
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 13px;
-      font-weight: 600;
+      background: rgba(255,255,255,0.06); color: #fff;
+      padding: 3px 10px; border-radius: 12px;
+      font-size: 12px; font-weight: 600;
     }
 
     /* Tables */
-    .table-container {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
-    @media (min-width: 768px) {
-      table { font-size: 14px; }
-    }
+    .table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    @media (min-width: 768px) { table { font-size: 13px; } }
     th {
-      text-align: left;
-      padding: 10px 12px;
-      color: var(--text-muted);
-      font-weight: 500;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      background: rgba(0,0,0,0.2);
-      white-space: nowrap;
+      text-align: left; padding: 10px 12px;
+      color: var(--text-muted); font-weight: 500;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px;
+      background: rgba(0,0,0,0.20); white-space: nowrap;
     }
-    @media (min-width: 768px) {
-      th { padding: 14px 20px; font-size: 12px; letter-spacing: 1px; }
-    }
-    td {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--glass-border);
-      vertical-align: middle;
-    }
-    @media (min-width: 768px) {
-      td { padding: 14px 20px; }
-    }
+    @media (min-width: 768px) { th { padding: 12px 18px; font-size: 11px; } }
+    td { padding: 10px 12px; border-bottom: 1px solid var(--glass-border); vertical-align: middle; }
+    @media (min-width: 768px) { td { padding: 12px 18px; } }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: rgba(255,255,255,0.02); }
 
-    /* Utils */
     .text-right { text-align: right; }
     .text-center { text-align: center; }
     .text-muted { color: var(--text-muted); }
     .font-semibold { font-weight: 600; }
-    
     .link-primary { color: #60a5fa; text-decoration: none; transition: color 0.2s; }
     .link-primary:hover { color: #93c5fd; text-decoration: underline; }
-    
-    .truncate {
-      display: inline-block;
-      max-width: 130px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      vertical-align: middle;
-    }
+    .truncate { display: inline-block; max-width: 130px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
     @media (min-width: 768px) { .truncate { max-width: 350px; } }
     @media (min-width: 1200px) { .truncate { max-width: none; } }
-
     .item-name { font-weight: 500; color: #f8fafc; margin-bottom: 2px; font-size: 12px; }
-    .item-meta { font-size: 10px; color: var(--text-muted); }
-    @media (min-width: 768px) {
-      .item-name { font-size: 14px; margin-bottom: 4px; }
-      .item-meta { font-size: 12px; }
-    }
+    .item-meta { font-size: 10px; color: var(--text-dim); }
+    @media (min-width: 768px) { .item-name { font-size: 13px; margin-bottom: 3px; } .item-meta { font-size: 11px; } }
 
-    /* Status Badges */
+    .ts-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+    .ts-strong { font-weight: 600; color: #60a5fa; font-size: 13px; }
+    .ts-muted { font-size: 10px; color: var(--text-dim); font-weight: 400; }
+
+    /* Status badges */
     .status-badge {
-      display: inline-flex; align-items: center; justify-content: center;
-      padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 12px;
+      font-size: 11px; font-weight: 600; white-space: nowrap;
     }
-    .status-completed { background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.2); }
-    .status-cancelled { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
-    .status-pending { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
-    .status-default { background: rgba(148,163,184,0.15); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.2); }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+    .status-completed { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.20); }
+    .status-completed .status-dot { background: #10b981; }
+    .status-cancelled { background: rgba(244,63,94,0.12); color: #fb7185; border: 1px solid rgba(244,63,94,0.20); }
+    .status-cancelled .status-dot { background: #f43f5e; }
+    .status-pending { background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.20); }
+    .status-pending .status-dot { background: #f59e0b; }
+    .status-default { background: rgba(148,163,184,0.10); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.15); }
+    .status-default .status-dot { background: #94a3b8; }
 
-    /* Empty States */
-    .empty-state {
-      padding: 48px 24px;
-      text-align: center;
-      color: var(--text-muted);
-    }
-    .empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+    .chip-soft { background: rgba(255,255,255,0.06); padding: 3px 8px; border-radius: 6px; font-size: 11px; }
+    .chip-role { background: rgba(59,130,246,0.10); color: #60a5fa; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; border: 1px solid rgba(59,130,246,0.20); }
+    .chip-purple { background: rgba(168,85,247,0.12); color: #c084fc; border: 1px solid rgba(168,85,247,0.20); padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+
+    /* Empty state */
+    .empty-state { padding: 40px 20px; text-align: center; color: var(--text-muted); }
+    .empty-icon { color: var(--text-dim); margin-bottom: 12px; display: inline-flex; }
 
     /* Pagination */
-    .pagination-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 20px;
-      border-top: 1px solid var(--glass-border);
-      gap: 12px;
-      flex-wrap: wrap;
-    }
+    .pagination-bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; border-top: 1px solid var(--glass-border); gap: 12px; flex-wrap: wrap; }
     .pagination-info { font-size: 12px; color: var(--text-muted); }
     .pagination-controls { display: flex; align-items: center; gap: 6px; }
     .page-btn {
-      min-width: 32px; height: 32px; padding: 0 8px;
-      border-radius: 8px; border: 1px solid var(--glass-border);
+      min-width: 30px; height: 30px; padding: 0 8px;
+      border-radius: 7px; border: 1px solid var(--glass-border);
       background: transparent; color: var(--text-muted);
       font-size: 12px; cursor: pointer; transition: background 0.2s, color 0.2s;
       display: inline-flex; align-items: center; justify-content: center;
@@ -443,129 +658,77 @@ function renderReport(data) {
     .page-btn:disabled { opacity: 0.35; cursor: default; }
     .page-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; font-weight: 600; }
 
-    /* Footer */
-    .footer {
-      text-align: center;
-      padding: 24px;
-      color: var(--text-muted);
-      font-size: 13px;
-      margin-top: auto;
-    }
-    .expire-notice {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: rgba(245,158,11,0.1);
-      color: #fbbf24;
-      padding: 8px 16px;
-      border-radius: 20px;
-      margin-bottom: 12px;
-      font-weight: 500;
-    }
+    /* CTV tree */
+    .ctv-tree { padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; }
+    @media (min-width: 768px) { .ctv-tree { padding: 16px 20px; } }
+    .ctv-node { display: flex; flex-direction: column; }
+    .ctv-node.level-2 { padding-left: 28px; border-left: 1px dashed rgba(255,255,255,0.08); margin-left: 14px; }
+    .ctv-node.level-3 { padding-left: 28px; border-left: 1px dashed rgba(255,255,255,0.08); margin-left: 14px; }
 
-    /* Animations */
-    @keyframes slideRight {
-      from { opacity: 0; transform: translateX(-20px); }
-      to { opacity: 1; transform: translateX(0); }
-    }
-    @keyframes slideDown {
-      from { opacity: 0; transform: translateY(-20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* Referrer Card (Sidebar) */
-    .referrer-card {
-      margin-top: 24px;
-      background: rgba(16, 185, 129, 0.08);
-      border: 1px solid rgba(16, 185, 129, 0.15);
-      border-radius: 16px;
-      padding: 16px;
-      width: 100%;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .referrer-avatar {
-      width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
-      border: 2px solid rgba(16, 185, 129, 0.3);
-      flex-shrink: 0;
-    }
-    .referrer-avatar-placeholder {
-      width: 40px; height: 40px; border-radius: 50%;
-      background: linear-gradient(135deg, var(--green), #059669);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 16px; font-weight: 700; color: #fff;
-      flex-shrink: 0;
-    }
-    .referrer-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-    .referrer-name { font-size: 14px; font-weight: 600; color: #34d399; }
-
-    /* CTV Summary Chip (Sidebar) */
-    .ctv-chip {
-      margin-top: 16px;
-      background: rgba(6, 182, 212, 0.08);
-      border: 1px solid rgba(6, 182, 212, 0.15);
-      border-radius: 12px;
-      padding: 12px 16px;
-      width: 100%;
-      text-align: center;
-    }
-    .ctv-chip-number { font-size: 28px; font-weight: 700; color: #22d3ee; }
-    .ctv-chip-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-
-    /* CTV Grid */
-    .ctv-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 8px;
-      padding: 16px;
-    }
-    @media (min-width: 480px) { .ctv-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (min-width: 768px) { .ctv-grid { padding: 20px; gap: 12px; } }
-
-    .ctv-card {
-      background: rgba(255,255,255,0.03);
+    .ctv-row {
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(255,255,255,0.025);
       border: 1px solid var(--glass-border);
-      border-radius: 12px;
-      padding: 12px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      border-radius: 10px; padding: 10px 12px;
       transition: background 0.2s;
     }
-    .ctv-card:hover { background: rgba(255,255,255,0.06); }
-    .ctv-avatar {
-      width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
-      border: 1px solid var(--glass-border);
-      flex-shrink: 0;
-    }
+    .ctv-row.is-expandable { cursor: pointer; user-select: none; }
+    .ctv-row:hover { background: rgba(255,255,255,0.05); }
+    .ctv-chevron, .ctv-chevron-spacer { width: 16px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); flex-shrink: 0; transition: transform 0.2s; }
+    .ctv-row.is-expanded .ctv-chevron { transform: rotate(90deg); }
+
+    .ctv-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--glass-border); flex-shrink: 0; }
     .ctv-avatar-placeholder {
-      width: 36px; height: 36px; border-radius: 50%;
+      width: 32px; height: 32px; border-radius: 50%;
       background: linear-gradient(135deg, #06b6d4, #3b82f6);
       display: flex; align-items: center; justify-content: center;
-      font-size: 14px; font-weight: 600; color: #fff;
+      font-size: 13px; font-weight: 600; color: #fff;
       flex-shrink: 0;
     }
     .ctv-info { min-width: 0; flex: 1; }
-    .ctv-name { font-size: 13px; font-weight: 600; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ctv-stats { font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; margin-top: 2px; }
-    .ctv-stat-value { color: #22d3ee; font-weight: 600; }
-
-    /* SVG Revenue Chart */
-    .chart-container {
-      padding: 20px;
-      overflow-x: auto;
+    .ctv-name-row { display: flex; align-items: center; gap: 6px; }
+    .ctv-name { font-size: 13px; font-weight: 600; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+    .level-tag {
+      font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 8px; letter-spacing: 0.4px;
+      flex-shrink: 0;
     }
+    .level-tag-1 { background: rgba(34,211,238,0.15); color: #22d3ee; }
+    .level-tag-2 { background: rgba(96,165,250,0.15); color: #60a5fa; }
+    .level-tag-3 { background: rgba(167,139,250,0.15); color: #a78bfa; }
+    .ctv-stats { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
+    .ctv-stats svg { vertical-align: middle; }
+    .ctv-stat-value { color: #f8fafc; font-weight: 600; }
+    .ctv-sep { color: var(--text-dim); }
+
+    .ctv-earnings { text-align: right; flex-shrink: 0; }
+    .ctv-earnings-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+    .ctv-earnings-value { font-size: 14px; font-weight: 700; color: #34d399; margin-top: 2px; }
+    .ctv-children { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
+    .ctv-children[hidden] { display: none; }
+
+    /* SVG chart */
+    .chart-container { padding: 16px; overflow-x: auto; }
     .chart-svg { width: 100%; height: auto; min-width: 300px; }
-    .chart-bar { transition: opacity 0.2s; cursor: pointer; }
-    .chart-bar:hover { opacity: 0.8; }
-    .chart-bar-label { font-size: 11px; fill: var(--text-muted); text-anchor: middle; }
+    .chart-month-label { font-size: 11px; fill: var(--text-muted); text-anchor: middle; }
     .chart-bar-value { font-size: 10px; fill: #60a5fa; text-anchor: middle; font-weight: 600; }
-    .chart-month-label { font-size: 12px; fill: var(--text-muted); text-anchor: middle; }
+
+    /* Footer */
+    .footer { text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; margin-top: auto; }
+    .expire-notice {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(245,158,11,0.08);
+      color: #fbbf24;
+      padding: 6px 14px; border-radius: 16px;
+      margin-bottom: 10px; font-weight: 500;
+      border: 1px solid rgba(245,158,11,0.18);
+    }
+
+    /* Animations */
+    @keyframes slideRight { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes slideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    .lc-icon { display: inline-block; vertical-align: middle; }
   </style>
 </head>
 <body>
@@ -576,135 +739,139 @@ function renderReport(data) {
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="avatar-wrapper">
-        ${user.avatar 
-          ? `<img src="${user.avatar}" class="avatar" alt="Avatar" onerror="this.style.display='none'">`
-          : `<div class="avatar-placeholder">${(user.displayName || '?')[0].toUpperCase()}</div>`
-        }
+        ${user.avatar
+          ? `<img src="${escapeHtml(user.avatar)}" class="avatar" alt="Avatar" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+          : ''}
+        <div class="avatar-placeholder" ${user.avatar ? 'style="display:none"' : ''}>${escapeHtml((user.displayName || '?')[0].toUpperCase())}</div>
       </div>
-      <h1 class="user-name">${user.displayName}</h1>
-      <p class="user-sub">Thống kê Affiliate Cá nhân</p>
-      
+      <h1 class="user-name">${escapeHtml(user.displayName)}</h1>
+      <p class="user-sub">Báo cáo Affiliate cá nhân</p>
+      <span class="mode-tag ${isCustomMode ? '' : 'normal'}">
+        ${icon(isCustomMode ? 'award' : 'zap', 11)}
+        ${isCustomMode ? `Custom · ${customRate}%` : 'Normal'}
+      </span>
+
       <div class="rate-card">
-        <div class="label">Tỷ lệ hoàn tiền</div>
-        <div class="value">${user.cashbackBuyerRate}%</div>
-        <div class="desc">Áp dụng cho đơn hàng hoàn thành</div>
+        <div class="rate-card-title">${icon('layers', 12)} Tỷ lệ chia hoa hồng</div>
+        ${isCustomMode
+          ? rateBreakdownRow(`Custom (bạn)`, customRate, '') + rateBreakdownRow('Admin', 100 - customRate, 'admin')
+          : rateBreakdownRow('F0 — Bạn mua', rates.f0, 'f0') +
+            rateBreakdownRow('F1 — Cấp 1', rates.f1, 'f1') +
+            rateBreakdownRow('F2 — Cấp 2', rates.f2, 'f2') +
+            rateBreakdownRow('F3 — Cấp 3', rates.f3, 'f3') +
+            rateBreakdownRow('Admin', rates.admin, 'admin')
+        }
       </div>
 
       ${referrer ? `
       <div class="referrer-card">
-        ${referrer.avatar 
-          ? `<img src="${referrer.avatar}" class="referrer-avatar" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+        ${referrer.avatar
+          ? `<img src="${escapeHtml(referrer.avatar)}" class="referrer-avatar" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
           : ''}
-        <div class="referrer-avatar-placeholder" ${referrer.avatar ? 'style="display:none"' : ''}>${(referrer.displayName || '?')[0].toUpperCase()}</div>
+        <div class="referrer-avatar-placeholder" ${referrer.avatar ? 'style="display:none"' : ''}>${escapeHtml((referrer.displayName || '?')[0].toUpperCase())}</div>
         <div>
-          <div class="referrer-label">👤 Người giới thiệu</div>
-          <div class="referrer-name">${referrer.displayName}</div>
+          <div class="referrer-label">${icon('user', 10)} Người giới thiệu bạn</div>
+          <div class="referrer-name">${escapeHtml(referrer.displayName)}</div>
         </div>
       </div>` : ''}
 
       ${ctvList.length > 0 ? `
       <div class="ctv-chip">
-        <div class="ctv-chip-number">${ctvList.length}</div>
-        <div class="ctv-chip-label">👥 Cộng tác viên đã mời</div>
+        <div class="ctv-chip-row">
+          <div class="ctv-chip-item">
+            <div class="num">${ctvList.length}</div>
+            <div class="lbl">CTV F1</div>
+          </div>
+          <div class="ctv-chip-item">
+            <div class="num">${formatShortVND(summary.totalReferrerEarnings)}đ</div>
+            <div class="lbl">Bạn nhận</div>
+          </div>
+        </div>
       </div>` : ''}
     </aside>
 
-    <!-- Main Content -->
+    <!-- Main -->
     <main class="main-content">
       <!-- Overview Cards -->
-      <div class="stat-grid">
-        <div class="stat-card blue">
-          <div class="stat-label">Tổng hoa hồng</div>
-          <div class="stat-value">${formatVND(summary.totalNetCommission)}</div>
-          <div class="stat-sub">${summary.totalOrders} đơn phát sinh</div>
-        </div>
-        <div class="stat-card green">
-          <div class="stat-label">Đã thanh toán</div>
-          <div class="stat-value">${formatVND(summary.totalPaid)}</div>
-          <div class="stat-sub">${payouts.length} lần nhận tiền</div>
-        </div>
-        <div class="stat-card yellow">
-          <div class="stat-label">Đang chờ duyệt</div>
-          <div class="stat-value">${formatVND(summary.pendingPayment)}</div>
-          <div class="stat-sub">${summary.completedCount} đơn hoàn thành</div>
-        </div>
-        <div class="stat-card cyan">
-          <div class="stat-label">Link đã tạo</div>
-          <div class="stat-value">${summary.totalLinks}</div>
-          <div class="stat-sub">Tổng lượt chuyển đổi</div>
-        </div>
+      <div class="stat-grid ${cardReferrer ? 'has-5' : ''}">
+        ${cardCashback}
+        ${cardOrders}
+        ${cardPaid}
+        ${cardPending}
+        ${cardReferrer}
       </div>
 
       ${summary.hasCustomOrders ? `
-      <!-- Custom Affiliate Summary Cards -->
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:-8px;padding:0 2px">
-        <div style="width:4px;height:20px;border-radius:2px;background:linear-gradient(180deg,#a855f7,#c084fc)"></div>
-        <span style="font-size:13px;font-weight:600;color:#c084fc;letter-spacing:0.5px;text-transform:uppercase">🎯 Đơn Hoa hồng Tuỳ chỉnh (Custom F1)</span>
-        <span style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.25);padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">${summary.totalCustomOrders} đơn • ${summary.uniqueF2Count} khách</span>
-      </div>
-      <div class="stat-grid">
-        <div class="stat-card purple">
-          <div class="stat-label">Tổng hoa hồng Custom</div>
-          <div class="stat-value">${formatVND(summary.totalCustomCashback)}</div>
-          <div class="stat-sub">Tỷ lệ ${summary.customRate}% • ${summary.totalCustomOrders} đơn</div>
+      <!-- Custom F1 Section -->
+      <section class="data-section" style="border-color:rgba(168,85,247,0.2)">
+        <div class="section-header" style="background:rgba(168,85,247,0.04)">
+          <span class="section-icon purple">${icon('target', 14)}</span>
+          <span class="section-title-wrap">
+            <span class="section-title">Đơn Custom F1 — gửi link cho khách</span>
+            <span class="badge-count" style="background:rgba(168,85,247,0.18);color:#c084fc">${customOrders.length} đơn</span>
+          </span>
+          <span style="margin-left:auto;font-size:11px;color:#c084fc;background:rgba(168,85,247,0.10);border:1px solid rgba(168,85,247,0.20);padding:3px 10px;border-radius:10px;font-weight:600">
+            Tỷ lệ: ${summary.customRate}%
+          </span>
         </div>
-        <div class="stat-card green">
-          <div class="stat-label">Đã hoàn Custom</div>
-          <div class="stat-value">${formatVND(summary.totalCustomPaid)}</div>
-          <div class="stat-sub">${summary.completedCustomCount} đơn hoàn thành</div>
+        <div style="padding:10px 18px;background:rgba(168,85,247,0.04);border-bottom:1px solid rgba(168,85,247,0.10);display:flex;flex-wrap:wrap;gap:14px;font-size:11px">
+          <span>Tổng: <strong style="color:#c084fc">${summary.totalCustomOrders}</strong></span>
+          <span>Hoàn thành: <strong style="color:#34d399">${summary.completedCustomCount}</strong></span>
+          <span>Đang xử lý: <strong style="color:#fbbf24">${summary.pendingCustomCount}</strong></span>
+          <span>HH bạn nhận: <strong style="color:#c084fc">${formatVND(summary.totalCustomCashback)}</strong></span>
+          <span>Đã nhận: <strong style="color:#34d399">${formatVND(summary.totalCustomPaid)}</strong></span>
+          <span>Chờ duyệt: <strong style="color:#fbbf24">${formatVND(summary.pendingCustomPayment)}</strong></span>
+          <span>Khách F2: <strong style="color:#22d3ee">${summary.uniqueF2Count}</strong></span>
         </div>
-        <div class="stat-card yellow">
-          <div class="stat-label">Chờ duyệt Custom</div>
-          <div class="stat-value">${formatVND(summary.pendingCustomPayment)}</div>
-          <div class="stat-sub">${summary.pendingCustomCount} đơn đang xử lý</div>
+        <div class="table-container">
+          <table id="tbl-custom">
+            <thead>
+              <tr>
+                <th>Thông tin đơn hàng</th>
+                <th class="text-center">SĐT khách F2</th>
+                <th class="text-right">Giá trị đơn</th>
+                <th class="text-center">Trạng thái</th>
+                <th class="text-right" style="color:#c084fc">Hoa hồng bạn nhận</th>
+              </tr>
+            </thead>
+            <tbody>${customOrdersHtml}</tbody>
+          </table>
         </div>
-        <div class="stat-card cyan">
-          <div class="stat-label">Số khách F2</div>
-          <div class="stat-value">${summary.uniqueF2Count}</div>
-          <div class="stat-sub">SĐT duy nhất đã mua</div>
+        <div class="pagination-bar" id="pg-custom" style="border-color:rgba(168,85,247,0.10)">
+          <span class="pagination-info" id="pg-custom-info"></span>
+          <div class="pagination-controls" id="pg-custom-ctrl"></div>
         </div>
-      </div>` : ''}
+      </section>` : ''}
 
       ${(() => {
-        // SVG Revenue Chart (inline — no library needed)
         const maxCommission = Math.max(...monthlyChart.map(m => m.commission), 1);
-        const chartWidth = 460;
-        const chartHeight = 180;
-        const barWidth = 50;
-        const gap = 20;
-        const startX = 30;
+        const chartWidth = 480, chartHeight = 180, barWidth = 52, gap = 20, startX = 32;
         const bars = monthlyChart.map((m, i) => {
           const barH = Math.max((m.commission / maxCommission) * (chartHeight - 40), 2);
           const x = startX + i * (barWidth + gap);
           const y = chartHeight - 20 - barH;
-          const val = m.commission >= 1000000 ? (m.commission / 1000000).toFixed(1) + 'M' 
-                    : m.commission >= 1000 ? Math.round(m.commission / 1000) + 'k' 
+          const val = m.commission >= 1000000 ? (m.commission / 1000000).toFixed(1) + 'M'
+                    : m.commission >= 1000 ? Math.round(m.commission / 1000) + 'k'
                     : Math.round(m.commission);
-          return `
-            <g class="chart-bar">
-              <defs>
-                <linearGradient id="barGrad${i}" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#60a5fa"/>
-                  <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.6"/>
-                </linearGradient>
-              </defs>
-              <rect x="${x}" y="${y}" width="${barWidth}" height="${barH}" rx="6" fill="url(#barGrad${i})"/>
-              <text x="${x + barWidth/2}" y="${y - 6}" class="chart-bar-value">${val}đ</text>
-              <text x="${x + barWidth/2}" y="${chartHeight - 4}" class="chart-month-label">${m.label}</text>
-            </g>`;
+          return `<g>
+            <defs><linearGradient id="barGrad${i}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#3b82f6" stop-opacity="0.5"/></linearGradient></defs>
+            <rect x="${x}" y="${y}" width="${barWidth}" height="${barH}" rx="6" fill="url(#barGrad${i})"/>
+            <text x="${x + barWidth/2}" y="${y - 6}" class="chart-bar-value">${val}đ</text>
+            <text x="${x + barWidth/2}" y="${chartHeight - 4}" class="chart-month-label">${m.label}</text>
+          </g>`;
         }).join('');
-
         if (monthlyChart.some(m => m.commission > 0)) {
           return `
-          <section class="data-section" style="margin-bottom:0">
+          <section class="data-section">
             <div class="section-header">
-              <span class="section-title">📊 Doanh thu 6 tháng</span>
-              <span class="badge-count">${formatVND(monthlyChart.reduce((s,m) => s + m.commission, 0))}</span>
+              <span class="section-icon">${icon('trendingUp', 14)}</span>
+              <span class="section-title-wrap">
+                <span class="section-title">Doanh thu 6 tháng (raw)</span>
+                <span class="badge-count">${formatVND(monthlyChart.reduce((s,m) => s + m.commission, 0))}</span>
+              </span>
             </div>
             <div class="chart-container">
-              <svg class="chart-svg" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="xMidYMid meet">
-                ${bars}
-              </svg>
+              <svg class="chart-svg" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="xMidYMid meet">${bars}</svg>
             </div>
           </section>`;
         }
@@ -714,34 +881,28 @@ function renderReport(data) {
       ${ctvList.length > 0 ? `
       <section class="data-section">
         <div class="section-header">
-          <span class="section-title">👥 Cộng tác viên</span>
-          <span class="badge-count">${ctvList.length} người</span>
+          <span class="section-icon purple">${icon('users', 14)}</span>
+          <span class="section-title-wrap">
+            <span class="section-title">Cộng tác viên & Thu nhập theo cấp</span>
+            <span class="badge-count">${ctvList.length} F1</span>
+          </span>
+          <span style="margin-left:auto;font-size:11px;color:#34d399;font-weight:600">
+            Tổng: ${formatVND(summary.totalReferrerEarnings)}
+          </span>
         </div>
-        <div class="ctv-grid">
-          ${ctvList.map(c => `
-            <div class="ctv-card">
-              ${c.avatar 
-                ? `<img src="${c.avatar}" class="ctv-avatar" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
-                : ''}
-              <div class="ctv-avatar-placeholder" ${c.avatar ? 'style="display:none"' : ''}>${(c.displayName || '?')[0].toUpperCase()}</div>
-              <div class="ctv-info">
-                <div class="ctv-name">${c.displayName}</div>
-                <div class="ctv-stats">
-                  <span>📦 <span class="ctv-stat-value">${c.orderCount}</span> đơn</span>
-                  <span>💰 <span class="ctv-stat-value">${formatVND(c.totalCommission)}</span></span>
-                </div>
-              </div>
-            </div>
-          `).join('')}
+        <div class="ctv-tree">
+          ${ctvList.map(node => renderCtvNode(node, 1, rates)).join('')}
         </div>
       </section>` : ''}
 
-      <div class="content-grid">
-        <!-- Links Section -->
-        <section class="data-section">
+      <!-- Links Section -->
+      <section class="data-section">
         <div class="section-header">
-          <span class="section-title">🔗 Link đã gửi</span>
-          <span class="badge-count">${links.length}</span>
+          <span class="section-icon">${icon('link', 14)}</span>
+          <span class="section-title-wrap">
+            <span class="section-title">Link đã tạo</span>
+            <span class="badge-count">${links.length}</span>
+          </span>
         </div>
         ${links.length > 0 ? `
         <div class="table-container">
@@ -749,8 +910,8 @@ function renderReport(data) {
             <thead>
               <tr>
                 <th>Sản phẩm / Link</th>
-                <th class="text-right">Hoa hồng dự kiến</th>
-                <th class="text-right">Thời gian tạo</th>
+                <th class="text-right">Hoa hồng bạn nhận</th>
+                <th class="text-right">Thời gian</th>
               </tr>
             </thead>
             <tbody>${linksHtml}</tbody>
@@ -761,16 +922,19 @@ function renderReport(data) {
           <div class="pagination-controls" id="pg-links-ctrl"></div>
         </div>` : `
         <div class="empty-state">
-          <div class="empty-icon">🔗</div>
+          <div class="empty-icon">${icon('link', 32)}</div>
           <p>Bạn chưa tạo link affiliate nào.</p>
         </div>`}
       </section>
 
-        <!-- Orders Section -->
-        <section class="data-section full-width">
+      <!-- Orders Section -->
+      <section class="data-section">
         <div class="section-header">
-          <span class="section-title">📦 Đơn hàng phát sinh</span>
-          <span class="badge-count">${matchedOrders.length}</span>
+          <span class="section-icon green">${icon('shoppingBag', 14)}</span>
+          <span class="section-title-wrap">
+            <span class="section-title">Đơn hàng phát sinh</span>
+            <span class="badge-count">${matchedOrders.length}</span>
+          </span>
         </div>
         ${matchedOrders.length > 0 ? `
         <div class="table-container">
@@ -780,7 +944,7 @@ function renderReport(data) {
                 <th>Thông tin đơn hàng</th>
                 <th class="text-right">Giá trị đơn</th>
                 <th class="text-center">Trạng thái</th>
-                <th class="text-right">Hoa hồng nhận</th>
+                <th class="text-right">Hoa hồng bạn nhận</th>
               </tr>
             </thead>
             <tbody>${ordersHtml}</tbody>
@@ -791,65 +955,30 @@ function renderReport(data) {
           <div class="pagination-controls" id="pg-orders-ctrl"></div>
         </div>` : `
         <div class="empty-state">
-          <div class="empty-icon">🛒</div>
-          <p>Chưa có đơn hàng nào được ghi nhận từ link của bạn.</p>
+          <div class="empty-icon">${icon('shoppingBag', 32)}</div>
+          <p>Chưa có đơn hàng nào ghi nhận.</p>
         </div>`}
       </section>
-
-      ${summary.hasCustomOrders ? `
-      <!-- Custom Orders Section -->
-      <section class="data-section" style="border-color:rgba(168,85,247,0.2)">
-        <div class="section-header" style="border-color:rgba(168,85,247,0.15);background:rgba(168,85,247,0.04)">
-          <span class="section-title">🎯 Đơn Custom — F1 gửi link cho khách</span>
-          <span class="badge-count" style="background:rgba(168,85,247,0.2);color:#c084fc">${customOrders.length} đơn</span>
-          <span style="margin-left:auto;font-size:12px;color:#c084fc;background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.2);padding:4px 12px;border-radius:12px;font-weight:600">
-            Tỷ lệ hoa hồng: ${summary.customRate}%
-          </span>
-        </div>
-        <div style="padding:12px 20px;background:rgba(168,85,247,0.05);border-bottom:1px solid rgba(168,85,247,0.1);display:flex;flex-wrap:wrap;gap:16px;font-size:12px">
-          <span>📦 Tổng: <strong style="color:#c084fc">${summary.totalCustomOrders}</strong></span>
-          <span>✅ Hoàn thành: <strong style="color:#34d399">${summary.completedCustomCount}</strong></span>
-          <span>⏳ Đang xử lý: <strong style="color:#fbbf24">${summary.pendingCustomCount}</strong></span>
-          <span>💰 Hoa hồng tổng: <strong style="color:#c084fc">${formatVND(summary.totalCustomCashback)}</strong></span>
-          <span>✅ Đã nhận: <strong style="color:#34d399">${formatVND(summary.totalCustomPaid)}</strong></span>
-          <span>⏳ Chờ duyệt: <strong style="color:#fbbf24">${formatVND(summary.pendingCustomPayment)}</strong></span>
-          <span>👤 Số khách F2: <strong style="color:#22d3ee">${summary.uniqueF2Count}</strong></span>
-        </div>
-        <div class="table-container">
-          <table id="tbl-custom">
-            <thead>
-              <tr>
-                <th>Thông tin đơn hàng</th>
-                <th class="text-center">SĐT Khách (F2)</th>
-                <th class="text-right">Giá trị đơn</th>
-                <th class="text-center">Trạng thái</th>
-                <th class="text-right" style="color:#c084fc">Hoa hồng của bạn</th>
-              </tr>
-            </thead>
-            <tbody>${customOrdersHtml}</tbody>
-          </table>
-        </div>
-        <div class="pagination-bar" id="pg-custom" style="border-color:rgba(168,85,247,0.1)">
-          <span class="pagination-info" id="pg-custom-info"></span>
-          <div class="pagination-controls" id="pg-custom-ctrl"></div>
-        </div>
-      </section>` : ''}
 
       <!-- Payouts Section -->
       <section class="data-section">
         <div class="section-header">
-          <span class="section-title">💸 Lịch sử rút tiền</span>
-          <span class="badge-count">${payouts.length}</span>
+          <span class="section-icon cyan">${icon('creditCard', 14)}</span>
+          <span class="section-title-wrap">
+            <span class="section-title">Lịch sử nhận tiền</span>
+            <span class="badge-count">${payouts.length}</span>
+          </span>
         </div>
         ${payouts.length > 0 ? `
         <div class="table-container">
           <table id="tbl-payouts">
             <thead>
               <tr>
-                <th>Ngày nhận</th>
+                <th>Ngày</th>
                 <th class="text-right">Số tiền</th>
                 <th>Phương thức</th>
-                <th>Ghi chú từ Admin</th>
+                <th>Vai trò</th>
+                <th>Ghi chú</th>
               </tr>
             </thead>
             <tbody>${payoutsHtml}</tbody>
@@ -860,48 +989,42 @@ function renderReport(data) {
           <div class="pagination-controls" id="pg-payouts-ctrl"></div>
         </div>` : `
         <div class="empty-state">
-          <div class="empty-icon">💳</div>
-          <p>Chưa có lịch sử thanh toán nào.</p>
+          <div class="empty-icon">${icon('creditCard', 32)}</div>
+          <p>Chưa có lịch sử thanh toán.</p>
         </div>`}
       </section>
-      </div>
 
       <footer class="footer">
         <div class="expire-notice">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-          Báo cáo này sẽ tự hủy sau 24 giờ để bảo mật
+          ${icon('clock', 14)} Báo cáo tự hủy sau 24 giờ để bảo mật
         </div>
-        <p>Cập nhật lần cuối: ${formatDate(generatedAt)}</p>
-        <p style="margin-top: 4px; opacity: 0.6;">Shopee Affiliate System © 2024</p>
+        <p>Cập nhật: ${formatDate(generatedAt)}</p>
+        <p style="margin-top:4px;opacity:0.6">Shopee Affiliate System</p>
       </footer>
     </main>
   </div>
 
   <script>
+    // ── Pagination ──
     function paginateTable(attrName, infoId, ctrlId, pageSize) {
       const rows = Array.from(document.querySelectorAll('[data-row-' + attrName + ']'));
       const total = rows.length;
       if (total === 0) return;
       const totalPages = Math.max(1, Math.ceil(total / pageSize));
       let cur = 1;
-
       function render(page) {
         cur = page;
         const start = (page - 1) * pageSize;
         rows.forEach((r, i) => { r.style.display = (i >= start && i < start + pageSize) ? '' : 'none'; });
-        // info
         const infoEl = document.getElementById(infoId);
         if (infoEl) infoEl.textContent = (total === 0 ? '0' : start + 1) + '–' + Math.min(start + pageSize, total) + ' / ' + total + ' bản ghi';
-        // controls
         const ctrlEl = document.getElementById(ctrlId);
         if (!ctrlEl) return;
         ctrlEl.innerHTML = '';
-        // prev
         const prev = document.createElement('button');
         prev.className = 'page-btn'; prev.textContent = '‹'; prev.disabled = page === 1;
         prev.onclick = () => render(cur - 1);
         ctrlEl.appendChild(prev);
-        // page buttons
         const pages = [];
         for (let p = 1; p <= totalPages; p++) {
           if (p === 1 || p === totalPages || Math.abs(p - page) <= 1) pages.push(p);
@@ -915,19 +1038,53 @@ function renderReport(data) {
           }
           const btn = document.createElement('button');
           btn.className = 'page-btn' + (p === page ? ' active' : '');
-          btn.textContent = p;
-          btn.onclick = () => render(p);
+          btn.textContent = p; btn.onclick = () => render(p);
           ctrlEl.appendChild(btn);
           last = p;
         });
-        // next
         const next = document.createElement('button');
         next.className = 'page-btn'; next.textContent = '›'; next.disabled = page === totalPages;
         next.onclick = () => render(cur + 1);
         ctrlEl.appendChild(next);
       }
-
       render(1);
+    }
+
+    // ── Info tooltip toggle ──
+    function initTooltips() {
+      const btns = document.querySelectorAll('[data-tip]');
+      btns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const pop = btn.parentElement.querySelector('.info-popover');
+          if (!pop) return;
+          const isOpen = !pop.hidden;
+          // close others
+          document.querySelectorAll('.info-popover').forEach(p => p.hidden = true);
+          document.querySelectorAll('[data-tip]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+          if (!isOpen) {
+            pop.hidden = false;
+            btn.setAttribute('aria-expanded', 'true');
+          }
+        });
+      });
+      document.addEventListener('click', () => {
+        document.querySelectorAll('.info-popover').forEach(p => p.hidden = true);
+        document.querySelectorAll('[data-tip]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+      });
+    }
+
+    // ── CTV expandable rows ──
+    function initCtvTree() {
+      document.querySelectorAll('[data-toggle-children]').forEach(row => {
+        row.addEventListener('click', () => {
+          const children = row.parentElement.querySelector('.ctv-children');
+          if (!children) return;
+          const willOpen = children.hidden;
+          children.hidden = !willOpen;
+          row.classList.toggle('is-expanded', willOpen);
+        });
+      });
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -935,6 +1092,8 @@ function renderReport(data) {
       paginateTable('orders',  'pg-orders-info',  'pg-orders-ctrl',  10);
       paginateTable('payouts', 'pg-payouts-info', 'pg-payouts-ctrl', 10);
       paginateTable('custom',  'pg-custom-info',  'pg-custom-ctrl',  10);
+      initTooltips();
+      initCtvTree();
     });
   </script>
 </body>
