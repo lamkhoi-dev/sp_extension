@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Eye, Users, UserCheck, DollarSign, RefreshCw, MessageSquare, Edit2, Save, Building2, Trophy, ShoppingBag, Upload, ChevronDown, GitBranch } from 'lucide-react';
+import { Eye, Users, UserCheck, DollarSign, RefreshCw, MessageSquare, Edit2, Save, Building2, Trophy, ShoppingBag, Upload, ChevronDown, GitBranch, Maximize2 } from 'lucide-react';
 import ReferralTree from '../components/ReferralTree';
 import { Avatar, Tooltip } from 'antd';
 import DataTable from '../components/ui/DataTable';
@@ -331,32 +331,63 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Genealogy Tree Section */}
-      <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
-        <button
-          onClick={() => setShowTree(!showTree)}
-          className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center">
-              <GitBranch className="w-4 h-4 text-emerald-500" />
-            </div>
-            <div className="text-left">
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">🌳 Sơ đồ Gia phả</p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                {referredUsers.length} liên kết giới thiệu · Click user để xem chain F0→F3
-              </p>
-            </div>
+      {/* Genealogy Tree — trigger card */}
+      <button
+        onClick={() => setShowTree(true)}
+        className="w-full bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4 sm:p-5 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors flex items-center justify-between group"
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center">
+            <GitBranch className="w-4 h-4 text-emerald-500" />
           </div>
-          <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${showTree ? 'rotate-180' : ''}`} />
-        </button>
+          <div className="text-left">
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">🌳 Sơ đồ Gia phả</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {referredUsers.length} liên kết giới thiệu · Click để mở sơ đồ F0→F3
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-slate-400 group-hover:text-blue-500 transition-colors">
+          <Maximize2 className="w-4 h-4" />
+          <span className="hidden sm:inline">Mở rộng</span>
+        </div>
+      </button>
 
-        {showTree && (
-          <div className="border-t border-slate-200 dark:border-slate-700/50" style={{ height: '540px' }}>
-            <ReferralTree users={users} onSelectUser={openDetail} />
+      {/* Genealogy Tree — fullscreen modal */}
+      {showTree && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => setShowTree(false)}
+          />
+          {/* Modal content */}
+          <div className="relative w-[96vw] h-[92vh] bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700/50 flex-shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center">
+                  <GitBranch className="w-3.5 h-3.5 text-emerald-500" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-white">🌳 Sơ đồ Gia phả</h2>
+                  <p className="text-[10px] text-slate-400">{users.length} users · {referredUsers.length} liên kết · Click user để highlight chain F0→F3</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTree(false)}
+                className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 flex items-center justify-center text-slate-400 hover:text-white transition-all"
+              >
+                ✕
+              </button>
+            </div>
+            {/* Tree canvas */}
+            <div className="flex-1">
+              <ReferralTree users={users} onSelectUser={(user) => { setShowTree(false); openDetail(user); }} />
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Data Table */}
       <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4 sm:p-6">
