@@ -28,6 +28,7 @@ const { renderReport } = require('./src/stats/report-template');
 const healthMonitor = require('./src/cron/health-monitor');
 const linkRedirectStore = require('./src/api/link-redirect-store');
 const commissionRatesStore = require('./src/api/commission-rates-store');
+const withdrawalStore = require('./src/api/withdrawal-store');
 const ShopeeAPI = require('./src/shopee-api');
 
 
@@ -1064,6 +1065,58 @@ app.patch('/api/settings/commission-rates', async (req, res) => {
   }
 });
 
+// ─── Withdrawal Requests API (admin) ───────────────────
+app.get('/api/withdrawal-requests', async (req, res) => {
+  try {
+    const { status, limit, offset } = req.query;
+    const rows = await withdrawalStore.listRequests({
+      status: status || null,
+      limit: Math.min(Number(limit) || 50, 200),
+      offset: Number(offset) || 0,
+    });
+    // Parse breakdown JSON for client convenience
+    const requests = rows.map(r => {
+      let breakdown = r.breakdown;
+      if (typeof breakdown === 'string') {
+        try { breakdown = JSON.parse(breakdown); } catch { breakdown = {}; }
+      }
+      return { ...r, breakdown: breakdown || {} };
+    });
+    res.json({ ok: true, requests });
+  } catch (err) {
+    logger.error('Withdrawal', `List failed: ${err.message}`);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.patch('/api/withdrawal-requests/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { status, adminNote, payoutId } = req.body || {};
+    if (!['paid', 'rejected', 'cancelled', 'pending'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    await withdrawalStore.markProcessed(id, {
+      status,
+      adminNote,
+      payoutId,
+      processedBy: req.admin?.username || 'system',
+    });
+    await auditStore.log(
+      req.admin?.username || 'system',
+      'WITHDRAWAL_REQUEST_UPDATED',
+      'withdrawal_request',
+      String(id),
+      { status, adminNote, payoutId },
+      req.ip
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('Withdrawal', `Update ${req.params.id} failed: ${err.message}`);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ─── Redirect Click Analytics API ──────────────────────
 app.get('/api/redirect-clicks/:token', async (req, res) => {
   try {
@@ -1540,7 +1593,7 @@ async function start() {
   auditStore.cleanup(6).catch(() => {});
   reportStore.cleanup().catch(() => {});
 
-  server.listen(PORT, () => {
+  server.listen(PORT, '0.0.0.0', () => {
     logger.info('Server', `Running at http://localhost:${PORT}`);
     console.log(`\n🚀 Shopee Affiliate Bot running at \x1b[36mhttp://localhost:${PORT}\x1b[0m`);
     console.log(`⏳ Đang chờ Chrome Extension kết nối...`);
