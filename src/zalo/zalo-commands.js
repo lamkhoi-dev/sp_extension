@@ -17,24 +17,23 @@ function formatVND(val) {
 
 const HELP_TEXT = `🤖 Shopee Affiliate Bot
 
-Xin chào! Gửi link Shopee hoặc tên sản phẩm, tôi sẽ tạo affiliate link cho bạn.
+Chào mừng bạn đến với hệ thống quản lý Affiliate!
 
-📌 Các lệnh:
-/link <URL shopee> — Tạo affiliate link
-/link <URL> <sub_id> — Tạo link có Sub ID
-/custom <URL shopee> <số_điện_thoại> — Tạo link tuỳ chỉnh cho khách (chỉ DM)
-/search <tên SP> — Tìm sản phẩm
-/thongke — Xem thống kê cá nhân (chỉ DM)
-/ruttien — Yêu cầu rút hoa hồng (chỉ DM)
-/status — Xem trạng thái hệ thống
-/help — Hiển thị hướng dẫn
+/thongke
+Tra cứu báo cáo đơn hàng, doanh thu và hoa hồng theo thời gian thực.
 
-💡 Ví dụ:
-/search Bông mút rửa mặt
-/link https://shopee.vn/product/1391725226/26326757902
-/link https://s.shopee.vn/qfmqIMWXN tele_bot
-/custom https://shopee.vn/product/... 0912345678
-/ruttien VCB 1234567890 NGUYEN VAN A`;
+/ruttien
+Gửi yêu cầu rút hoa hồng và theo dõi doanh thu tích lũy.
+
+━━━━━━━━━━━━━━━
+
+🏆 Bảng xếp hạng thành viên
+https://cashback-shopee.vercel.app/ranking.html
+
+📈 Báo cáo thống kê đơn hàng
+https://cashback-shopee.vercel.app/baocao.html
+
+✨ Theo dõi hiệu suất bán hàng và tối ưu thu nhập Affiliate của bạn mỗi ngày!`;
 
 const WELCOME_NEW_FRIEND = (name) =>
   `👋 Chào ${name}!\n\nCảm ơn bạn đã kết bạn. Tôi là bot tạo affiliate link Shopee tự động.\n\nGõ /help để xem hướng dẫn nhé!`;
