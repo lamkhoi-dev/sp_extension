@@ -72,15 +72,29 @@ export default function SimulateOrderPage() {
   }, []);
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
-  const selectedUser = useMemo(() => users.find(u => u.user_id === form.subId1), [users, form.subId1]);
-  const referrerId = selectedUser?.referrer_id || '';
-  const referrerName = selectedUser?.referrer_name || '';
 
-  // Cashback split depends on mode
-  const buyerRate = isCustomMode ? 0 : (selectedUser?.cashback_buyer_rate ?? 60);
-  const refRate = isCustomMode ? 0 : (selectedUser?.cashback_referrer_rate ?? 20);
+  // Filter users by commission_mode
+  const filteredUsers = useMemo(() => users.filter(u =>
+    isCustomMode ? u.commission_mode === 'custom' : u.commission_mode !== 'custom'
+  ), [users, isCustomMode]);
+
+  const selectedUser = useMemo(() => users.find(u => u.user_id === form.subId1), [users, form.subId1]);
+
+  // F0-F3 chain tracing (frontend-side, matches backend resolveCommissionChain)
+  const chain = useMemo(() => {
+    if (!selectedUser || isCustomMode) return { f1: null, f2: null, f3: null };
+    const f1User = users.find(u => u.user_id === selectedUser.referrer_id);
+    if (!f1User || f1User.commission_mode === 'custom') return { f1: null, f2: null, f3: null };
+    const f2User = users.find(u => u.user_id === f1User.referrer_id);
+    if (!f2User || f2User.commission_mode === 'custom') return { f1: f1User, f2: null, f3: null };
+    const f3User = users.find(u => u.user_id === f2User.referrer_id);
+    if (!f3User || f3User.commission_mode === 'custom') return { f1: f1User, f2: f2User, f3: null };
+    return { f1: f1User, f2: f2User, f3: f3User };
+  }, [selectedUser, users, isCustomMode]);
+
+  // Fixed commission rates (match backend COMMISSION_RATES)
+  const RATES = { f0: 40, f1: 20, f2: 7, f3: 3 };
   const customRate = isCustomMode ? (selectedUser?.custom_rate ?? 0) : 0;
-  const hasRef = !isCustomMode && !!referrerId;
 
   const extractFromLink = async (url) => {
     set('shopeeLink', url);
@@ -113,16 +127,18 @@ export default function SimulateOrderPage() {
   const totalOrderComm = totalProductComm + orderComm + orderBonus;
   const netCommission = totalOrderComm;
 
-  // Cashback split
-  const buyerCashback = isCustomMode ? 0 : Math.round(netCommission * buyerRate / 100);
-  const refCashback = hasRef ? Math.round(netCommission * refRate / 100) : 0;
+  // F0-F3 cashback split (fixed rates)
+  const f0Amount = isCustomMode ? 0 : Math.round(netCommission * RATES.f0 / 100);
+  const f1Amount = !isCustomMode && chain.f1 ? Math.round(netCommission * RATES.f1 / 100) : 0;
+  const f2Amount = !isCustomMode && chain.f2 ? Math.round(netCommission * RATES.f2 / 100) : 0;
+  const f3Amount = !isCustomMode && chain.f3 ? Math.round(netCommission * RATES.f3 / 100) : 0;
   const customCashback = isCustomMode ? Math.round(netCommission * customRate / 100) : 0;
-  const adminProfit = netCommission - buyerCashback - refCashback - customCashback;
+  const adminProfit = netCommission - f0Amount - f1Amount - f2Amount - f3Amount - customCashback;
 
   const handleSubmit = async () => {
     setError(''); setResult(null); setLoading(true);
     if (!form.itemName) { setError('Tên sản phẩm trống'); setLoading(false); return; }
-    if (isCustomMode && !customPhone) { setError('Nhập số điện thoại khách hàng (F2)'); setLoading(false); return; }
+    if (isCustomMode && !customPhone) { setError('Nhập số điện thoại khách hàng'); setLoading(false); return; }
     try {
       const res = await fetch(`${API}/orders/simulate`, {
         method: 'POST', credentials: 'include',
@@ -131,7 +147,7 @@ export default function SimulateOrderPage() {
           itemId: form.itemId, itemName: form.itemName, shopId: form.shopId, shopName: form.shopName,
           price, quantity: qty, status: form.status,
           subId1: form.subId1,
-          subId2: isCustomMode ? customPhone : referrerId,
+          subId2: isCustomMode ? customPhone : (selectedUser?.referrer_id || ''),
           subId4: isCustomMode ? 'from_custom' : 'from_direct',
           orderTime: new Date(form.orderTime).toISOString(),
           completeTime: form.status === 'Hoàn thành' ? new Date(form.completeTime).toISOString() : '',
@@ -170,7 +186,7 @@ export default function SimulateOrderPage() {
           {isCustomMode ? '✨ Chế độ: Custom (/custom)' : '🛒 Chế độ: Standard'}
         </button>
         {isCustomMode && (
-          <p className="text-xs text-purple-500 mt-1">Sub1=F1 (CTV), Sub2=SĐT khách F2, Sub4=from_custom</p>
+          <p className="text-xs text-purple-500 mt-1">Sub1=Người mua, Sub2=SĐT khách hàng, Sub4=from_custom</p>
         )}
       </div>
 
@@ -201,16 +217,16 @@ export default function SimulateOrderPage() {
               <span className="flex items-center justify-center w-6 h-6 rounded-full bg-accent text-white text-xs font-bold">2</span>
               Chọn Buyer
             </h2>
-            <Field label={isCustomMode ? 'F1 Partner (người gửi link) *' : 'User mua hàng *'} icon={User}>
+            <Field label={isCustomMode ? 'Người mua Custom *' : 'User mua hàng (F0) *'} icon={User}>
               <select className={selectCls} value={form.subId1} onChange={e => set('subId1', e.target.value)}>
                 <option value="">-- Chọn user --</option>
-                {users.map(u => <option key={u.user_id} value={u.user_id}>{u.display_name || u.zalo_name || u.user_id}</option>)}
+                {filteredUsers.map(u => <option key={u.user_id} value={u.user_id}>{u.display_name || u.zalo_name || u.user_id}{u.commission_mode === 'custom' ? ` (${u.custom_rate}%)` : ''}</option>)}
               </select>
             </Field>
 
             {/* Custom mode: phone of F2 customer */}
             {isCustomMode && (
-              <Field label="SĐT Khách hàng F2 *" icon={Phone} hint="Sub ID2 — khách hàng mà F1 đã gửi link cho">
+              <Field label="SĐT Khách hàng *" icon={Phone} hint="Sub ID2 — số điện thoại khách hàng">
                 <input
                   className={inputCls}
                   type="tel"
@@ -225,17 +241,20 @@ export default function SimulateOrderPage() {
               <div className={`mt-3 p-3 rounded-lg text-xs space-y-1 ${
                 isCustomMode ? 'bg-purple-50 dark:bg-purple-900/20' : 'bg-slate-50 dark:bg-slate-700/30'
               }`}>
-                <p><span className="text-slate-500">Sub ID1 (F1):</span> <code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">{form.subId1}</code></p>
+                <p><span className="text-slate-500">Sub ID1 (Buyer):</span> <code className="bg-slate-200 dark:bg-slate-600 px-1 rounded">{form.subId1}</code></p>
                 {isCustomMode ? (
                   <>
-                    <p><span className="text-slate-500">Sub ID2 (F2 SĐT):</span> {customPhone ? <code className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1 rounded">{customPhone}</code> : <span className="text-red-400">Chưa nhập</span>}</p>
+                    <p><span className="text-slate-500">Sub ID2 (SĐT KH):</span> {customPhone ? <code className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1 rounded">{customPhone}</code> : <span className="text-red-400">Chưa nhập</span>}</p>
                     <p><span className="text-slate-500">Sub ID4:</span> <code className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 px-1 rounded">from_custom</code></p>
                     <p><span className="text-slate-500">Custom rate:</span> <span className="text-purple-600 font-semibold">{selectedUser?.custom_rate ?? 0}%</span></p>
                   </>
                 ) : (
                   <>
-                    <p><span className="text-slate-500">Sub ID2 (Ref):</span> {referrerId ? <><code className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-1 rounded">{referrerId}</code> <span className="text-slate-400">({referrerName})</span></> : <span className="text-amber-500">Không có</span>}</p>
-                    <p><span className="text-slate-500">Buyer:</span> {buyerRate}% | <span className="text-slate-500">Referrer:</span> {refRate}%</p>
+                    <p><span className="text-slate-500">🛒 F0:</span> <span className="text-emerald-500 font-semibold">{RATES.f0}%</span></p>
+                    {chain.f1 && <p><span className="text-slate-500">🤝 F1:</span> <code className="bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400 px-1 rounded">{chain.f1.display_name || chain.f1.user_id}</code> <span className="text-cyan-500 font-semibold">{RATES.f1}%</span></p>}
+                    {chain.f2 && <p><span className="text-slate-500">🔗 F2:</span> <code className="bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 px-1 rounded">{chain.f2.display_name || chain.f2.user_id}</code> <span className="text-sky-500 font-semibold">{RATES.f2}%</span></p>}
+                    {chain.f3 && <p><span className="text-slate-500">🌐 F3:</span> <code className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 px-1 rounded">{chain.f3.display_name || chain.f3.user_id}</code> <span className="text-indigo-500 font-semibold">{RATES.f3}%</span></p>}
+                    {!chain.f1 && <p className="text-amber-500 text-[10px]">Không có referrer → Admin nhận phần dư</p>}
                   </>
                 )}
               </div>
@@ -328,14 +347,16 @@ export default function SimulateOrderPage() {
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Phân chia Cashback</p>
               {isCustomMode ? (
                 <>
-                  <PreviewRow label={`✨ Custom F1 (${customRate}%)`} value={fmtVND(customCashback)} color="text-purple-500" />
+                  <PreviewRow label={`✨ Custom (${customRate}%)`} value={fmtVND(customCashback)} color="text-purple-500" />
                   <PreviewRow label="🏢 Admin" value={fmtVND(adminProfit)} color="text-indigo-500" />
                 </>
               ) : (
                 <>
-                  <PreviewRow label={`👤 Buyer (${buyerRate}%)`} value={fmtVND(buyerCashback)} color="text-emerald-500" />
-                  <PreviewRow label={`🤝 Referrer (${hasRef ? refRate + '%' : '0%'})`} value={fmtVND(refCashback)} color={hasRef ? 'text-amber-500' : 'text-slate-400'} />
-                  <PreviewRow label={`🏢 Admin (${hasRef ? 100 - buyerRate - refRate : 40}%)`} value={fmtVND(adminProfit)} color="text-indigo-500" />
+                  <PreviewRow label={`🛒 F0 (${RATES.f0}%)`} value={fmtVND(f0Amount)} color="text-emerald-500" />
+                  {chain.f1 && <PreviewRow label={`🤝 F1 (${RATES.f1}%)`} value={fmtVND(f1Amount)} color="text-cyan-500" />}
+                  {chain.f2 && <PreviewRow label={`🔗 F2 (${RATES.f2}%)`} value={fmtVND(f2Amount)} color="text-sky-500" />}
+                  {chain.f3 && <PreviewRow label={`🌐 F3 (${RATES.f3}%)`} value={fmtVND(f3Amount)} color="text-indigo-500" />}
+                  <PreviewRow label={`🏢 Admin (${100 - RATES.f0 - (chain.f1 ? RATES.f1 : 0) - (chain.f2 ? RATES.f2 : 0) - (chain.f3 ? RATES.f3 : 0)}%)`} value={fmtVND(adminProfit)} color="text-slate-500" />
                 </>
               )}
             </div>
