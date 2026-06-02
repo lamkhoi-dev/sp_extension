@@ -971,11 +971,15 @@ app.post('/api/payouts/create', async (req, res) => {
   }
 
   const orderCount = role === 'combined' 
-    ? ((result.buyerPayout?.paidOrders?.length || 0) + (result.referrerPayout?.paidOrders?.length || 0))
+    ? ((result.buyerPayout?.paidOrders?.length || 0) + 
+       (result.referrerPayout?.paidOrders?.length || 0) +
+       (result.f2Payout?.paidOrders?.length || 0) +
+       (result.f3Payout?.paidOrders?.length || 0) +
+       (result.customPayout?.paidOrders?.length || 0))
     : (result.paidOrders?.length || 0);
 
   const payoutId = role === 'combined' 
-    ? `${result.buyerPayout?.payoutId || ''},${result.referrerPayout?.payoutId || ''}`.replace(/^,|,$/g, '') 
+    ? `${result.buyerPayout?.payoutId || ''},${result.referrerPayout?.payoutId || ''},${result.f2Payout?.payoutId || ''},${result.f3Payout?.payoutId || ''},${result.customPayout?.payoutId || ''}`.split(',').filter(Boolean).join(',')
     : String(result.payoutId);
 
   await auditStore.log(req.admin?.username || 'system', 'CREATE_PAYOUT', 'payout', payoutId, { userId, amount: result.amount, role }, req.ip);

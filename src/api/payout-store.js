@@ -801,6 +801,63 @@ const payoutStore = {
           return unpaid;
         };
 
+        // Helper: collect unpaid F2 orders
+        const getF2Unpaid = async () => {
+          const paidIds = await getPaidIds('f2');
+          const allMatchedOrders = await tx.all(MATCHED_ORDERS_SQL);
+          const f2Rate = rates.f2;
+          const unpaid = [];
+          for (const o of allMatchedOrders) {
+            if (isCancelled(o.order_status)) continue;
+            if (!COMPLETED_STATUSES.has(o.order_status) || paidIds.has(o.order_id)) continue;
+            const nc = o.net_commission || 0;
+            if (nc <= 0) continue;
+            
+            const orderChain = await resolveCommissionChain(o.sub_id1);
+            if (orderChain.f2 === userId) {
+              unpaid.push({ orderId: o.order_id, itemName: o.item_name, shopName: o.shop_name, netCommission: nc, cashback: Math.round(nc * f2Rate / 100), appliedRate: f2Rate, role: 'f2', buyerId: o.sub_id1 });
+            }
+          }
+          return unpaid;
+        };
+
+        // Helper: collect unpaid F3 orders
+        const getF3Unpaid = async () => {
+          const paidIds = await getPaidIds('f3');
+          const allMatchedOrders = await tx.all(MATCHED_ORDERS_SQL);
+          const f3Rate = rates.f3;
+          const unpaid = [];
+          for (const o of allMatchedOrders) {
+            if (isCancelled(o.order_status)) continue;
+            if (!COMPLETED_STATUSES.has(o.order_status) || paidIds.has(o.order_id)) continue;
+            const nc = o.net_commission || 0;
+            if (nc <= 0) continue;
+            
+            const orderChain = await resolveCommissionChain(o.sub_id1);
+            if (orderChain.f3 === userId) {
+              unpaid.push({ orderId: o.order_id, itemName: o.item_name, shopName: o.shop_name, netCommission: nc, cashback: Math.round(nc * f3Rate / 100), appliedRate: f3Rate, role: 'f3', buyerId: o.sub_id1 });
+            }
+          }
+          return unpaid;
+        };
+
+        // Helper: collect unpaid Custom orders
+        const getCustomUnpaid = async () => {
+          const paidIds = await getPaidIds('custom');
+          const customRate = userRow?.custom_rate || 0;
+          const customOrders = await tx.all(CUSTOM_ORDERS_BY_USER_SQL, [userId]);
+          const unpaid = [];
+          for (const o of customOrders) {
+            if (isCancelled(o.order_status)) continue;
+            if (!COMPLETED_STATUSES.has(o.order_status) || paidIds.has(o.order_id)) continue;
+            const nc = o.net_commission || 0;
+            if (nc <= 0) continue;
+            
+            unpaid.push({ orderId: o.order_id, itemName: o.item_name, shopName: o.shop_name, netCommission: nc, cashback: Math.round(nc * customRate / 100), appliedRate: customRate, role: 'custom', phone: o.customer_phone || '' });
+          }
+          return unpaid;
+        };
+
         // Helper: insert payout record
         const insertPayout = async (r, orders) => {
           if (orders.length === 0) return null;
@@ -818,11 +875,19 @@ const payoutStore = {
           const buyerOrders = await getBuyerUnpaid();
           if (role === 'combined') {
             const refOrders = await getReferrerUnpaid();
+            const f2Orders = await getF2Unpaid();
+            const f3Orders = await getF3Unpaid();
+            const customOrders = await getCustomUnpaid();
+            
             const bResult = await insertPayout('f0', buyerOrders);
             const rResult = await insertPayout('f1', refOrders);
-            const totalAmount = (bResult?.amount || 0) + (rResult?.amount || 0);
+            const f2Result = await insertPayout('f2', f2Orders);
+            const f3Result = await insertPayout('f3', f3Orders);
+            const customResult = await insertPayout('custom', customOrders);
+            
+            const totalAmount = (bResult?.amount || 0) + (rResult?.amount || 0) + (f2Result?.amount || 0) + (f3Result?.amount || 0) + (customResult?.amount || 0);
             if (totalAmount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
-            return { amount: totalAmount, userName, buyerPayout: bResult, referrerPayout: rResult };
+            return { amount: totalAmount, userName, buyerPayout: bResult, referrerPayout: rResult, f2Payout: f2Result, f3Payout: f3Result, customPayout: customResult };
           } else {
             const amount = buyerOrders.reduce((s, o) => s + o.cashback, 0);
             if (amount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
@@ -835,8 +900,25 @@ const payoutStore = {
           if (amount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
           const result = await insertPayout('f1', orders);
           return { ...result, userName };
+        } else if (role === 'f2') {
+          const orders = await getF2Unpaid();
+          const amount = orders.reduce((s, o) => s + o.cashback, 0);
+          if (amount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
+          const result = await insertPayout('f2', orders);
+          return { ...result, userName };
+        } else if (role === 'f3') {
+          const orders = await getF3Unpaid();
+          const amount = orders.reduce((s, o) => s + o.cashback, 0);
+          if (amount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
+          const result = await insertPayout('f3', orders);
+          return { ...result, userName };
+        } else if (role === 'custom') {
+          const orders = await getCustomUnpaid();
+          const amount = orders.reduce((s, o) => s + o.cashback, 0);
+          if (amount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
+          const result = await insertPayout('custom', orders);
+          return { ...result, userName };
         } else {
-          // custom or other roles — keep as-is
           return { amount: 0, userName, error: `Unsupported role: ${role}` };
         }
       });
