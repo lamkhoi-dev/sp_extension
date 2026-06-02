@@ -80,22 +80,29 @@ class ReportGenerator {
     // 6. CTV list (user này đã mời những ai) + thống kê đơn hàng/hoa hồng từng CTV
     const ctvList = await db.all(
       `SELECT u.user_id, u.display_name, u.zalo_name, u.avatar, u.first_contact,
-              COALESCE(ctv_stats.order_count, 0) as order_count,
-              COALESCE(ctv_stats.total_commission, 0) as total_commission
+              COALESCE((
+                SELECT COUNT(DISTINCT o.order_id)
+                FROM orders o
+                INNER JOIN convert_logs cl2 ON (
+                  (o.item_id != '' AND o.item_id = cl2.item_id AND o.sub_id1 = cl2.sub_id1)
+                  OR
+                  (cl2.item_id = '' AND o.item_name != '' AND o.item_name = cl2.product_name AND o.sub_id1 = cl2.sub_id1)
+                )
+                WHERE cl2.user_id = u.user_id AND cl2.status = 'success'
+              ), 0) as order_count,
+              COALESCE((
+                SELECT SUM(o2.net_commission)
+                FROM orders o2
+                INNER JOIN convert_logs cl3 ON (
+                  (o2.item_id != '' AND o2.item_id = cl3.item_id AND o2.sub_id1 = cl3.sub_id1)
+                  OR
+                  (cl3.item_id = '' AND o2.item_name != '' AND o2.item_name = cl3.product_name AND o2.sub_id1 = cl3.sub_id1)
+                )
+                WHERE cl3.user_id = u.user_id AND cl3.status = 'success'
+              ), 0) as total_commission
        FROM users u
-       LEFT JOIN LATERAL (
-         SELECT COUNT(DISTINCT o.order_id) as order_count,
-                COALESCE(SUM(o.net_commission), 0) as total_commission
-         FROM orders o
-         INNER JOIN convert_logs cl ON (
-           (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-           OR
-           (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-         )
-         WHERE cl.user_id = u.user_id AND cl.status = 'success'
-       ) ctv_stats ON TRUE
        WHERE u.referrer_id = ?
-       ORDER BY ctv_stats.total_commission DESC NULLS LAST`,
+       ORDER BY total_commission DESC`,
       [userId]
     );
 
@@ -198,7 +205,7 @@ class ReportGenerator {
         phone: user.phone_number || '',
         bankName: user.bank_name || '',
         bankAccount: user.bank_account || '',
-        cashbackBuyerRate: buyerRate,
+        cashbackBuyerRate: f0Rate,
         customRate,
       },
       referrer,
