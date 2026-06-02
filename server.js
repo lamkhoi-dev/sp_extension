@@ -367,6 +367,20 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// ─── Public Ranking API (no auth) ─────────────────────
+const rankingStore = require('./src/api/ranking-store');
+app.get('/api/public/ranking', async (req, res) => {
+  try {
+    const period = ['month', 'week', 'all'].includes(req.query.period) ? req.query.period : 'month';
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const data = await rankingStore.getRanking(period, limit);
+    res.json({ ok: true, period, data });
+  } catch (err) {
+    logger.error('Ranking', `Public ranking failed: ${err.message}`);
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
 // ═══════════════════════════════════════════════════════
 // AUTH MIDDLEWARE — protects all /api/* below this point
 // ═══════════════════════════════════════════════════════
