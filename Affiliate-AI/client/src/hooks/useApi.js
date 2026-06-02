@@ -384,6 +384,14 @@ export async function updateUserCashbackRates(userId, buyerRate, referrerEarnRat
   });
 }
 
+// Update user commission mode (normal/custom) and custom rate
+export async function updateUserCommissionMode(userId, commissionMode, customRate) {
+  return apiFetch(`/users/${userId}/commission-mode`, {
+    method: 'PATCH',
+    body: JSON.stringify({ commissionMode, customRate }),
+  });
+}
+
 // Update user bank info (generates VietQR on server side)
 export async function updateUserBankInfo(userId, bankName, bankAccount) {
   return apiFetch(`/users/${userId}/bank-info`, {

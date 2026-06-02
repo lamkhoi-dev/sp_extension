@@ -6,7 +6,7 @@ import DataTable from '../components/ui/DataTable';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
-import { useUsers, formatVND, updateUserCashbackRates, updateUserBankInfo, updateUserCustomQr } from '../hooks/useApi';
+import { useUsers, formatVND, updateUserBankInfo, updateUserCustomQr, updateUserCommissionMode } from '../hooks/useApi';
 import { VIET_BANKS, getBankLogoUrl, buildVietQrUrl } from '../constants/banks';
 import BankSelect from '../components/ui/BankSelect';
 
@@ -18,6 +18,7 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [showTree, setShowTree] = useState(false);
   const [editingRates, setEditingRates] = useState({ buyer: 60, referrer: 20, custom: 0 });
+  const [editingMode, setEditingMode] = useState('normal');
   const [savingAll, setSavingAll] = useState(false);
   const [allSaved, setAllSaved] = useState(false);
 
@@ -28,6 +29,7 @@ export default function UsersPage() {
 
   const openDetail = (row) => {
     setSelectedUser(row);
+    setEditingMode(row.commission_mode || 'normal');
     setEditingRates({
       buyer: row.cashback_buyer_rate ?? 60,
       referrer: row.referrer_earn_rate ?? 20,
@@ -209,6 +211,10 @@ export default function UsersPage() {
 
   // Unified save handler — bank + rates in one click
   const handleSaveAll = async () => {
+    if (editingMode === 'custom' && (editingRates.custom < 40 || editingRates.custom > 70)) {
+      alert('Tỷ lệ hoa hồng Custom phải nằm trong khoảng từ 40% đến 70%!');
+      return;
+    }
     setSavingAll(true);
     try {
       const tasks = [];
@@ -229,14 +235,15 @@ export default function UsersPage() {
             })
         );
       }
-      // Only save custom_rate for custom mode users (F0-F3 rates are fixed)
-      if (selectedUser.commission_mode === 'custom') {
+      // Save commission mode and rate if changed
+      if (editingMode !== selectedUser.commission_mode || (editingMode === 'custom' && editingRates.custom !== selectedUser.custom_rate)) {
         tasks.push(
-          updateUserCashbackRates(selectedUser.user_id, 40, 20, editingRates.custom)
+          updateUserCommissionMode(selectedUser.user_id, editingMode, editingMode === 'custom' ? editingRates.custom : 0)
             .then(() => {
               setSelectedUser(prev => ({
                 ...prev,
-                custom_rate: editingRates.custom,
+                commission_mode: editingMode,
+                custom_rate: editingMode === 'custom' ? editingRates.custom : 0,
               }));
             })
         );
@@ -357,9 +364,9 @@ export default function UsersPage() {
         isOpen={showTree}
         onClose={() => setShowTree(false)}
         title="🌳 Sơ đồ Gia phả Referral"
-        size="full"
+        size="tree"
       >
-        <div className="h-[75vh] w-full relative -m-4 sm:-m-6 overflow-hidden rounded-b-2xl">
+        <div className="h-[82vh] w-full relative -m-4 sm:-m-6 overflow-hidden rounded-b-2xl">
           <ReferralTree
             users={users}
             onSelectUser={(u) => {
@@ -467,69 +474,72 @@ export default function UsersPage() {
 
               {/* Mode selector */}
               <div className="flex items-center gap-2 mb-4">
-                <span className="text-xs text-slate-500">Chế độ:</span>
-                <span className={`px-2.5 py-1 text-xs font-bold rounded-lg ${
-                  selectedUser.commission_mode === 'custom'
-                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-700'
-                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700'
-                }`}>
-                  {selectedUser.commission_mode === 'custom' ? '✨ Custom' : '🌳 Normal (F0-F3)'}
-                </span>
+                <span className="text-xs text-slate-500 mr-1">Chế độ:</span>
+                <button
+                  type="button"
+                  onClick={() => { setEditingMode('normal'); setAllSaved(false); }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                    editingMode === 'normal'
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700'
+                      : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border-transparent hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  🌳 Normal (F0-F3)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEditingMode('custom'); setAllSaved(false); }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                    editingMode === 'custom'
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-300 dark:border-amber-700'
+                      : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border-transparent hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  ✨ Custom
+                </button>
               </div>
 
-              {selectedUser.commission_mode === 'custom' ? (
+              {editingMode === 'custom' ? (
                 /* Custom mode — editable custom_rate */
                 <div className="space-y-3">
                   <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-100 dark:border-amber-800/30">
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">Hoa hồng Custom</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mb-2 font-medium">Hoa hồng Custom (Giới hạn: 40% - 70%)</p>
                     <div className="flex items-center gap-2">
                       <input
-                        type="number" min="0" max="100" step="5"
+                        type="number" min="40" max="70" step="5"
                         value={editingRates.custom}
-                        onChange={(e) => { setEditingRates(r => ({ ...r, custom: Number(e.target.value) })); setAllSaved(false); }}
-                        className="w-24 px-3 py-1.5 text-xl font-bold text-amber-600 bg-white dark:bg-slate-800 rounded-lg border border-amber-200 dark:border-amber-700 text-center"
+                        onChange={(e) => {
+                          let val = Number(e.target.value);
+                          setEditingRates(r => ({ ...r, custom: val }));
+                          setAllSaved(false);
+                        }}
+                        className="w-24 px-3 py-1.5 text-xl font-bold text-amber-600 bg-white dark:bg-slate-800 rounded-lg border border-amber-200 dark:border-amber-700 text-center focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
                       />
                       <span className="text-amber-600 font-bold text-lg">%</span>
                       <span className="text-xs text-slate-400 ml-2">→ Admin nhận {Math.max(0, 100 - editingRates.custom)}%</span>
                     </div>
-                    <p className="text-[10px] text-amber-400 mt-2">User nhận % này cho toàn bộ đơn custom. Không qua chuỗi F0-F3.</p>
+                    <p className="text-[10px] text-amber-500 dark:text-amber-400 mt-2 font-medium">User nhận % này cho toàn bộ đơn custom. Không qua chuỗi F0-F3.</p>
                   </div>
-                  {editingRates.custom > 100 && (
-                    <p className="text-xs text-red-500">⚠️ Hoa hồng không được vượt 100%!</p>
+                  {(editingRates.custom < 40 || editingRates.custom > 70) && (
+                    <p className="text-xs text-rose-500 font-medium">⚠️ Hoa hồng Custom phải nằm trong khoảng 40% - 70%!</p>
                   )}
                 </div>
               ) : (
-                /* Normal mode — fixed F0-F3 rates, read-only */
-                <div className="space-y-2">
+                /* Normal mode — fixed F0-F3 rates, read-only without progress bars, clean list view */
+                <div className="space-y-2 bg-slate-50 dark:bg-slate-900/20 rounded-xl p-4 border border-slate-100 dark:border-slate-800/30">
                   {[
-                    { label: '🛒 F0 — Người mua', rate: 40, color: 'emerald', w: '40%' },
-                    { label: '🤝 F1 — Người giới thiệu', rate: 20, color: 'cyan', w: '20%' },
-                    { label: '🔗 F2 — Cấp 2', rate: 7, color: 'sky', w: '7%' },
-                    { label: '🌐 F3 — Cấp 3', rate: 3, color: 'indigo', w: '3%' },
-                    { label: '🏢 Admin', rate: 30, color: 'slate', w: '30%' },
-                  ].map(({ label, rate, color, w }) => (
-                    <div key={label} className="flex items-center gap-3">
-                      <span className="text-xs text-slate-500 dark:text-slate-400 w-[160px] flex-shrink-0">{label}</span>
-                      <div className="flex-1 h-6 bg-slate-100 dark:bg-slate-700/50 rounded-full overflow-hidden relative">
-                        <div
-                          className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2"
-                          style={{
-                            width: w,
-                            background: {
-                              emerald: 'linear-gradient(90deg, #10b981, #34d399)',
-                              cyan: 'linear-gradient(90deg, #06b6d4, #22d3ee)',
-                              sky: 'linear-gradient(90deg, #0ea5e9, #38bdf8)',
-                              indigo: 'linear-gradient(90deg, #6366f1, #818cf8)',
-                              slate: 'linear-gradient(90deg, #64748b, #94a3b8)',
-                            }[color],
-                          }}
-                        >
-                          <span className="text-[10px] font-bold text-white drop-shadow">{rate}%</span>
-                        </div>
-                      </div>
+                    { label: '🛒 F0 — Người mua', rate: 40, color: 'text-emerald-600 dark:text-emerald-400' },
+                    { label: '🤝 F1 — Người giới thiệu', rate: 20, color: 'text-cyan-600 dark:text-cyan-400' },
+                    { label: '🔗 F2 — Cấp 2', rate: 7, color: 'text-sky-600 dark:text-sky-400' },
+                    { label: '🌐 F3 — Cấp 3', rate: 3, color: 'text-indigo-600 dark:text-indigo-400' },
+                    { label: '🏢 Admin', rate: 30, color: 'text-slate-600 dark:text-slate-400' },
+                  ].map(({ label, rate, color }) => (
+                    <div key={label} className="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                      <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">{label}</span>
+                      <span className={`text-lg font-extrabold ${color}`}>{rate}%</span>
                     </div>
                   ))}
-                  <p className="text-[10px] text-slate-400 mt-2 italic">
+                  <p className="text-[10px] text-slate-400 mt-2 italic text-center">
                     Tỷ lệ cố định cho tất cả user Normal. Dựa trên vị trí trong chuỗi giới thiệu.
                   </p>
                 </div>
@@ -663,7 +673,7 @@ export default function UsersPage() {
                 variant={allSaved ? 'outline' : 'primary'}
                 className={`flex-1 ${allSaved ? '!bg-emerald-50 dark:!bg-emerald-900/20 !text-emerald-600 !border-emerald-200' : ''}`}
                 icon={allSaved ? Save : Edit2}
-                disabled={savingAll || editingRates.custom > 100}
+                disabled={savingAll || (editingMode === 'custom' && (editingRates.custom < 40 || editingRates.custom > 70))}
                 onClick={handleSaveAll}
               >
                 {savingAll ? 'Đang lưu...' : allSaved ? '✓ Đã lưu thành công' : 'Lưu tất cả'}

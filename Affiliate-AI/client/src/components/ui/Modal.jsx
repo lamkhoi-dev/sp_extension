@@ -18,6 +18,7 @@ export default function Modal({
     lg: 'max-w-2xl',
     xl: 'max-w-4xl',
     full: 'max-w-[90vw]',
+    tree: 'w-[96vw] max-w-[96vw]',
   };
 
   useEffect(() => {
@@ -50,14 +51,16 @@ export default function Modal({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="fixed inset-x-0 bottom-0 sm:inset-0 z-50 sm:flex sm:items-center sm:justify-center sm:p-4"
+            className="fixed inset-x-0 bottom-0 sm:inset-0 z-50 sm:flex sm:items-center sm:justify-center sm:p-2 md:p-4"
           >
             <div
               className={clsx(
                 'w-full bg-white dark:bg-slate-800 shadow-2xl',
                 'border border-slate-200 dark:border-slate-700',
                 'rounded-t-2xl sm:rounded-2xl',
-                'max-h-[90vh] sm:max-h-[85vh] flex flex-col',
+                size === 'tree'
+                  ? 'max-h-[96vh] sm:max-h-[94vh] flex flex-col'
+                  : 'max-h-[90vh] sm:max-h-[85vh] flex flex-col',
                 sizes[size]
               )}
               onClick={(e) => e.stopPropagation()}

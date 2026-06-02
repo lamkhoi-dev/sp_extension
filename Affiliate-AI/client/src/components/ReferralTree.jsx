@@ -22,13 +22,13 @@ const F_COLORS = {
   custom: { bg: 'rgb(245 158 11)', border: '#f59e0b', label: '✨ Custom', text: 'text-amber-400' },
 };
 
-const NODE_W = 200;
-const NODE_H = 88;
+const NODE_W = 240;
+const NODE_H = 105;
 
 // ─── Dagre Layout ───────────────────────────────────────
 function layoutGraph(nodes, edges) {
   const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'TB', ranksep: 80, nodesep: 40, marginx: 20, marginy: 20 });
+  g.setGraph({ rankdir: 'TB', ranksep: 90, nodesep: 50, marginx: 20, marginy: 20 });
 
   nodes.forEach((n) => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
   edges.forEach((e) => g.setEdge(e.source, e.target));
@@ -57,35 +57,36 @@ function UserNode({ data }) {
       <Handle type="target" position={Position.Top} className="!w-2 !h-2 !bg-slate-500" />
 
       <div
-        className="rounded-xl px-3 py-2.5 shadow-lg transition-all duration-300"
+        className="rounded-xl px-4 py-3.5 shadow-lg transition-all duration-300 relative flex flex-col justify-center"
         style={{
           background: isHighlighted
             ? `linear-gradient(135deg, ${fConfig.bg}15, ${fConfig.bg}08)`
             : 'rgb(30 41 59)',
           border: `2px solid ${borderColor}`,
           width: NODE_W,
+          height: NODE_H,
           boxShadow: isHighlighted ? `0 0 16px ${fConfig.bg}40` : '0 4px 12px rgba(0,0,0,0.3)',
         }}
       >
         {/* F-level badge */}
         {fLevel && (
           <div
-            className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-bold text-white whitespace-nowrap"
+            className="absolute -top-3 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-white whitespace-nowrap z-10"
             style={{ background: fConfig.bg }}
           >
             {fConfig.label}
           </div>
         )}
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           <img
             src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.user_id}`}
             alt=""
-            className="w-9 h-9 rounded-lg object-cover flex-shrink-0 bg-slate-700"
+            className="w-11 h-11 rounded-xl object-cover flex-shrink-0 bg-slate-700"
           />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-1">
-              <p className="text-sm font-semibold text-white truncate leading-tight flex-1">
+            <div className="flex items-center justify-between gap-1.5">
+              <p className="text-[14px] font-bold text-white truncate leading-tight flex-1">
                 {user.display_name || user.zalo_name || 'Unknown'}
               </p>
               {onSelectUser && (
@@ -94,22 +95,22 @@ function UserNode({ data }) {
                   className="p-1 rounded hover:bg-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors flex-shrink-0"
                   title="Xem chi tiết"
                 >
-                  <Eye className="w-3.5 h-3.5" />
+                  <Eye className="w-4 h-4" />
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-1.5 mt-0.5">
+            <div className="flex items-center gap-2 mt-1.5">
               {isCustom ? (
-                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
                   Custom {user.custom_rate || 0}%
                 </span>
               ) : (
-                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-slate-600/50 text-slate-400 border border-slate-600">
+                <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-600/50 text-slate-400 border border-slate-600">
                   Normal
                 </span>
               )}
               {childCount > 0 && (
-                <span className="text-[10px] text-slate-400">
+                <span className="text-[11px] text-slate-400 font-medium">
                   {childCount} CTV
                 </span>
               )}
@@ -124,9 +125,9 @@ function UserNode({ data }) {
             className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-slate-700 border-2 border-slate-500 flex items-center justify-center hover:bg-slate-600 hover:border-blue-400 transition-all z-10"
           >
             {collapsed ? (
-              <ChevronRight className="w-3 h-3 text-slate-300" />
+              <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
             ) : (
-              <ChevronDown className="w-3 h-3 text-slate-300" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-300" />
             )}
           </button>
         )}
