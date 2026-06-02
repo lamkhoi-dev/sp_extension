@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Eye, Users, UserCheck, DollarSign, RefreshCw, MessageSquare, Edit2, Save, Building2, Trophy, ShoppingBag, Upload } from 'lucide-react';
+import { Eye, Users, UserCheck, DollarSign, RefreshCw, MessageSquare, Edit2, Save, Building2, Trophy, ShoppingBag, Upload, ChevronDown, GitBranch } from 'lucide-react';
+import ReferralTree from '../components/ReferralTree';
 import { Avatar, Tooltip } from 'antd';
 import DataTable from '../components/ui/DataTable';
 import Badge from '../components/ui/Badge';
@@ -15,6 +16,7 @@ export default function UsersPage() {
   const { users, loading, search, setSearch, refresh } = useUsers();
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [showTree, setShowTree] = useState(false);
   const [editingRates, setEditingRates] = useState({ buyer: 60, referrer: 20, custom: 0 });
   const [savingAll, setSavingAll] = useState(false);
   const [allSaved, setAllSaved] = useState(false);
@@ -327,6 +329,33 @@ export default function UsersPage() {
           ))}
         </div>
       )}
+
+      {/* Genealogy Tree Section */}
+      <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
+        <button
+          onClick={() => setShowTree(!showTree)}
+          className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center">
+              <GitBranch className="w-4 h-4 text-emerald-500" />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">🌳 Sơ đồ Gia phả</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {referredUsers.length} liên kết giới thiệu · Click user để xem chain F0→F3
+              </p>
+            </div>
+          </div>
+          <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${showTree ? 'rotate-180' : ''}`} />
+        </button>
+
+        {showTree && (
+          <div className="border-t border-slate-200 dark:border-slate-700/50" style={{ height: '540px' }}>
+            <ReferralTree users={users} onSelectUser={openDetail} />
+          </div>
+        )}
+      </div>
 
       {/* Data Table */}
       <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4 sm:p-6">
