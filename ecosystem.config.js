@@ -31,7 +31,7 @@ module.exports = {
     },
     {
       name: 'shopee-frontend',   // Vite dev server (production + staging)
-      script: 'node_modules/.bin/vite',
+      script: 'node_modules\\.bin\\vite.cmd',
       args: '--host 0.0.0.0 --port 5173',
       cwd: './Affiliate-AI/client',
       instances: 1,
