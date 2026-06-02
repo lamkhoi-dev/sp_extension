@@ -41,28 +41,26 @@ const fmt = (d) => d.toISOString().replace('T', ' ').slice(0, 19);
 const daysAgo = (n) => { const d = new Date(now); d.setDate(d.getDate() - n); return fmt(d); };
 
 // ─── 10 Orders ───
-// 4 from An (tests F0→F3 full chain)
-// 3 from Bình (tests F0→F2, no F3)
-// 1 from Chi (tests F0→F1 only)
-// 2 from Elly (custom mode)
+// nc = net_commission, shopeeRate = % shopee commission
+// order_value = price * qty
 const ORDERS = [
   // An's orders — full chain: F0=An, F1=Bình, F2=Chi, F3=Đạt
-  { oid: 'SEED001', iid: 'ITEM001', sub1: 'seed_user_a', sub4: '', name: 'Áo thun nam Nike Dri-FIT', shop: 'Nike Official', price: 850000, nc: 42500, status: 'Hoàn thành', time: daysAgo(2), ctime: daysAgo(1) },
-  { oid: 'SEED002', iid: 'ITEM002', sub1: 'seed_user_a', sub4: '', name: 'Tai nghe Bluetooth Sony WF-1000XM5', shop: 'Sony Official', price: 5990000, nc: 299500, status: 'Hoàn thành', time: daysAgo(5), ctime: daysAgo(3) },
-  { oid: 'SEED003', iid: 'ITEM003', sub1: 'seed_user_a', sub4: '', name: 'Bàn phím cơ Keychron K8 Pro', shop: 'Keychron Store', price: 2490000, nc: 124500, status: 'Đang giao', time: daysAgo(1), ctime: '' },
-  { oid: 'SEED004', iid: 'ITEM004', sub1: 'seed_user_a', sub4: '', name: 'Kem chống nắng Anessa 60ml', shop: 'Anessa Beauty', price: 420000, nc: 63000, status: 'Chờ xác nhận', time: daysAgo(0), ctime: '' },
+  { oid: 'SEED001', iid: 'ITEM001', sub1: 'seed_user_a', sub4: '', name: 'Áo thun nam Nike Dri-FIT', shop: 'Nike Official', shopType: 'Mall', price: 850000, shopeeRate: 5, status: 'Hoàn thành', time: daysAgo(2), ctime: daysAgo(1) },
+  { oid: 'SEED002', iid: 'ITEM002', sub1: 'seed_user_a', sub4: '', name: 'Tai nghe Bluetooth Sony WF-1000XM5', shop: 'Sony Official', shopType: 'Mall', price: 5990000, shopeeRate: 5, status: 'Hoàn thành', time: daysAgo(5), ctime: daysAgo(3) },
+  { oid: 'SEED003', iid: 'ITEM003', sub1: 'seed_user_a', sub4: '', name: 'Bàn phím cơ Keychron K8 Pro', shop: 'Keychron Store', shopType: 'Preferred', price: 2490000, shopeeRate: 8, status: 'Đang giao', time: daysAgo(1), ctime: '' },
+  { oid: 'SEED004', iid: 'ITEM004', sub1: 'seed_user_a', sub4: '', name: 'Kem chống nắng Anessa 60ml', shop: 'Anessa Beauty', shopType: 'Mall', price: 420000, shopeeRate: 15, status: 'Chờ xác nhận', time: daysAgo(0), ctime: '' },
 
   // Bình's orders — chain: F0=Bình, F1=Chi, F2=Đạt (no F3)
-  { oid: 'SEED005', iid: 'ITEM005', sub1: 'seed_user_b', sub4: '', name: 'Giày chạy bộ Adidas Ultraboost', shop: 'Adidas Official', price: 3200000, nc: 160000, status: 'Hoàn thành', time: daysAgo(4), ctime: daysAgo(2) },
-  { oid: 'SEED006', iid: 'ITEM006', sub1: 'seed_user_b', sub4: '', name: 'Balo laptop Xiaomi Mi 26L', shop: 'Xiaomi Store', price: 650000, nc: 32500, status: 'Đang giao', time: daysAgo(1), ctime: '' },
-  { oid: 'SEED007', iid: 'ITEM007', sub1: 'seed_user_b', sub4: '', name: 'Sạc dự phòng Anker 20000mAh', shop: 'Anker VN', price: 790000, nc: 39500, status: 'Hoàn thành', time: daysAgo(7), ctime: daysAgo(5) },
+  { oid: 'SEED005', iid: 'ITEM005', sub1: 'seed_user_b', sub4: '', name: 'Giày chạy bộ Adidas Ultraboost', shop: 'Adidas Official', shopType: 'Mall', price: 3200000, shopeeRate: 5, status: 'Hoàn thành', time: daysAgo(4), ctime: daysAgo(2) },
+  { oid: 'SEED006', iid: 'ITEM006', sub1: 'seed_user_b', sub4: '', name: 'Balo laptop Xiaomi Mi 26L', shop: 'Xiaomi Store', shopType: 'Preferred', price: 650000, shopeeRate: 7, status: 'Đang giao', time: daysAgo(1), ctime: '' },
+  { oid: 'SEED007', iid: 'ITEM007', sub1: 'seed_user_b', sub4: '', name: 'Sạc dự phòng Anker 20000mAh', shop: 'Anker VN', shopType: 'Normal', price: 790000, shopeeRate: 10, status: 'Hoàn thành', time: daysAgo(7), ctime: daysAgo(5) },
 
   // Chi's order — chain: F0=Chi, F1=Đạt (no F2/F3)
-  { oid: 'SEED008', iid: 'ITEM008', sub1: 'seed_user_c', sub4: '', name: 'Nồi chiên không dầu Philips 6.2L', shop: 'Philips Home', price: 2890000, nc: 144500, status: 'Hoàn thành', time: daysAgo(3), ctime: daysAgo(1) },
+  { oid: 'SEED008', iid: 'ITEM008', sub1: 'seed_user_c', sub4: '', name: 'Nồi chiên không dầu Philips 6.2L', shop: 'Philips Home', shopType: 'Mall', price: 2890000, shopeeRate: 5, status: 'Hoàn thành', time: daysAgo(3), ctime: daysAgo(1) },
 
   // Elly's custom orders — no chain, sub_id4 = 'custom'
-  { oid: 'SEED009', iid: 'ITEM009', sub1: 'seed_user_e', sub4: 'custom', name: 'Son MAC Ruby Woo', shop: 'MAC Cosmetics', price: 550000, nc: 82500, status: 'Hoàn thành', time: daysAgo(2), ctime: daysAgo(1) },
-  { oid: 'SEED010', iid: 'ITEM010', sub1: 'seed_user_e', sub4: 'custom', name: 'Nước hoa Chanel Coco 50ml', shop: 'Chanel Beauty VN', price: 3200000, nc: 160000, status: 'Đang giao', time: daysAgo(0), ctime: '' },
+  { oid: 'SEED009', iid: 'ITEM009', sub1: 'seed_user_e', sub4: 'custom', name: 'Son MAC Ruby Woo', shop: 'MAC Cosmetics', shopType: 'Mall', price: 550000, shopeeRate: 15, status: 'Hoàn thành', time: daysAgo(2), ctime: daysAgo(1) },
+  { oid: 'SEED010', iid: 'ITEM010', sub1: 'seed_user_e', sub4: 'custom', name: 'Nước hoa Chanel Coco 50ml', shop: 'Chanel Beauty VN', shopType: 'Mall', price: 3200000, shopeeRate: 5, status: 'Đang giao', time: daysAgo(0), ctime: '' },
 ];
 
 async function seed() {
@@ -89,16 +87,42 @@ async function seed() {
     // 2. Insert orders + convert_logs
     console.log('');
     for (const o of ORDERS) {
-      // Insert order
+      // Compute commission fields (like real Shopee data)
+      const orderValue = o.price;
+      const shopeeComm = Math.round(orderValue * o.shopeeRate / 100);
+      const totalProductComm = shopeeComm;
+      const netComm = totalProductComm; // net_commission = total after MCN fees (0 here)
+
+      // Insert order with full commission data
       await client.query(`
-        INSERT INTO orders (order_id, item_id, item_name, shop_name, price, quantity, net_commission, order_status, order_time, complete_time, sub_id1, sub_id2, sub_id3, sub_id4, sub_id5, imported_at)
-        VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8, $9, $10, '', '', $11, '', NOW())
+        INSERT INTO orders (
+          order_id, item_id, item_name, shop_name, shop_type, price, quantity,
+          order_value, shopee_product_commission_rate, shopee_product_commission,
+          total_product_commission, total_order_commission, net_commission,
+          order_status, order_time, complete_time, click_time,
+          sub_id1, sub_id2, sub_id3, sub_id4, sub_id5,
+          commission_type, channel, imported_at
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6, 1,
+          $6, $7, $8,
+          $8, $8, $8,
+          $9, $10, $11, $10,
+          $12, '', '', $13, '',
+          'CPS', 'seed', NOW()
+        )
         ON CONFLICT (order_id, item_id) DO UPDATE SET
-          item_name = EXCLUDED.item_name, shop_name = EXCLUDED.shop_name, price = EXCLUDED.price,
-          net_commission = EXCLUDED.net_commission, order_status = EXCLUDED.order_status,
-          order_time = EXCLUDED.order_time, complete_time = EXCLUDED.complete_time,
-          sub_id1 = EXCLUDED.sub_id1, sub_id4 = EXCLUDED.sub_id4
-      `, [o.oid, o.iid, o.name, o.shop, o.price, o.nc, o.status, o.time, o.ctime, o.sub1, o.sub4]);
+          item_name = EXCLUDED.item_name, shop_name = EXCLUDED.shop_name, shop_type = EXCLUDED.shop_type,
+          price = EXCLUDED.price, order_value = EXCLUDED.order_value,
+          shopee_product_commission_rate = EXCLUDED.shopee_product_commission_rate,
+          shopee_product_commission = EXCLUDED.shopee_product_commission,
+          total_product_commission = EXCLUDED.total_product_commission,
+          total_order_commission = EXCLUDED.total_order_commission,
+          net_commission = EXCLUDED.net_commission,
+          order_status = EXCLUDED.order_status, order_time = EXCLUDED.order_time,
+          complete_time = EXCLUDED.complete_time, click_time = EXCLUDED.click_time,
+          sub_id1 = EXCLUDED.sub_id1, sub_id4 = EXCLUDED.sub_id4, channel = EXCLUDED.channel
+      `, [o.oid, o.iid, o.name, o.shop, o.shopType, o.price, o.shopeeRate, shopeeComm, o.status, o.time, o.ctime, o.sub1, o.sub4]);
 
       // Insert matching convert_log (for JOIN to work)
       const user = USERS.find(u => u.user_id === o.sub1);
@@ -109,8 +133,7 @@ async function seed() {
         ON CONFLICT DO NOTHING
       `, [o.sub1, user?.display_name || '', `https://shopee.vn/product/${o.iid}`, o.name, o.iid, o.sub1, referrerId, o.time]);
 
-      const nc40 = Math.round(o.nc * 0.4);
-      console.log(`  📦 #${o.oid} | ${o.name.substring(0, 30).padEnd(30)} | ${o.status.padEnd(14)} | NC: ${o.nc.toLocaleString().padStart(8)}đ → F0: ${nc40.toLocaleString()}đ`);
+      console.log(`  📦 #${o.oid} | ${o.name.substring(0, 30).padEnd(30)} | ${o.status.padEnd(14)} | ${o.price.toLocaleString().padStart(12)}đ × ${o.shopeeRate}% = NC: ${netComm.toLocaleString().padStart(8)}đ`);
     }
 
     await client.query('COMMIT');
