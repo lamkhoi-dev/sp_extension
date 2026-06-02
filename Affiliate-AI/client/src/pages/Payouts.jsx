@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import { Wallet, Check, Clock, ChevronDown, ChevronUp, ChevronRight, Upload, RefreshCw, Building2, FileText, ExternalLink, History, QrCode } from 'lucide-react';
+import { Wallet, Check, Clock, ChevronDown, ChevronUp, ChevronRight, Upload, RefreshCw, Building2, FileText, ExternalLink, History, QrCode, BanknoteIcon, X } from 'lucide-react';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import { usePayouts, formatVND, useCommissionRates } from '../hooks/useApi';
@@ -19,7 +19,7 @@ function TreeLine({ isLast, color = 'bg-slate-300 dark:bg-slate-600' }) {
 }
 
 export default function PayoutsPage() {
-  const { summary, history, loading, refresh, getUserDetail, createPayout, uploadBill } = usePayouts();
+  const { summary, history, withdrawalRequests, loading, refresh, getUserDetail, createPayout, uploadBill, markWithdrawalDone } = usePayouts();
   const { rates: commissionRates } = useCommissionRates();
   const [expandedUser, setExpandedUser] = useState(null);
   const [userDetail, setUserDetail] = useState(null);
@@ -31,7 +31,17 @@ export default function PayoutsPage() {
   const [payingUserId, setPayingUserId] = useState(null);
   const [adminNote, setAdminNote] = useState('');
   const [mainTab, setMainTab] = useState('pending');
+  const [markingWithdrawalId, setMarkingWithdrawalId] = useState(null);
   const [expandedHistoryIds, setExpandedHistoryIds] = useState(new Set());
+
+  // Build { [userId]: request } for O(1) lookup in render
+  const withdrawalMap = useMemo(() => {
+    const map = {};
+    for (const req of withdrawalRequests) {
+      if (req.user_id) map[req.user_id] = req;
+    }
+    return map;
+  }, [withdrawalRequests]);
   const [historyTab, setHistoryTab] = useState('all');
   const [historyPage, setHistoryPage] = useState(1);
   const HISTORY_PAGE_SIZE = 15;
@@ -100,6 +110,18 @@ export default function PayoutsPage() {
       setPayingUserId(null);
     }
   }, [payTarget, billFile, adminNote, createPayout, uploadBill, expandedUser, getUserDetail, refresh]);
+
+  const handleWithdrawalAction = useCallback(async (requestId, status, e) => {
+    e?.stopPropagation();
+    setMarkingWithdrawalId(requestId);
+    try {
+      await markWithdrawalDone(requestId, status);
+    } catch (err) {
+      alert('Lỗi: ' + err.message);
+    } finally {
+      setMarkingWithdrawalId(null);
+    }
+  }, [markWithdrawalDone]);
 
   const { users = [] } = summary;
 
@@ -232,11 +254,16 @@ export default function PayoutsPage() {
                     <span className="text-slate-400">
                       {expandedUser === user.userId ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </span>
-                    <img
-                      src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.userId}`}
-                      alt={user.displayName}
-                      className="w-8 h-8 rounded-lg bg-slate-200 flex-shrink-0 object-cover"
-                    />
+                    <div className="relative flex-shrink-0">
+                      <img
+                        src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.userId}`}
+                        alt={user.displayName}
+                        className="w-8 h-8 rounded-lg bg-slate-200 object-cover"
+                      />
+                      {withdrawalMap[user.userId] && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white dark:border-slate-800 animate-pulse" title="Có yêu cầu rút tiền" />
+                      )}
+                    </div>
                     <div className="min-w-0">
                       <p className="font-medium text-slate-900 dark:text-white text-sm truncate">{user.displayName}</p>
                       <p className="text-[10px] text-slate-400">
@@ -504,6 +531,73 @@ export default function PayoutsPage() {
                                   </>
                                 )}
                               </div>
+
+                              {/* ═══ WITHDRAWAL REQUEST ═══ */}
+                              {withdrawalMap[user.userId] && (() => {
+                                const wr = withdrawalMap[user.userId];
+                                const breakdown = typeof wr.breakdown === 'string' ? (() => { try { return JSON.parse(wr.breakdown); } catch { return {}; } })() : (wr.breakdown || {});
+                                const isMarking = markingWithdrawalId === wr.id;
+                                return (
+                                  <div className="mt-2 pt-2 border-t border-red-200 dark:border-red-800/30">
+                                    <div className="flex items-center gap-2 py-2">
+                                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                      <span className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider">
+                                        Yêu cầu rút tiền
+                                      </span>
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-semibold">Chờ xử lý</span>
+                                    </div>
+                                    <div className="ml-4 bg-red-50/60 dark:bg-red-900/10 border border-red-200/60 dark:border-red-800/30 rounded-xl p-3">
+                                      <div className="flex items-start justify-between gap-3 mb-3">
+                                        <div className="space-y-1">
+                                          <div className="flex items-center gap-1.5">
+                                            <BanknoteIcon className="w-3.5 h-3.5 text-red-500" />
+                                            <span className="text-base font-bold text-red-600 dark:text-red-400">{formatVND(wr.amount)}</span>
+                                          </div>
+                                          <p className="text-xs text-slate-600 dark:text-slate-400">
+                                            <span className="font-medium">{wr.bank_name}</span>
+                                            {wr.bank_account ? ` · ${wr.bank_account}` : ''}
+                                          </p>
+                                          {wr.account_holder && (
+                                            <p className="text-xs text-slate-500">{wr.account_holder}</p>
+                                          )}
+                                          {wr.requested_at && (
+                                            <p className="text-[10px] text-slate-400">
+                                              Gửi lúc: {new Date(wr.requested_at).toLocaleString('vi-VN')}
+                                            </p>
+                                          )}
+                                        </div>
+                                        {Object.entries(breakdown).filter(([, v]) => v > 0).length > 0 && (
+                                          <div className="text-right space-y-0.5">
+                                            {breakdown.buyer > 0 && <p className="text-[10px] text-emerald-600">F0: {formatVND(breakdown.buyer)}</p>}
+                                            {breakdown.f1 > 0 && <p className="text-[10px] text-cyan-600">F1: {formatVND(breakdown.f1)}</p>}
+                                            {breakdown.f2 > 0 && <p className="text-[10px] text-sky-600">F2: {formatVND(breakdown.f2)}</p>}
+                                            {breakdown.f3 > 0 && <p className="text-[10px] text-indigo-600">F3: {formatVND(breakdown.f3)}</p>}
+                                            {breakdown.custom > 0 && <p className="text-[10px] text-amber-600">Custom: {formatVND(breakdown.custom)}</p>}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <button
+                                          onClick={(e) => handleWithdrawalAction(wr.id, 'paid', e)}
+                                          disabled={isMarking}
+                                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors disabled:opacity-60"
+                                        >
+                                          {isMarking ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                          Đã chuyển khoản
+                                        </button>
+                                        <button
+                                          onClick={(e) => handleWithdrawalAction(wr.id, 'rejected', e)}
+                                          disabled={isMarking}
+                                          className="flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 dark:border-red-800/50 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-60"
+                                        >
+                                          <X className="w-3 h-3" />
+                                          Từ chối
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
 
                                 {/* ═══ PAYOUT HISTORY ═══ */}
                                 <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700/30">

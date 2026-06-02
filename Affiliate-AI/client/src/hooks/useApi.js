@@ -331,17 +331,20 @@ export function formatShortVND(value) {
 export function usePayouts() {
   const [summary, setSummary] = useState({ users: [] });
   const [history, setHistory] = useState([]);
+  const [withdrawalRequests, setWithdrawalRequests] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [summaryData, historyData] = await Promise.all([
+      const [summaryData, historyData, withdrawalData] = await Promise.all([
         apiFetch('/payouts/summary'),
         apiFetch('/payouts/history?limit=100'),
+        apiFetch('/withdrawal-requests?status=pending').catch(() => ({ requests: [] })),
       ]);
       setSummary(summaryData);
       setHistory(historyData);
+      setWithdrawalRequests(withdrawalData.requests || []);
     } catch (err) {
       console.error('Payouts fetch error:', err);
     } finally {
@@ -375,7 +378,15 @@ export function usePayouts() {
     return res.json();
   }, []);
 
-  return { summary, history, loading, refresh, getUserDetail, createPayout, uploadBill };
+  const markWithdrawalDone = useCallback(async (requestId, status, adminNote = '') => {
+    await apiFetch(`/withdrawal-requests/${requestId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, adminNote }),
+    });
+    await refresh();
+  }, [refresh]);
+
+  return { summary, history, withdrawalRequests, loading, refresh, getUserDetail, createPayout, uploadBill, markWithdrawalDone };
 }
 
 // Update user cashback rates
