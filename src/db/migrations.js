@@ -196,6 +196,7 @@ const SQLITE_SCHEMA = `
     display_name TEXT DEFAULT '',
     is_active INTEGER DEFAULT 1,
     must_change_password INTEGER DEFAULT 1,
+    avatar TEXT DEFAULT NULL,
     last_login TEXT,
     created_at TEXT DEFAULT (datetime('now','localtime'))
   );
@@ -450,6 +451,7 @@ const PG_SCHEMA = `
     display_name TEXT DEFAULT '',
     is_active BOOLEAN DEFAULT TRUE,
     must_change_password BOOLEAN DEFAULT TRUE,
+    avatar TEXT DEFAULT NULL,
     last_login TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
   );
@@ -564,7 +566,7 @@ async function runMigrations(db) {
   // Safe migration: Add referrer_earn_rate column if it doesn't exist
   try {
     if (db.type === 'postgres') {
-      await db.exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_earn_rate REAL DEFAULT 20;`);
+      await db.exec(`ALTER TABLE users ADD COLUMN referrer_earn_rate REAL DEFAULT 20;`);
     } else {
       await db.exec(`ALTER TABLE users ADD COLUMN referrer_earn_rate REAL DEFAULT 20;`);
     }
@@ -577,7 +579,7 @@ async function runMigrations(db) {
   // Safe migration: Add is_special column if it doesn't exist
   try {
     if (db.type === 'postgres') {
-      await db.exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_special BOOLEAN DEFAULT FALSE;`);
+      await db.exec(`ALTER TABLE users ADD COLUMN is_special BOOLEAN DEFAULT FALSE;`);
     } else {
       await db.exec(`ALTER TABLE users ADD COLUMN is_special INTEGER DEFAULT 0;`);
     }
@@ -590,7 +592,7 @@ async function runMigrations(db) {
   // Safe migration: Add redirect_token column to convert_logs
   try {
     if (db.type === 'postgres') {
-      await db.exec(`ALTER TABLE convert_logs ADD COLUMN IF NOT EXISTS redirect_token TEXT DEFAULT '';`);
+      await db.exec(`ALTER TABLE convert_logs ADD COLUMN redirect_token TEXT DEFAULT '';`);
     } else {
       await db.exec(`ALTER TABLE convert_logs ADD COLUMN redirect_token TEXT DEFAULT '';`);
     }
@@ -603,7 +605,7 @@ async function runMigrations(db) {
   // Safe migration: Add custom_rate column for F1 CTV custom commission
   try {
     if (db.type === 'postgres') {
-      await db.exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_rate REAL DEFAULT 0;`);
+      await db.exec(`ALTER TABLE users ADD COLUMN custom_rate REAL DEFAULT 0;`);
     } else {
       await db.exec(`ALTER TABLE users ADD COLUMN custom_rate REAL DEFAULT 0;`);
     }
@@ -616,7 +618,7 @@ async function runMigrations(db) {
   // Safe migration: Add sub_id4 column to convert_logs (for from_custom tracking)
   try {
     if (db.type === 'postgres') {
-      await db.exec(`ALTER TABLE convert_logs ADD COLUMN IF NOT EXISTS sub_id4 TEXT DEFAULT '';`);
+      await db.exec(`ALTER TABLE convert_logs ADD COLUMN sub_id4 TEXT DEFAULT '';`);
     } else {
       await db.exec(`ALTER TABLE convert_logs ADD COLUMN sub_id4 TEXT DEFAULT '';`);
     }
@@ -629,7 +631,7 @@ async function runMigrations(db) {
   // Safe migration: Add commission_mode column for multi-level F0-F3 system
   try {
     if (db.type === 'postgres') {
-      await db.exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_mode TEXT DEFAULT 'normal';`);
+      await db.exec(`ALTER TABLE users ADD COLUMN commission_mode TEXT DEFAULT 'normal';`);
     } else {
       await db.exec(`ALTER TABLE users ADD COLUMN commission_mode TEXT DEFAULT 'normal';`);
     }
@@ -654,7 +656,7 @@ async function runMigrations(db) {
   // Safe migration: Add avatar column to admin_users
   try {
     if (db.type === 'postgres') {
-      await db.exec(`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT NULL;`);
+      await db.exec(`ALTER TABLE admin_users ADD COLUMN avatar TEXT DEFAULT NULL;`);
     } else {
       await db.exec(`ALTER TABLE admin_users ADD COLUMN avatar TEXT DEFAULT NULL;`);
     }
@@ -667,7 +669,7 @@ async function runMigrations(db) {
   // Safe migration: Add bank_account_holder column to users (for /ruttien)
   try {
     if (db.type === 'postgres') {
-      await db.exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bank_account_holder TEXT DEFAULT '';`);
+      await db.exec(`ALTER TABLE users ADD COLUMN bank_account_holder TEXT DEFAULT '';`);
     } else {
       await db.exec(`ALTER TABLE users ADD COLUMN bank_account_holder TEXT DEFAULT '';`);
     }
