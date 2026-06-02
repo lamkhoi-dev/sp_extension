@@ -367,6 +367,56 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// ─── Public Orders API (no auth, anonymized) ────────────
+app.get('/public-orders', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 100);
+    const rows = await db.all(`
+      SELECT
+        o.order_id, o.order_status, o.order_time, o.complete_time,
+        o.shop_name, o.item_name, o.price, o.quantity,
+        o.order_value, o.net_commission,
+        o.shopee_product_commission_rate, o.shopee_product_commission,
+        o.seller_product_commission_rate, o.xtra_product_commission,
+        o.total_product_commission, o.total_order_commission,
+        o.sub_id1
+      FROM orders o
+      WHERE o.net_commission > 0
+        AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
+        AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
+        AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
+      ORDER BY o.order_time DESC
+      LIMIT $1
+    `, [limit]);
+
+    // Enrich with commission chain, then anonymize
+    await enrichOrdersWithCommissionChain(rows);
+    const data = rows.map(o => ({
+      orderId: o.order_id?.slice(-8) || '--',
+      orderStatus: o.order_status,
+      orderTime: o.order_time,
+      completeTime: o.complete_time,
+      shopName: o.shop_name,
+      itemName: o.item_name,
+      price: o.price,
+      quantity: o.quantity,
+      orderValue: o.order_value,
+      netCommission: o.net_commission,
+      shopeeRate: o.shopee_product_commission_rate,
+      shopeeComm: o.shopee_product_commission,
+      sellerRate: o.seller_product_commission_rate,
+      xtraComm: o.xtra_product_commission,
+      totalProductComm: o.total_product_commission,
+      totalOrderComm: o.total_order_commission,
+      commissionChain: o.commission_chain || null,
+    }));
+    res.json({ ok: true, data });
+  } catch (err) {
+    logger.error('PublicOrders', `Failed: ${err.message}`);
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
 // ─── Public Ranking API (no auth, outside /api prefix) ─
 const rankingStore = require('./src/api/ranking-store');
 app.get('/ranking', async (req, res) => {
