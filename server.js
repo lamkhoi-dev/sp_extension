@@ -27,6 +27,7 @@ const reportStore = require('./src/stats/report-store');
 const { renderReport } = require('./src/stats/report-template');
 const healthMonitor = require('./src/cron/health-monitor');
 const linkRedirectStore = require('./src/api/link-redirect-store');
+const commissionRatesStore = require('./src/api/commission-rates-store');
 const withdrawalStore = require('./src/api/withdrawal-store');
 const ShopeeAPI = require('./src/shopee-api');
 
@@ -870,6 +871,35 @@ app.patch('/api/settings/vps', async (req, res) => {
   }
 });
 
+// ─── Commission Rates Settings API ─────────────────────
+app.get('/api/settings/commission-rates', async (req, res) => {
+  try {
+    const rates = await commissionRatesStore.getRates();
+    res.json({ rates, defaults: commissionRatesStore.DEFAULTS });
+  } catch (err) {
+    logger.error('CommissionRates', `Get settings failed: ${err.message}`);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.patch('/api/settings/commission-rates', async (req, res) => {
+  const adminUser = req.admin?.username || 'system';
+  try {
+    const { admin, f0, f1, f2, f3 } = req.body || {};
+    const { before, after } = await commissionRatesStore.updateRates({ admin, f0, f1, f2, f3 }, adminUser);
+    await auditStore.log(adminUser, 'COMMISSION_RATES_UPDATED', 'system', 'commission_rates', { before, after }, req.ip);
+    res.json({ success: true, rates: after });
+  } catch (err) {
+    const isValidation = /Tổng|hợp lệ/.test(err.message);
+    if (isValidation) {
+      res.status(400).json({ error: err.message });
+    } else {
+      logger.error('CommissionRates', `Update settings failed: ${err.message}`);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+});
+
 // ─── Withdrawal Requests API (admin) ───────────────────
 app.get('/api/withdrawal-requests', async (req, res) => {
   try {
@@ -1397,8 +1427,8 @@ async function start() {
   auditStore.cleanup(6).catch(() => {});
   reportStore.cleanup().catch(() => {});
 
-  server.listen(PORT, () => {
-    logger.info('Server', `Running at http://localhost:${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    logger.info('Server', `Running at http://0.0.0.0:${PORT}`);
     console.log(`\n🚀 Shopee Affiliate Bot running at \x1b[36mhttp://localhost:${PORT}\x1b[0m`);
     console.log(`⏳ Đang chờ Chrome Extension kết nối...`);
 
