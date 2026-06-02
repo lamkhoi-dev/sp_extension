@@ -651,10 +651,89 @@ async function runMigrations(db) {
     }
   }
 
+  // Safe migration: Add avatar column to admin_users
+  try {
+    if (db.type === 'postgres') {
+      await db.exec(`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT NULL;`);
+    } else {
+      await db.exec(`ALTER TABLE admin_users ADD COLUMN avatar TEXT DEFAULT NULL;`);
+    }
+  } catch (err) {
+    if (!err.message.toLowerCase().includes('duplicate column') && !err.message.toLowerCase().includes('already exists') && !err.message.toLowerCase().includes('duplicate column name')) {
+      logger.warn('Migrations', `Failed to add avatar column to admin_users: ${err.message}`);
+    }
+  }
+
+  // Safe migration: Add bank_account_holder column to users (for /ruttien)
+  try {
+    if (db.type === 'postgres') {
+      await db.exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bank_account_holder TEXT DEFAULT '';`);
+    } else {
+      await db.exec(`ALTER TABLE users ADD COLUMN bank_account_holder TEXT DEFAULT '';`);
+    }
+  } catch (err) {
+    if (!err.message.toLowerCase().includes('duplicate column') && !err.message.toLowerCase().includes('already exists') && !err.message.toLowerCase().includes('duplicate column name')) {
+      logger.warn('Migrations', `Failed to add bank_account_holder column: ${err.message}`);
+    }
+  }
+
+  // Safe migration: withdrawal_requests table (created by /ruttien command)
+  try {
+    if (db.type === 'postgres') {
+      await db.exec(`
+        CREATE TABLE IF NOT EXISTS withdrawal_requests (
+          id SERIAL PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          user_name TEXT DEFAULT '',
+          amount REAL NOT NULL,
+          breakdown JSONB DEFAULT '{}',
+          bank_name TEXT DEFAULT '',
+          bank_account TEXT DEFAULT '',
+          account_holder TEXT DEFAULT '',
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending','paid','rejected','cancelled')),
+          admin_note TEXT DEFAULT '',
+          payout_id INTEGER DEFAULT NULL,
+          requested_at TIMESTAMPTZ DEFAULT NOW(),
+          processed_at TIMESTAMPTZ,
+          processed_by TEXT DEFAULT ''
+        )
+      `);
+      await db.exec(`CREATE INDEX IF NOT EXISTS idx_withdrawal_user ON withdrawal_requests(user_id);`);
+      await db.exec(`CREATE INDEX IF NOT EXISTS idx_withdrawal_status ON withdrawal_requests(status);`);
+      await db.exec(`CREATE INDEX IF NOT EXISTS idx_withdrawal_requested ON withdrawal_requests(requested_at DESC);`);
+    } else {
+      await db.exec(`
+        CREATE TABLE IF NOT EXISTS withdrawal_requests (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          user_name TEXT DEFAULT '',
+          amount REAL NOT NULL,
+          breakdown TEXT DEFAULT '{}',
+          bank_name TEXT DEFAULT '',
+          bank_account TEXT DEFAULT '',
+          account_holder TEXT DEFAULT '',
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending','paid','rejected','cancelled')),
+          admin_note TEXT DEFAULT '',
+          payout_id INTEGER DEFAULT NULL,
+          requested_at TEXT DEFAULT (datetime('now','localtime')),
+          processed_at TEXT,
+          processed_by TEXT DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_withdrawal_user ON withdrawal_requests(user_id);
+        CREATE INDEX IF NOT EXISTS idx_withdrawal_status ON withdrawal_requests(status);
+        CREATE INDEX IF NOT EXISTS idx_withdrawal_requested ON withdrawal_requests(requested_at DESC);
+      `);
+    }
+  } catch (err) {
+    if (!err.message.toLowerCase().includes('already exists')) {
+      logger.warn('Migrations', `Failed to create withdrawal_requests table: ${err.message}`);
+    }
+  }
+
   // Safe: Resync PG sequences to prevent duplicate key errors after manual data imports
 
   if (db.type === 'postgres') {
-    const seqTables = ['convert_logs', 'payouts', 'orders', 'link_redirects', 'link_click_events'];
+    const seqTables = ['convert_logs', 'payouts', 'orders', 'link_redirects', 'link_click_events', 'withdrawal_requests'];
     for (const table of seqTables) {
       try {
         await db.exec(`SELECT setval('${table}_id_seq', COALESCE((SELECT MAX(id) FROM ${table}), 0) + 1, false)`);
