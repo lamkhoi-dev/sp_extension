@@ -107,7 +107,14 @@ export default function SimulateOrderPage() {
       const res = await fetch(`${API}/shopee/extract`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
       const data = await res.json();
       if (data.success) {
-        setForm(f => ({ ...f, itemName: data.productName || f.itemName, price: data.price || f.price, shopeeRate: data.commissionRate || f.shopeeRate, itemId: data.itemId || f.itemId, shopId: data.shopId || f.shopId }));
+        // Strip VND formatting (e.g. "189.000đ" → 189000) before setting number input
+        const rawPrice = data.price;
+        const parsedPrice = rawPrice != null
+          ? (typeof rawPrice === 'string'
+              ? Number(rawPrice.replace(/[^0-9]/g, '')) || ''
+              : rawPrice)
+          : '';
+        setForm(f => ({ ...f, itemName: data.productName || f.itemName, price: parsedPrice || f.price, shopeeRate: data.commissionRate || f.shopeeRate, itemId: data.itemId || f.itemId, shopId: data.shopId || f.shopId }));
       }
     } catch {}
     setExtracting(false);
