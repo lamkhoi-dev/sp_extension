@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Sun, Moon, Palette, Bell, Shield, User, Check, Key, Eye, EyeOff, X, Lock, Upload, Loader2, Camera, Server, Clock, Save, AlertTriangle, Percent, RotateCcw } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -148,12 +148,15 @@ function CommissionRatesCard() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  // Sync form when rates load
+  // Sync form only when initial fetch completes (loading: true → false)
+  // Avoids setting form from DEFAULTS before real DB values arrive
+  const wasLoading = useRef(true);
   useEffect(() => {
-    if (rates && !form) {
+    if (wasLoading.current && !loading && rates) {
       setForm({ ...rates });
     }
-  }, [rates, form]);
+    wasLoading.current = loading;
+  }, [loading, rates]);
 
   const sum = useMemo(() => {
     if (!form) return 0;
