@@ -434,8 +434,8 @@ export default function OrdersPage() {
           tooltip="Số lượt chuyển đổi link trong khoảng thời gian đã chọn." />
         <StatCard icon={ShoppingCart} label="Đơn hàng" value={stats?.uniqueOrders || 0}
           tooltip="Số đơn hàng duy nhất trong khoảng thời gian đã chọn." />
-        <StatCard icon={DollarSign} label="Hoa hồng ước tính" value={formatShortVND(stats?.totalCommissionNew || 0)} color="text-emerald-500" unit="đ"
-          tooltip="Tổng hoa hồng ròng ước tính. Số thực tế có thể thay đổi khi đơn hoàn thành hoặc bị hủy." />
+        <StatCard icon={DollarSign} label="Hoa hồng ước tính" value={formatShortVND(stats?.totalCommission || 0)} color="text-emerald-500" unit="đ"
+          tooltip="Tổng hoa hồng sản phẩm ước tính (= Shopee Affiliate Dashboard). Bao gồm cả đơn đang xử lý và đã hủy." />
         <StatCard icon={Package} label="Số lượng đã bán" value={stats?.totalQuantity || 0}
           tooltip="Tổng số sản phẩm đã bán (tính theo số lượng của mỗi dòng đơn)." />
         <StatCard icon={Percent} label="Giá trị đơn hàng" value={formatShortVND(stats?.totalOrderValue || 0)} color="text-blue-500" unit="đ"
