@@ -479,9 +479,14 @@ function renderReport(data) {
     }
     .ctv-chip-row {
       display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      align-items: start;
     }
-    .ctv-chip-item .num { font-size: 22px; font-weight: 700; color: #c084fc; }
-    .ctv-chip-item .lbl { font-size: 10px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .ctv-chip-item { display: flex; flex-direction: column; align-items: center; }
+    .ctv-chip-item .num {
+      font-size: 18px; font-weight: 700; color: #c084fc;
+      word-break: break-all; text-align: center; line-height: 1.2;
+    }
+    .ctv-chip-item .lbl { font-size: 10px; color: var(--text-muted); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
 
     /* Main */
     .main-content {
@@ -549,15 +554,19 @@ function renderReport(data) {
       background: rgba(255,255,255,0.06); color: var(--text-main); border-color: rgba(255,255,255,0.15);
     }
 
-    .info-popover {
-      position: absolute; top: calc(100% + 6px); right: 8px;
+    /* Global tooltip — fixed positioning avoids backdrop-filter stacking context */
+    #global-tip {
+      position: fixed;
       min-width: 220px; max-width: 280px;
-      background: #0a0a0a; border: 1px solid rgba(255,255,255,0.10);
-      border-radius: 10px; padding: 12px; z-index: 50;
-      box-shadow: 0 12px 40px -8px rgba(0,0,0,0.6);
+      background: #0f0f0f; border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px; padding: 12px; z-index: 9999;
+      box-shadow: 0 16px 48px -8px rgba(0,0,0,0.8);
+      pointer-events: none;
       animation: popIn 0.16s ease-out;
     }
-    .info-popover[hidden] { display: none; }
+    #global-tip[hidden] { display: none; }
+    /* Legacy popover hidden by default */
+    .info-popover { display: none; }
     .info-title { font-size: 12px; font-weight: 600; color: #fff; margin-bottom: 6px; }
     .info-formula { font-size: 11px; color: #94a3b8; margin-bottom: 8px; }
     .info-formula code { background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; color: #cbd5e1; font-size: 11px; }
@@ -775,6 +784,8 @@ function renderReport(data) {
 <body>
   <div class="bg-orb orb-1"></div>
   <div class="bg-orb orb-2"></div>
+  <!-- Global tooltip portal — avoids backdrop-filter stacking context -->
+  <div id="global-tip" hidden></div>
 
   <div class="dashboard">
     <!-- Sidebar -->
@@ -824,7 +835,7 @@ function renderReport(data) {
             <div class="lbl">CTV F1</div>
           </div>
           <div class="ctv-chip-item">
-            <div class="num" style="font-size:16px">${formatVND(summary.totalReferrerEarnings)}</div>
+            <div class="num">${formatVND(summary.totalReferrerEarnings)}</div>
             <div class="lbl">Bạn nhận</div>
           </div>
         </div>
@@ -1099,28 +1110,46 @@ function renderReport(data) {
       render(1);
     }
 
-    // ── Info tooltip toggle ──
+    // ── Info tooltip — global fixed portal (avoids backdrop-filter stacking) ──
+    const globalTip = document.getElementById('global-tip');
+    let activeTipBtn = null;
+
+    function closeTip() {
+      globalTip.hidden = true;
+      if (activeTipBtn) { activeTipBtn.setAttribute('aria-expanded', 'false'); activeTipBtn = null; }
+    }
+
+    function positionTip(btn) {
+      const rect = btn.getBoundingClientRect();
+      const tipW = 260;
+      const vw = window.innerWidth;
+      let left = rect.right - tipW;
+      if (left < 8) left = 8;
+      if (left + tipW > vw - 8) left = vw - tipW - 8;
+      let top = rect.bottom + 8;
+      globalTip.style.left = left + 'px';
+      globalTip.style.top = top + 'px';
+      globalTip.style.width = tipW + 'px';
+    }
+
     function initTooltips() {
-      const btns = document.querySelectorAll('[data-tip]');
-      btns.forEach(btn => {
+      document.querySelectorAll('[data-tip]').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const pop = btn.parentElement.querySelector('.info-popover');
           if (!pop) return;
-          const isOpen = !pop.hidden;
-          // close others
-          document.querySelectorAll('.info-popover').forEach(p => p.hidden = true);
-          document.querySelectorAll('[data-tip]').forEach(b => b.setAttribute('aria-expanded', 'false'));
-          if (!isOpen) {
-            pop.hidden = false;
-            btn.setAttribute('aria-expanded', 'true');
-          }
+          if (activeTipBtn === btn) { closeTip(); return; }
+          closeTip();
+          globalTip.innerHTML = pop.innerHTML;
+          globalTip.hidden = false;
+          positionTip(btn);
+          activeTipBtn = btn;
+          btn.setAttribute('aria-expanded', 'true');
         });
       });
-      document.addEventListener('click', () => {
-        document.querySelectorAll('.info-popover').forEach(p => p.hidden = true);
-        document.querySelectorAll('[data-tip]').forEach(b => b.setAttribute('aria-expanded', 'false'));
-      });
+      document.addEventListener('click', closeTip);
+      window.addEventListener('scroll', closeTip, { passive: true });
+      window.addEventListener('resize', closeTip, { passive: true });
     }
 
     // ── CTV expandable rows ──
