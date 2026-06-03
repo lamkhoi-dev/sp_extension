@@ -648,7 +648,7 @@ app.get('/api/dashboard-stats', async (req, res) => {
     db.get("SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts"),
   ]);
 
-  const totalCommission = orderStats.totalCommissionNew || 0;
+  const totalCommission = orderStats.totalEstimatedCommission || orderStats.totalCommissionNew || 0;
   const totalPaidOut = Number(payoutTotalRow?.total_paid || 0);
   const adminProfit = totalCommission - totalPaidOut;
 
@@ -671,6 +671,7 @@ app.get('/api/dashboard-stats', async (req, res) => {
       totalValue: orderStats.totalOrderValue || 0,
       totalCommission: orderStats.totalCommission || 0,
       totalCommissionNew: totalCommission,
+      totalEstimatedCommission: totalCommission,
       uniqueShops: orderStats.uniqueShops || 0,
       uniqueBuyers: orderStats.uniqueBuyers || 0,
     },
