@@ -108,10 +108,10 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
         <KPICard
           title="Tổng hoa hồng"
-          value={formatShortVND(stats.orders?.totalCommission || 0)}
+          value={formatShortVND(stats.orders?.totalEstimatedCommission || 0)}
           icon={DollarSign}
           iconBg="bg-gradient-to-br from-emerald-500 to-emerald-600"
-          tooltip="Tổng hoa hồng sản phẩm ước tính — khớp với Shopee Affiliate Dashboard."
+          tooltip="Hoa hồng ước tính = order_commission + order_bonus. Khớp với Shopee Affiliate Dashboard."
           delay={0}
         />
         <KPICard
