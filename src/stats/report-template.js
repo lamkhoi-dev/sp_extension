@@ -91,7 +91,7 @@ function statCard({ accent, iconName, label, value, sub, formula, breakdown }) {
     </div>`;
 }
 
-// ─── CTV node (recursive: F1 → F2 → F3) ─────────────────
+// ─── CTV node (recursive: F1 → F2 → F3) — 3 columns ─────
 function renderCtvNode(node, level, rates) {
   const levelKey = `f${level}`;
   const levelRate = rates[levelKey] ?? 0;
@@ -102,26 +102,37 @@ function renderCtvNode(node, level, rates) {
     : '';
   const initials = (node.displayName || '?')[0].toUpperCase();
   const tagLabel = node.commissionMode === 'custom' ? 'Custom' : levelKey.toUpperCase();
+  const completedEarnings = node.completedEarnings ?? 0;
+  const pendingEarnings = node.pendingEarnings ?? 0;
   return `
     <div class="ctv-node level-${level}">
       <div class="ctv-row ${hasChildren ? 'is-expandable' : ''}" ${hasChildren ? 'data-toggle-children' : ''}>
-        ${hasChildren ? `<span class="ctv-chevron">${icon('chevronRight', 14)}</span>` : '<span class="ctv-chevron-spacer"></span>'}
-        ${avatarHtml}
-        <div class="ctv-avatar-placeholder" ${node.avatar ? 'style="display:none"' : ''}>${escapeHtml(initials)}</div>
-        <div class="ctv-info">
-          <div class="ctv-name-row">
-            <span class="ctv-name">${escapeHtml(node.displayName)}</span>
-            <span class="level-tag level-tag-${level}">${tagLabel}</span>
-          </div>
-          <div class="ctv-stats">
-            <span>${icon('package', 11)} <span class="ctv-stat-value">${node.orderCount}</span> đơn</span>
-            <span class="ctv-sep">·</span>
-            <span>Đã phát sinh ${formatVND(node.totalCommission)}</span>
+        <!-- Col 1: Tên -->
+        <div class="ctv-col-name">
+          ${hasChildren ? `<span class="ctv-chevron">${icon('chevronRight', 14)}</span>` : '<span class="ctv-chevron-spacer"></span>'}
+          ${avatarHtml}
+          <div class="ctv-avatar-placeholder" ${node.avatar ? 'style="display:none"' : ''}>${escapeHtml(initials)}</div>
+          <div class="ctv-info">
+            <div class="ctv-name-row">
+              <span class="ctv-name">${escapeHtml(node.displayName)}</span>
+              <span class="level-tag level-tag-${level}">${tagLabel}</span>
+            </div>
+            <div class="ctv-stats">
+              <span>${icon('package', 11)} <span class="ctv-stat-value">${node.orderCount}</span> đơn</span>
+              <span class="ctv-sep">·</span>
+              <span>${levelRate}%</span>
+            </div>
           </div>
         </div>
-        <div class="ctv-earnings" title="Bạn nhận ${levelRate}% từ commission của CTV này">
-          <div class="ctv-earnings-label">Bạn nhận ${levelRate}%</div>
-          <div class="ctv-earnings-value">+${formatVND(node.earnings || 0)}</div>
+        <!-- Col 2: Đã nhận (completed) -->
+        <div class="ctv-col-val">
+          <div class="ctv-col-label">Đã nhận</div>
+          <div class="ctv-col-amt ctv-col-done">+${formatVND(completedEarnings)}</div>
+        </div>
+        <!-- Col 3: Đang xử lý (pending) -->
+        <div class="ctv-col-val">
+          <div class="ctv-col-label">Đang xử lý</div>
+          <div class="ctv-col-amt ctv-col-pending">${pendingEarnings > 0 ? '+' + formatVND(pendingEarnings) : '--'}</div>
         </div>
       </div>
       ${hasChildren ? `
@@ -228,30 +239,19 @@ function renderReport(data) {
   }).join('');
 
   // ── Stat cards content ──
-  const cardCashback = statCard({
+  // ── Hàng 1: Thu nhập (3 cards) ──
+  const cardTotalEarnings = statCard({
     accent: 'green',
     iconName: 'wallet',
-    label: 'Hoa hồng bạn nhận',
-    value: formatVND(summary.totalBuyerCashback),
-    sub: `${summary.completedCount}/${summary.totalOrders} đơn hoàn thành`,
-    formula: `<code>= Σ (net_commission × ${f0Rate}%)</code>`,
+    label: 'Tổng thu nhập',
+    value: formatVND(summary.totalEarnings),
+    sub: `F0 + F1/F2/F3${summary.hasCustomOrders ? ' + Custom' : ''}`,
+    formula: `<code>= Buyer + Referrer${summary.hasCustomOrders ? ' + Custom' : ''}</code>`,
     breakdown: `
-      <div class="kv"><span>Tổng net</span><span>${formatVND(summary.totalNetCommission)}</span></div>
-      <div class="kv"><span>${isCustomMode ? 'Custom rate' : 'F0 rate'}</span><span>${f0Rate}%</span></div>
-      <div class="kv-strong"><span>Bạn nhận</span><span>${formatVND(summary.totalBuyerCashback)}</span></div>`,
-  });
-
-  const cardOrders = statCard({
-    accent: 'blue',
-    iconName: 'package',
-    label: 'Đơn phát sinh',
-    value: String(summary.totalOrders),
-    sub: `Raw commission: ${formatVND(summary.totalNetCommission)}`,
-    formula: `<code>COUNT(orders WHERE link đã convert)</code>`,
-    breakdown: `
-      <div class="kv"><span>Hoàn thành</span><span>${summary.completedCount}</span></div>
-      <div class="kv"><span>Đang xử lý</span><span>${summary.pendingCount}</span></div>
-      <div class="kv-strong"><span>Tổng</span><span>${summary.totalOrders}</span></div>`,
+      <div class="kv"><span>Buyer (F0)</span><span>${formatVND(summary.totalBuyerCashback)}</span></div>
+      <div class="kv"><span>Referrer (F1+F2+F3)</span><span>${formatVND(summary.totalReferrerEarnings)}</span></div>
+      ${summary.totalCustomCashback > 0 ? `<div class="kv"><span>Custom</span><span>${formatVND(summary.totalCustomCashback)}</span></div>` : ''}
+      <div class="kv-strong"><span>Tổng</span><span>${formatVND(summary.totalEarnings)}</span></div>`,
   });
 
   const cardPaid = statCard({
@@ -271,23 +271,38 @@ function renderReport(data) {
   const cardPending = statCard({
     accent: 'yellow',
     iconName: 'clock',
-    label: 'Chờ duyệt',
-    value: formatVND(summary.pendingBuyerPayment),
+    label: 'Chờ xử lý',
+    value: formatVND(summary.totalPendingPayment),
     sub: `${summary.completedCount} đơn hoàn thành chờ trả`,
-    formula: `<code>= cashback đơn hoàn thành − đã trả</code>`,
+    formula: `<code>= cashback hoàn thành − đã trả</code>`,
     breakdown: `
-      <div class="kv"><span>Cashback hoàn thành</span><span>${formatVND(summary.completedBuyerCashback)}</span></div>
-      <div class="kv"><span>Đã trả</span><span>${formatVND(summary.totalPaidAsBuyer)}</span></div>
-      <div class="kv-strong"><span>Chờ trả</span><span>${formatVND(summary.pendingBuyerPayment)}</span></div>`,
+      <div class="kv"><span>Buyer chờ trả</span><span>${formatVND(summary.pendingBuyerPayment)}</span></div>
+      ${summary.pendingCustomPayment > 0 ? `<div class="kv"><span>Custom chờ trả</span><span>${formatVND(summary.pendingCustomPayment)}</span></div>` : ''}
+      <div class="kv-strong"><span>Tổng chờ</span><span>${formatVND(summary.totalPendingPayment)}</span></div>`,
   });
 
-  // F1+F2+F3 earnings card (only if user has downline)
-  const cardReferrer = (ctvList.length > 0) ? statCard({
+  // ── Hàng 2: Chi tiết theo nguồn (2 cards) ──
+  const cardOrders = statCard({
+    accent: 'blue',
+    iconName: 'shoppingBag',
+    label: 'Hoa hồng từ Đơn hàng',
+    value: formatVND(summary.totalBuyerCashback),
+    sub: `${summary.completedCount}/${summary.totalOrders} đơn hoàn thành`,
+    formula: `<code>= Σ (net_commission × ${f0Rate}%)</code>`,
+    breakdown: `
+      <div class="kv"><span>Tổng net commission</span><span>${formatVND(summary.totalNetCommission)}</span></div>
+      <div class="kv"><span>${isCustomMode ? 'Custom rate' : 'F0 rate'}</span><span>${f0Rate}%</span></div>
+      <div class="kv"><span>Đơn hoàn thành</span><span>${summary.completedCount}</span></div>
+      <div class="kv"><span>Đơn đang xử lý</span><span>${summary.pendingCount}</span></div>
+      <div class="kv-strong"><span>Bạn nhận</span><span>${formatVND(summary.totalBuyerCashback)}</span></div>`,
+  });
+
+  const cardReferrer = (summary.totalReferrerEarnings > 0 || ctvList.length > 0) ? statCard({
     accent: 'purple',
     iconName: 'layers',
-    label: 'Thu nhập từ CTV',
+    label: 'Hoa hồng từ CTV',
     value: formatVND(summary.totalReferrerEarnings),
-    sub: `${summary.ctvCount} CTV trực tiếp`,
+    sub: `${summary.ctvCount} CTV F1 trực tiếp`,
     formula: `<code>= F1×${rates.f1}% + F2×${rates.f2}% + F3×${rates.f3}%</code>`,
     breakdown: `
       <div class="kv"><span>F1 (trực tiếp)</span><span>${formatVND(summary.totalF1Earnings)}</span></div>
@@ -477,10 +492,18 @@ function renderReport(data) {
     @media (min-width: 768px) { .main-content { padding: 24px; gap: 28px; } }
     @media (min-width: 1024px) { .main-content { padding: 0; } }
 
-    /* Stat grid */
-    .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-    @media (min-width: 768px) { .stat-grid { grid-template-columns: repeat(4, 1fr); gap: 16px; } }
-    @media (min-width: 1280px) { .stat-grid.has-5 { grid-template-columns: repeat(5, 1fr); } }
+    /* Stat grids */
+    .stat-grid   { display: grid; gap: 10px; }
+    .stat-grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .stat-grid-2 { grid-template-columns: repeat(2, 1fr); }
+    @media (max-width: 480px) {
+      .stat-grid-3 { grid-template-columns: repeat(1, 1fr); }
+      .stat-grid-2 { grid-template-columns: repeat(1, 1fr); }
+    }
+    @media (min-width: 481px) and (max-width: 767px) {
+      .stat-grid-3 { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (min-width: 768px) { .stat-grid { gap: 16px; } }
 
     .stat-card {
       background: var(--glass-bg);
@@ -666,7 +689,7 @@ function renderReport(data) {
     .ctv-node.level-3 { padding-left: 28px; border-left: 1px dashed rgba(255,255,255,0.08); margin-left: 14px; }
 
     .ctv-row {
-      display: flex; align-items: center; gap: 10px;
+      display: flex; align-items: center; gap: 8px;
       background: rgba(255,255,255,0.025);
       border: 1px solid var(--glass-border);
       border-radius: 10px; padding: 10px 12px;
@@ -676,6 +699,24 @@ function renderReport(data) {
     .ctv-row:hover { background: rgba(255,255,255,0.05); }
     .ctv-chevron, .ctv-chevron-spacer { width: 16px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); flex-shrink: 0; transition: transform 0.2s; }
     .ctv-row.is-expanded .ctv-chevron { transform: rotate(90deg); }
+
+    /* CTV 3-column layout */
+    .ctv-col-name { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+    .ctv-col-val { text-align: right; flex-shrink: 0; min-width: 80px; }
+    .ctv-col-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 2px; }
+    .ctv-col-amt { font-size: 13px; font-weight: 700; }
+    .ctv-col-done { color: #34d399; }
+    .ctv-col-pending { color: #fbbf24; }
+
+    /* CTV section header with column labels */
+    .ctv-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px 4px;
+      font-size: 9px; font-weight: 700; color: var(--text-dim);
+      text-transform: uppercase; letter-spacing: 0.4px;
+    }
+    .ctv-header-name { flex: 1; }
+    .ctv-header-val { min-width: 80px; text-align: right; }
 
     .ctv-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--glass-border); flex-shrink: 0; }
     .ctv-avatar-placeholder {
@@ -783,7 +824,7 @@ function renderReport(data) {
             <div class="lbl">CTV F1</div>
           </div>
           <div class="ctv-chip-item">
-            <div class="num">${formatShortVND(summary.totalReferrerEarnings)}đ</div>
+            <div class="num" style="font-size:16px">${formatVND(summary.totalReferrerEarnings)}</div>
             <div class="lbl">Bạn nhận</div>
           </div>
         </div>
@@ -792,12 +833,15 @@ function renderReport(data) {
 
     <!-- Main -->
     <main class="main-content">
-      <!-- Overview Cards -->
-      <div class="stat-grid ${cardReferrer ? 'has-5' : ''}">
-        ${cardCashback}
-        ${cardOrders}
+      <!-- Hàng 1: Thu nhập -->
+      <div class="stat-grid stat-grid-3">
+        ${cardTotalEarnings}
         ${cardPaid}
         ${cardPending}
+      </div>
+      <!-- Hàng 2: Chi tiết theo nguồn -->
+      <div class="stat-grid ${cardReferrer ? 'stat-grid-2' : 'stat-grid-2'}" style="${!cardReferrer ? 'grid-template-columns:1fr' : ''}">
+        ${cardOrders}
         ${cardReferrer}
       </div>
 
@@ -889,6 +933,11 @@ function renderReport(data) {
           <span style="margin-left:auto;font-size:11px;color:#34d399;font-weight:600">
             Tổng: ${formatVND(summary.totalReferrerEarnings)}
           </span>
+        </div>
+        <div class="ctv-header">
+          <div class="ctv-header-name">Thành viên</div>
+          <div class="ctv-header-val">Đã nhận</div>
+          <div class="ctv-header-val">Đang xử lý</div>
         </div>
         <div class="ctv-tree">
           ${ctvList.map(node => renderCtvNode(node, 1, rates)).join('')}

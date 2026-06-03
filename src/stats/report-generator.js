@@ -32,7 +32,18 @@ const DOWNLINE_SQL = `
              AND COALESCE(o2.order_status,'') NOT LIKE '%hủy%'
              AND COALESCE(o2.order_status,'') NOT LIKE '%huỷ%'
              AND COALESCE(o2.order_status,'') NOT LIKE '%Cancelled%'
-         ), 0) AS total_commission
+         ), 0) AS total_commission,
+         COALESCE((
+           SELECT SUM(o3.net_commission)
+           FROM orders o3
+           INNER JOIN convert_logs cl4 ON (
+             (o3.item_id != '' AND o3.item_id = cl4.item_id AND o3.sub_id1 = cl4.sub_id1)
+             OR
+             (cl4.item_id = '' AND o3.item_name != '' AND o3.item_name = cl4.product_name AND o3.sub_id1 = cl4.sub_id1)
+           )
+           WHERE cl4.user_id = u.user_id AND cl4.status = 'success'
+             AND (COALESCE(o3.order_status,'') LIKE '%hoàn thành%' OR COALESCE(o3.order_status,'') LIKE '%completed%' OR COALESCE(o3.order_status,'') LIKE '%settled%')
+         ), 0) AS completed_commission
   FROM users u
   WHERE u.referrer_id = $1
   ORDER BY total_commission DESC
@@ -47,6 +58,7 @@ function mapDownlineRow(r) {
     commissionMode: r.commission_mode || 'normal',
     orderCount: Number(r.order_count) || 0,
     totalCommission: Number(r.total_commission) || 0,
+    completedCommission: Number(r.completed_commission) || 0,
   };
 }
 
@@ -65,6 +77,8 @@ async function loadDownlineTree(userId, rates) {
   for (const r of f1Rows) {
     const f1 = mapDownlineRow(r);
     f1.earnings = Math.round(f1.totalCommission * rates.f1 / 100);
+    f1.completedEarnings = Math.round(f1.completedCommission * rates.f1 / 100);
+    f1.pendingEarnings = Math.max(0, f1.earnings - f1.completedEarnings);
     totalF1Earnings += f1.earnings;
 
     // If F1 is custom mode, the user doesn't earn F2/F3 from this branch
@@ -80,6 +94,8 @@ async function loadDownlineTree(userId, rates) {
     for (const r2 of f2Rows) {
       const f2 = mapDownlineRow(r2);
       f2.earnings = Math.round(f2.totalCommission * rates.f2 / 100);
+      f2.completedEarnings = Math.round(f2.completedCommission * rates.f2 / 100);
+      f2.pendingEarnings = Math.max(0, f2.earnings - f2.completedEarnings);
       totalF2Earnings += f2.earnings;
 
       if (f2.commissionMode === 'custom') {
@@ -93,6 +109,8 @@ async function loadDownlineTree(userId, rates) {
       const f3SubCtvs = f3Rows.map(r3 => {
         const f3 = mapDownlineRow(r3);
         f3.earnings = Math.round(f3.totalCommission * rates.f3 / 100);
+        f3.completedEarnings = Math.round(f3.completedCommission * rates.f3 / 100);
+        f3.pendingEarnings = Math.max(0, f3.earnings - f3.completedEarnings);
         totalF3Earnings += f3.earnings;
         return f3;
       });
@@ -323,8 +341,10 @@ class ReportGenerator {
         totalPaidAsReferrer,
         ctvCount: ctvList.length,
 
-        // Combined (legacy compat)
+        // Combined totals
+        totalEarnings: totalBuyerCashback + totalReferrerEarnings + totalCustomCashback,
         totalPaid: totalPaidAsBuyer + totalPaidAsReferrer + totalCustomPaid,
+        totalPendingPayment: pendingBuyerPayment + pendingCustomPayment,
         pendingPayment: pendingBuyerPayment,
 
         // Custom orders summary
