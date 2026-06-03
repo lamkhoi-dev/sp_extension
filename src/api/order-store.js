@@ -231,6 +231,7 @@ const orderStore = {
         SUM(net_commission) as "totalCommissionNew",
         SUM(order_commission) as "totalOrderCommission",
         SUM(order_bonus) as "totalOrderBonus",
+        COALESCE(SUM(order_commission), 0) + COALESCE(SUM(order_bonus), 0) as "totalEstimatedCommission",
         COUNT(DISTINCT shop_id) as "uniqueShops",
         COUNT(DISTINCT sub_id1) as "uniqueBuyers",
         COALESCE(SUM(quantity), 0) as "totalQuantity"
