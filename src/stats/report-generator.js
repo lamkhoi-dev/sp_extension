@@ -18,7 +18,7 @@ const DOWNLINE_SQL = `
            WHERE cl.user_id = u.user_id AND cl.status = 'success'
              AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
              AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
-             AND COALESCE(o.order_status,'') NOT LIKE '%Cancelled%'
+             AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
          ), 0) AS order_count,
          COALESCE((
            SELECT SUM(o2.net_commission)
@@ -31,7 +31,7 @@ const DOWNLINE_SQL = `
            WHERE cl3.user_id = u.user_id AND cl3.status = 'success'
              AND COALESCE(o2.order_status,'') NOT LIKE '%hủy%'
              AND COALESCE(o2.order_status,'') NOT LIKE '%huỷ%'
-             AND COALESCE(o2.order_status,'') NOT LIKE '%Cancelled%'
+             AND COALESCE(o2.order_status,'') NOT LIKE '%Cancel%'
          ), 0) AS total_commission,
          COALESCE((
            SELECT SUM(o3.net_commission)
@@ -162,7 +162,7 @@ class ReportGenerator {
          AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
          AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
          AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
-         AND COALESCE(o.order_status,'') NOT LIKE '%Cancelled%'
+         AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
        ORDER BY o.order_time DESC`,
       [userId]
     );
@@ -186,7 +186,7 @@ class ReportGenerator {
          AND o.sub_id4 IN ('from_custom', 'custom')
          AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
          AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
-         AND COALESCE(o.order_status,'') NOT LIKE '%Cancelled%'
+         AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
        ORDER BY o.order_time DESC`,
       [userId]
     );
@@ -224,6 +224,9 @@ class ReportGenerator {
        )
        WHERE cl.user_id = ? AND cl.status = 'success'
          AND o.order_time >= TO_CHAR(NOW() - INTERVAL '6 months', 'YYYY-MM-DD')
+         AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
+         AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
+         AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
        GROUP BY LEFT(o.order_time, 7)
        ORDER BY month ASC`,
       [userId]
