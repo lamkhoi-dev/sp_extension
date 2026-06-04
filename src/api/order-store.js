@@ -266,6 +266,112 @@ const orderStore = {
     return { ...baseStats, newBuyers };
   },
 
+  /**
+   * Compute admin's theoretical net profit assuming all users have been fully paid out.
+   * = total net_commission - all user portions (F0/F1/F2/F3 + custom)
+   *
+   * Uses LEFT JOIN chain resolution (3 levels) for accurate per-order calculation.
+   * Handles: normal chain, custom-mode buyers, custom orders (from_custom).
+   */
+  async getAdminProfitEstimate(rates) {
+    const NOT_CANCELLED = `(
+      COALESCE(o.order_status,'') NOT LIKE '%hủy%'
+      AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
+      AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
+    )`;
+
+    const MATCHED_JOIN = `
+      INNER JOIN convert_logs cl ON (
+        (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
+        OR (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+      )
+    `;
+
+    // 1. Total net commission from all non-cancelled orders (includes unmatched + custom)
+    const totalRow = await db.get(`
+      SELECT COALESCE(SUM(o.net_commission), 0) as total_net
+      FROM orders o
+      WHERE ${NOT_CANCELLED}
+    `);
+
+    // 2. Matched normal orders: compute F0 + F1/F2/F3 user shares via chain resolution
+    const chainRow = await db.get(`
+      SELECT
+        -- F0: normal buyers get F0%, custom buyers get custom_rate%
+        COALESCE(SUM(CASE
+          WHEN COALESCE(ub.commission_mode,'normal') = 'custom'
+            THEN o.net_commission * COALESCE(ub.custom_rate, 0) / 100
+          ELSE o.net_commission * $1 / 100
+        END), 0) as buyer_total,
+
+        -- F1: only for normal-chain buyers who have a normal referrer
+        COALESCE(SUM(CASE
+          WHEN COALESCE(ub.commission_mode,'normal') = 'normal'
+            AND ub1.user_id IS NOT NULL
+            THEN o.net_commission * $2 / 100
+          ELSE 0
+        END), 0) as f1_total,
+
+        -- F2: F1's referrer (both normal mode)
+        COALESCE(SUM(CASE
+          WHEN COALESCE(ub.commission_mode,'normal') = 'normal'
+            AND ub1.user_id IS NOT NULL
+            AND ub2.user_id IS NOT NULL
+            THEN o.net_commission * $3 / 100
+          ELSE 0
+        END), 0) as f2_total,
+
+        -- F3: F2's referrer (all normal mode)
+        COALESCE(SUM(CASE
+          WHEN COALESCE(ub.commission_mode,'normal') = 'normal'
+            AND ub1.user_id IS NOT NULL
+            AND ub2.user_id IS NOT NULL
+            AND ub3.user_id IS NOT NULL
+            THEN o.net_commission * $4 / 100
+          ELSE 0
+        END), 0) as f3_total
+
+      FROM (
+        SELECT DISTINCT o.order_id, o.item_id, o.net_commission, o.sub_id1
+        FROM orders o
+        ${MATCHED_JOIN}
+        WHERE cl.status = 'success'
+          AND ${NOT_CANCELLED}
+          AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
+      ) o
+      LEFT JOIN users ub  ON CAST(ub.user_id AS TEXT) = CAST(o.sub_id1 AS TEXT)
+      LEFT JOIN users ub1 ON CAST(ub1.user_id AS TEXT) = CAST(ub.referrer_id AS TEXT)
+        AND COALESCE(ub.commission_mode, 'normal') = 'normal'
+        AND COALESCE(ub1.commission_mode, 'normal') = 'normal'
+        AND ub.referrer_id IS NOT NULL AND ub.referrer_id != ''
+      LEFT JOIN users ub2 ON CAST(ub2.user_id AS TEXT) = CAST(ub1.referrer_id AS TEXT)
+        AND COALESCE(ub1.commission_mode, 'normal') = 'normal'
+        AND COALESCE(ub2.commission_mode, 'normal') = 'normal'
+        AND ub1.referrer_id IS NOT NULL AND ub1.referrer_id != ''
+      LEFT JOIN users ub3 ON CAST(ub3.user_id AS TEXT) = CAST(ub2.referrer_id AS TEXT)
+        AND COALESCE(ub2.commission_mode, 'normal') = 'normal'
+        AND COALESCE(ub3.commission_mode, 'normal') = 'normal'
+        AND ub2.referrer_id IS NOT NULL AND ub2.referrer_id != ''
+    `, [rates.f0, rates.f1, rates.f2, rates.f3]);
+
+    // 3. Custom orders (F1 gửi link cho khách): F1 user gets custom_rate%
+    const customRow = await db.get(`
+      SELECT COALESCE(SUM(o.net_commission * COALESCE(u.custom_rate, 0) / 100), 0) as custom_user_total
+      FROM orders o
+      LEFT JOIN users u ON CAST(u.user_id AS TEXT) = CAST(o.sub_id1 AS TEXT)
+      WHERE o.sub_id4 IN ('from_custom', 'custom')
+        AND ${NOT_CANCELLED}
+    `);
+
+    const totalUserCashback =
+      Number(chainRow?.buyer_total || 0) +
+      Number(chainRow?.f1_total || 0) +
+      Number(chainRow?.f2_total || 0) +
+      Number(chainRow?.f3_total || 0) +
+      Number(customRow?.custom_user_total || 0);
+
+    return Math.round(Number(totalRow?.total_net || 0) - totalUserCashback);
+  },
 
   async search(query, limit = 20) {
     const q = `%${query}%`;

@@ -639,18 +639,20 @@ app.get('/api/zalo-user-fetch/:userId', async (req, res) => {
 // ═══════════════════════════════════════════════════════
 
 app.get('/api/dashboard-stats', async (req, res) => {
-  const [msgStats, convertStats, orderStats, todayConvert, userCount, payoutTotalRow] = await Promise.all([
+  const rates = await commissionRatesStore.getRates();
+  const [msgStats, convertStats, orderStats, todayConvert, userCount, payoutTotalRow, adminProfitEstimate] = await Promise.all([
     messageStore.getStats(),
     convertLogStore.getStats(),
     orderStore.getStats(),
     convertLogStore.getTodayStats(),
     userCache.getUserCount(),
     db.get("SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts"),
+    orderStore.getAdminProfitEstimate(rates),
   ]);
 
   const totalCommission = orderStats.totalEstimatedCommission || orderStats.totalCommissionNew || 0;
   const totalPaidOut = Number(payoutTotalRow?.total_paid || 0);
-  const adminProfit = totalCommission - totalPaidOut;
+  const adminProfit = adminProfitEstimate;
 
   res.json({
     users: { total: userCount },
