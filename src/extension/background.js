@@ -416,7 +416,7 @@ async function executeSyncOrders(tabId, payload, reqId) {
         }
       },
       args: [
-        payload.startTimestamp || Math.floor(Date.now() / 1000) - 30 * 24 * 3600, // default: last 30 days
+        payload.startTimestamp || Math.floor(Date.now() / 1000) - 66 * 24 * 3600, // default: last 66 days (match server)
         payload.endTimestamp || Math.floor(Date.now() / 1000),
       ],
     });
