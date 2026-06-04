@@ -647,8 +647,12 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
       // Build reply with @mention
       const mentionTag = `@${senderName}`;
       const rates = await commissionRatesStore.getRates();
-      const amountFmt = result.commissionAmount > 0
-        ? `~${new Intl.NumberFormat('vi-VN').format(Math.round(result.commissionAmount))}đ`
+      // User actually receives F0% of the gross commission
+      const userAmount = result.commissionAmount > 0
+        ? Math.round(result.commissionAmount * rates.f0 / 100)
+        : 0;
+      const amountFmt = userAmount > 0
+        ? `~${new Intl.NumberFormat('vi-VN').format(userAmount)}đ`
         : '';
       const commissionLine = amountFmt
         ? `💰 Hoa hồng đơn hàng: ${result.commission}% (${amountFmt})`
