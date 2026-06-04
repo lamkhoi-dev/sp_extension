@@ -351,7 +351,7 @@ async function executeSyncOrders(tabId, payload, reqId) {
 
           // Step 1: Trigger export
           console.log('[SyncOrders] Step 1: Triggering export...');
-          const exportUrl = `/api/v1/report/download?page_size=20&page_num=1&purchase_time_s=${startTs}&purchase_time_e=${endTs}`;
+          const exportUrl = `/api/v1/report/download?page_size=500&page_num=1&purchase_time_s=${startTs}&purchase_time_e=${endTs}`;
           const exportRes = await fetch(exportUrl, { headers, credentials: 'include' });
           const exportData = await exportRes.json();
 
