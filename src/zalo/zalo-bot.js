@@ -25,6 +25,7 @@ class ZaloBot {
     this.statusListeners = [];
     this.messageListeners = []; // for dashboard real-time
     this._keepAliveInterval = null;
+    this._broadcastTimeout = null;
   }
 
   // Subscribe to status changes (for dashboard broadcasting)
@@ -88,6 +89,7 @@ class ZaloBot {
       this.status = 'online';
       logger.info('ZaloBot', `✅ Đăng nhập thành công! Account: ${this.accountName}`);
       this._emitStatus();
+      this.startDailyBroadcast();
 
       // Save session cookie
       try {
@@ -340,10 +342,80 @@ class ZaloBot {
     }
   }
 
+  // ─── Daily 8PM VN broadcast to all active groups ──────
+  startDailyBroadcast() {
+    if (this._broadcastTimeout) clearTimeout(this._broadcastTimeout);
+
+    const scheduleNext = () => {
+      // Next 20:00 Vietnam time (UTC+7 = 13:00 UTC)
+      const now = new Date();
+      const next = new Date(now);
+      next.setUTCHours(13, 0, 0, 0); // 20:00 VN = 13:00 UTC
+      if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+
+      const msUntil = next - now;
+      logger.info('ZaloBot', `📅 Daily broadcast scheduled in ${Math.round(msUntil / 3600000 * 10) / 10}h (20:00 VN)`);
+
+      this._broadcastTimeout = setTimeout(async () => {
+        await this._sendDailyBroadcast();
+        scheduleNext(); // reschedule for next day
+      }, msUntil);
+    };
+
+    scheduleNext();
+  }
+
+  async _sendDailyBroadcast() {
+    if (!this.actions || this.status !== 'online') {
+      logger.warn('ZaloBot', 'Daily broadcast skipped — bot not online');
+      return;
+    }
+
+    const db = require('../db');
+    // Get all active group thread IDs from recent messages
+    const groups = await db.all(`
+      SELECT DISTINCT thread_id
+      FROM messages
+      WHERE is_group = true
+        AND received_at >= NOW() - INTERVAL '30 days'
+    `);
+
+    if (groups.length === 0) {
+      logger.warn('ZaloBot', 'Daily broadcast: no active groups found');
+      return;
+    }
+
+    const msg =
+`🔴 THÔNG BÁO THỐNG KÊ HOA HỒNG VÀ TIỀN ĐƯỢC HOÀN TRẢ TỪ SHOPEE & HƯỚNG DẪN CÁCH RÚT TIỀN
+⬇️
+Sẽ cập nhật vào *20:00* mỗi ngày
+
+💰 Lệnh rút tiền : */ruttien*
+📊 Lệnh xem thống kê : */thongke*
+- Đường link chi tiết đơn hàng: *https://cashback-shopee.vercel.app/baocao.html*`;
+
+    let sent = 0;
+    for (const { thread_id } of groups) {
+      try {
+        await this.actions.sendText(msg, thread_id, 1); // type 1 = group
+        sent++;
+        // Small delay between groups to avoid rate limit
+        await new Promise(r => setTimeout(r, 1500));
+      } catch (err) {
+        logger.error('ZaloBot', `Daily broadcast failed for group ${thread_id}: ${err.message}`);
+      }
+    }
+    logger.info('ZaloBot', `📢 Daily broadcast sent to ${sent}/${groups.length} groups`);
+  }
+
   async stop() {
     if (this._keepAliveInterval) {
       clearInterval(this._keepAliveInterval);
       this._keepAliveInterval = null;
+    }
+    if (this._broadcastTimeout) {
+      clearTimeout(this._broadcastTimeout);
+      this._broadcastTimeout = null;
     }
     if (this.listener) {
       this.listener.stop?.();
