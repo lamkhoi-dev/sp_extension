@@ -94,6 +94,11 @@ export default function PayoutsPage() {
         adminNote,
         billImage,
       });
+      // Auto-mark pending withdrawal request as paid when payout is done
+      const wr = withdrawalMap[payTarget.userId];
+      if (wr) {
+        await markWithdrawalDone(wr.id, 'paid', adminNote).catch(() => {});
+      }
       setShowPayModal(false);
       setPayTarget(null);
       setBillFile(null);
