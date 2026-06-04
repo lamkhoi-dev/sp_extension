@@ -651,12 +651,16 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
       const userAmount = result.commissionAmount > 0
         ? Math.round(result.commissionAmount * rates.f0 / 100)
         : 0;
+      // Effective rate user receives = commission% × F0% (rounded to 2 decimal)
+      const userRate = result.commission > 0
+        ? Math.round(result.commission * rates.f0) / 100
+        : 0;
       const amountFmt = userAmount > 0
         ? `~${new Intl.NumberFormat('vi-VN').format(userAmount)}đ`
         : '';
       const commissionLine = amountFmt
-        ? `💰 Hoa hồng đơn hàng: ${result.commission}% (${amountFmt})`
-        : `💰 Hoa hồng đơn hàng: ${result.commission}%`;
+        ? `💰 Hoa hồng đơn hàng: ${userRate}% (${amountFmt})`
+        : `💰 Hoa hồng đơn hàng: ${userRate}%`;
 
       const zaloGroupLink = process.env.ZALO_GROUP_LINK || 'https://zalo.me/g/3othppdezfzvxqthz7sg';
 
