@@ -149,7 +149,7 @@ const UPSERT_SQL = `
     @mcn_fee_amount, @agreed_commission_rate, @net_commission,
     @product_status, @product_note, @attribute_type, @buyer_status,
     @sub_id1, @sub_id2, @sub_id3, @sub_id4, @sub_id5, @channel
-  ) ON CONFLICT(order_id, item_id) DO UPDATE SET
+  ) ON CONFLICT(order_id, item_id, model_id) DO UPDATE SET
     order_status       = @order_status,
     complete_time      = @complete_time,
     price              = @price,

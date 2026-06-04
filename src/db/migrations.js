@@ -173,7 +173,7 @@ const SQLITE_SCHEMA = `
     buyer_status TEXT DEFAULT '',
     channel TEXT DEFAULT '',
     imported_at TEXT DEFAULT (datetime('now','localtime')),
-    UNIQUE(order_id, item_id)
+    UNIQUE(order_id, item_id, model_id)
   );
   CREATE INDEX IF NOT EXISTS idx_orders_time ON orders(order_time DESC);
   CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(order_status);
@@ -429,7 +429,7 @@ const PG_SCHEMA = `
     buyer_status TEXT DEFAULT '',
     channel TEXT DEFAULT '',
     imported_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(order_id, item_id)
+    UNIQUE(order_id, item_id, model_id)
   );
   CREATE INDEX IF NOT EXISTS idx_orders_time ON orders(order_time DESC);
   CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(order_status);
@@ -729,6 +729,28 @@ async function runMigrations(db) {
   } catch (err) {
     if (!err.message.toLowerCase().includes('already exists')) {
       logger.warn('Migrations', `Failed to create withdrawal_requests table: ${err.message}`);
+    }
+  }
+
+  // Safe migration: orders UNIQUE constraint (order_id, item_id) → (order_id, item_id, model_id)
+  // Shopee CSV can have 2 rows with same item_id but different model_id (product variants).
+  // Old constraint collapsed them into 1 row, losing commission data.
+  if (db.type === 'postgres') {
+    try {
+      // Drop old 2-col unique constraint (auto-named) if it exists
+      await db.exec(`ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_order_id_item_id_key;`);
+      // Add new 3-col unique constraint
+      await db.exec(`
+        DO $$ BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'orders_order_item_model_key'
+          ) THEN
+            ALTER TABLE orders ADD CONSTRAINT orders_order_item_model_key UNIQUE(order_id, item_id, model_id);
+          END IF;
+        END $$;
+      `);
+    } catch (err) {
+      logger.warn('Migrations', `Failed to update orders unique constraint: ${err.message}`);
     }
   }
 
