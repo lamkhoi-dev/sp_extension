@@ -9,7 +9,7 @@ import CommissionChart from '../components/charts/CommissionChart';
 import PlatformPieChart from '../components/charts/PlatformPieChart';
 import TopProductsChart from '../components/charts/TopProductsChart';
 import Badge from '../components/ui/Badge';
-import { useDashboardStats, formatShortVND } from '../hooks/useApi';
+import { useDashboardStats, formatShortVND, formatVND } from '../hooks/useApi';
 
 export default function Dashboard() {
   const { stats, loading, refresh } = useDashboardStats(15000);
@@ -108,7 +108,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
         <KPICard
           title="Tổng hoa hồng"
-          value={formatShortVND(stats.orders?.totalEstimatedCommission || 0)}
+          value={formatVND(stats.orders?.totalEstimatedCommission || 0)}
           icon={DollarSign}
           iconBg="bg-gradient-to-br from-emerald-500 to-emerald-600"
           tooltip="Hoa hồng ước tính = order_commission + order_bonus. Khớp với Shopee Affiliate Dashboard."
@@ -116,7 +116,7 @@ export default function Dashboard() {
         />
         <KPICard
           title="Lợi nhuận Admin"
-          value={formatShortVND(stats.admin?.adminProfit || 0)}
+          value={formatVND(stats.admin?.adminProfit || 0)}
           subtitle={`${stats.admin?.profitPercent || 0}% tổng HH`}
           icon={Percent}
           iconBg="bg-gradient-to-br from-amber-500 to-orange-500"
@@ -149,7 +149,7 @@ export default function Dashboard() {
         />
         <KPICard
           title="GMV"
-          value={formatShortVND(stats.orders?.totalValue || 0)}
+          value={formatVND(stats.orders?.totalValue || 0)}
           icon={BarChart3}
           iconBg="bg-gradient-to-br from-cyan-500 to-blue-600"
           tooltip="Tổng giá trị hàng hóa đã bán (trước khi trừ phí, hoa hồng). Cộng dồn giá trị mỗi đơn hàng."
