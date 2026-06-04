@@ -6,6 +6,7 @@ const reportStore = require('../stats/report-store');
 const { sendMail } = require('../utils/mailer');
 const linkRedirectStore = require('../api/link-redirect-store');
 const withdrawalStore = require('../api/withdrawal-store');
+const commissionRatesStore = require('../api/commission-rates-store');
 
 
 const shopee = new ShopeeAPI();
@@ -645,19 +646,30 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
 
       // Build reply with @mention
       const mentionTag = `@${senderName}`;
-      let commissionText = `${result.commission}%`;
-      if (result.commissionAmount > 0) {
-        commissionText += ` (~${new Intl.NumberFormat('vi-VN').format(result.commissionAmount)}đ)`;
-      }
+      const rates = await commissionRatesStore.getRates();
+      const amountFmt = result.commissionAmount > 0
+        ? `~${new Intl.NumberFormat('vi-VN').format(Math.round(result.commissionAmount))}đ`
+        : '';
+      const commissionLine = amountFmt
+        ? `💰 Hoa hồng đơn hàng: ${result.commission}% (${amountFmt} tiền thực nhận)`
+        : `💰 Hoa hồng đơn hàng: ${result.commission}%`;
+
+      const zaloGroupLink = process.env.ZALO_GROUP_LINK || 'https://zalo.me/g/3othppdezfzvxqthz7sg';
+
       const msg = `${mentionTag} ✅ Em gửi link ạ!\n\n` +
-        `✨ Link hoàn tiền:\n${linkToShow}\n` +
-        `💰 Hoa hồng ước tính: ${commissionText}\n\n` +
+        `✨ Link hoàn tiền:\n${linkToShow}\n\n` +
+        `${commissionLine}\n\n` +
         `⚠️ Lưu ý:\n` +
-        `1. Không xem VIDEO/LIVE sau khi click link\n` +
-        `2. Hãy xóa giỏ hàng nếu đã thêm trước đó\n` +
-        `3. Vui lòng xác nhận "Đã nhận được hàng" trên Shopee khi đơn đã giao thành công\n\n` +
-        `🔔 Anh/chị ấn link và tiến hành đặt hàng trong hôm nay nhé 🎉\n` +
-        `Ngày mai sẽ có BÁO CÁO hoa hồng chi tiết ạ!`;
+        `1.Không xem VIDEO/LIVE sau khi click link\n` +
+        `2.Xóa sản phẩm khỏi giỏ hàng nếu đã thêm trước đó\n` +
+        `3.Xác nhận "Đã nhận được hàng" khi đơn giao thành công\n\n` +
+        `🚀 Ngoài hoàn tiền khi mua sắm, anh/chị còn có thể nhận thêm hoa hồng từ chương trình giới thiệu:\n` +
+        `👥 F1: Nhận ${rates.f1}% hoa hồng từ đơn hàng của người bạn giới thiệu trực tiếp.\n` +
+        `👥 F2: Nhận ${rates.f2}% hoa hồng từ đơn hàng của người được F1 giới thiệu.\n` +
+        `👥 F3: Nhận ${rates.f3}% hoa hồng từ đơn hàng của người được F2 giới thiệu.\n\n` +
+        `🎯 Cách tham gia rất đơn giản - Chỉ cần mời bạn bè tham gia nhóm tại\n` +
+        `👉 ${zaloGroupLink}\n\n` +
+        `✅ Chỉ cần mời bạn bè vào nhóm, hệ thống sẽ tự động ghi nhận và phân chia hoa hồng khi có đơn hàng phát sinh.`;
 
       const msgContent = {
         msg,
