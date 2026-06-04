@@ -120,7 +120,7 @@ export default function Dashboard() {
           subtitle={`${stats.admin?.profitPercent || 0}% tổng HH`}
           icon={Percent}
           iconBg="bg-gradient-to-br from-amber-500 to-orange-500"
-          tooltip="Lợi nhuận = Tổng hoa hồng − Tổng đã chi trả cho users. Phần trăm = Lợi nhuận ÷ Tổng hoa hồng × 100. Không thay đổi khi chỉnh % hoa hồng — chỉ ảnh hưởng đơn mới."
+          tooltip="Phần admin thực nhận sau khi chia hết cho user theo chuỗi F0→F1→F2→F3. Đơn không có đủ chain (thiếu F1/F2/F3) thì admin giữ thêm phần đó."
           delay={0.1}
         />
         <KPICard
