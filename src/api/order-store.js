@@ -152,10 +152,21 @@ const UPSERT_SQL = `
   ) ON CONFLICT(order_id, item_id) DO UPDATE SET
     order_status = @order_status,
     complete_time = @complete_time,
+    quantity = @quantity,
+    order_value = @order_value,
     refund_amount = @refund_amount,
+    shopee_product_commission_rate = @shopee_product_commission_rate,
+    shopee_product_commission = @shopee_product_commission,
+    seller_product_commission_rate = @seller_product_commission_rate,
+    xtra_product_commission = @xtra_product_commission,
+    total_product_commission = @total_product_commission,
+    order_commission = @order_commission,
+    order_bonus = @order_bonus,
     total_order_commission = @total_order_commission,
+    agreed_commission_rate = @agreed_commission_rate,
     net_commission = @net_commission,
     product_status = @product_status,
+    product_note = @product_note,
     buyer_status = @buyer_status,
     imported_at = datetime('now','localtime')
 `;
