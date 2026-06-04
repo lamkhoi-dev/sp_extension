@@ -663,13 +663,13 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
         `1.Không xem VIDEO/LIVE sau khi click link\n` +
         `2.Xóa sản phẩm khỏi giỏ hàng nếu đã thêm trước đó\n` +
         `3.Xác nhận "Đã nhận được hàng" khi đơn giao thành công\n\n` +
-        `🚀 Ngoài hoàn tiền khi mua sắm, anh/chị còn có thể nhận thêm hoa hồng từ chương trình giới thiệu:\n` +
-        `👥 F1: Nhận ${rates.f1}% hoa hồng từ đơn hàng của người bạn giới thiệu trực tiếp.\n` +
-        `👥 F2: Nhận ${rates.f2}% hoa hồng từ đơn hàng của người được F1 giới thiệu.\n` +
-        `👥 F3: Nhận ${rates.f3}% hoa hồng từ đơn hàng của người được F2 giới thiệu.\n\n` +
-        `🎯 Cách tham gia rất đơn giản - Chỉ cần mời bạn bè tham gia nhóm tại\n` +
+        `🚀 Kiếm thêm hoa hồng khi giới thiệu bạn bè:\n` +
+        `🌹 F1: ${rates.f1}% hoa hồng\n` +
+        `🌹 F2: ${rates.f2}% hoa hồng\n` +
+        `🌹 F3: ${rates.f3}% hoa hồng\n\n` +
+        `🎯 Tham gia ngay:\n` +
         `👉 ${zaloGroupLink}\n\n` +
-        `✅ Chỉ cần mời bạn bè vào nhóm, hệ thống sẽ tự động ghi nhận và phân chia hoa hồng khi có đơn hàng phát sinh.`;
+        `✅ Chỉ cần mời bạn bè vào nhóm, hệ thống sẽ tự động ghi nhận và chia hoa hồng khi có đơn hàng phát sinh.`;
 
       const msgContent = {
         msg,
