@@ -222,19 +222,28 @@ const orderStore = {
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
+    // NOT_CANCELLED expression — matches Shopee Dashboard behaviour (excludes cancelled from financial metrics)
+    const notCancelledExpr = `(
+      COALESCE(order_status,'') NOT LIKE '%hủy%'
+      AND COALESCE(order_status,'') NOT LIKE '%huỷ%'
+      AND COALESCE(order_status,'') NOT LIKE '%Cancel%'
+    )`;
+
     const baseStats = await db.get(`
       SELECT
         COUNT(*) as "totalOrders",
-        COUNT(DISTINCT order_id) as "uniqueOrders",
-        SUM(order_value) as "totalOrderValue",
-        SUM(total_product_commission) as "totalCommission",
-        SUM(net_commission) as "totalCommissionNew",
-        SUM(order_commission) as "totalOrderCommission",
-        SUM(order_bonus) as "totalOrderBonus",
-        COALESCE(SUM(order_commission), 0) + COALESCE(SUM(order_bonus), 0) as "totalEstimatedCommission",
+        -- Financial metrics exclude cancelled (matching Shopee Dashboard)
+        COUNT(DISTINCT CASE WHEN ${notCancelledExpr} THEN order_id END) as "uniqueOrders",
+        COALESCE(SUM(CASE WHEN ${notCancelledExpr} THEN order_value END), 0) as "totalOrderValue",
+        COALESCE(SUM(CASE WHEN ${notCancelledExpr} THEN total_product_commission END), 0) as "totalCommission",
+        COALESCE(SUM(CASE WHEN ${notCancelledExpr} THEN net_commission END), 0) as "totalCommissionNew",
+        COALESCE(SUM(CASE WHEN ${notCancelledExpr} THEN order_commission END), 0) as "totalOrderCommission",
+        COALESCE(SUM(CASE WHEN ${notCancelledExpr} THEN order_bonus END), 0) as "totalOrderBonus",
+        COALESCE(SUM(CASE WHEN ${notCancelledExpr} THEN order_commission END), 0) + COALESCE(SUM(CASE WHEN ${notCancelledExpr} THEN order_bonus END), 0) as "totalEstimatedCommission",
+        COALESCE(SUM(CASE WHEN ${notCancelledExpr} THEN quantity END), 0) as "totalQuantity",
+        -- These include all orders (for shop/buyer diversity stats)
         COUNT(DISTINCT shop_id) as "uniqueShops",
-        COUNT(DISTINCT sub_id1) as "uniqueBuyers",
-        COALESCE(SUM(quantity), 0) as "totalQuantity"
+        COUNT(DISTINCT sub_id1) as "uniqueBuyers"
       FROM orders ${where}
     `, params);
 
