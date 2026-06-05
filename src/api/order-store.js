@@ -313,41 +313,28 @@ const orderStore = {
       WHERE ${NOT_CANCELLED}
     `);
 
-    // 2. Matched normal orders: compute F0 + F1/F2/F3 user shares via chain resolution
+    // 2. Matched normal (from_direct) orders: F0 + F1/F2/F3 via pure referrer_id chain.
+    //    commission_mode does NOT affect from_direct orders (custom_rate only for from_custom).
     const chainRow = await db.get(`
       SELECT
-        -- F0: normal buyers get F0%, custom buyers get custom_rate%
-        COALESCE(SUM(CASE
-          WHEN COALESCE(ub.commission_mode,'normal') = 'custom'
-            THEN o.net_commission * COALESCE(ub.custom_rate, 0) / 100
-          ELSE o.net_commission * $1 / 100
-        END), 0) as buyer_total,
+        -- F0: every buyer gets standard F0%
+        COALESCE(SUM(o.net_commission * $1 / 100), 0) as buyer_total,
 
-        -- F1: only for normal-chain buyers who have a normal referrer
+        -- F1: buyer has a referrer
         COALESCE(SUM(CASE
-          WHEN COALESCE(ub.commission_mode,'normal') = 'normal'
-            AND ub1.user_id IS NOT NULL
-            THEN o.net_commission * $2 / 100
-          ELSE 0
+          WHEN ub1.user_id IS NOT NULL THEN o.net_commission * $2 / 100 ELSE 0
         END), 0) as f1_total,
 
-        -- F2: F1's referrer (both normal mode)
+        -- F2: referrer's referrer
         COALESCE(SUM(CASE
-          WHEN COALESCE(ub.commission_mode,'normal') = 'normal'
-            AND ub1.user_id IS NOT NULL
-            AND ub2.user_id IS NOT NULL
-            THEN o.net_commission * $3 / 100
-          ELSE 0
+          WHEN ub1.user_id IS NOT NULL AND ub2.user_id IS NOT NULL
+            THEN o.net_commission * $3 / 100 ELSE 0
         END), 0) as f2_total,
 
-        -- F3: F2's referrer (all normal mode)
+        -- F3: 3rd level
         COALESCE(SUM(CASE
-          WHEN COALESCE(ub.commission_mode,'normal') = 'normal'
-            AND ub1.user_id IS NOT NULL
-            AND ub2.user_id IS NOT NULL
-            AND ub3.user_id IS NOT NULL
-            THEN o.net_commission * $4 / 100
-          ELSE 0
+          WHEN ub1.user_id IS NOT NULL AND ub2.user_id IS NOT NULL AND ub3.user_id IS NOT NULL
+            THEN o.net_commission * $4 / 100 ELSE 0
         END), 0) as f3_total
 
       FROM (
@@ -360,16 +347,10 @@ const orderStore = {
       ) o
       LEFT JOIN users ub  ON CAST(ub.user_id AS TEXT) = CAST(o.sub_id1 AS TEXT)
       LEFT JOIN users ub1 ON CAST(ub1.user_id AS TEXT) = CAST(ub.referrer_id AS TEXT)
-        AND COALESCE(ub.commission_mode, 'normal') = 'normal'
-        AND COALESCE(ub1.commission_mode, 'normal') = 'normal'
         AND ub.referrer_id IS NOT NULL AND ub.referrer_id != ''
       LEFT JOIN users ub2 ON CAST(ub2.user_id AS TEXT) = CAST(ub1.referrer_id AS TEXT)
-        AND COALESCE(ub1.commission_mode, 'normal') = 'normal'
-        AND COALESCE(ub2.commission_mode, 'normal') = 'normal'
         AND ub1.referrer_id IS NOT NULL AND ub1.referrer_id != ''
       LEFT JOIN users ub3 ON CAST(ub3.user_id AS TEXT) = CAST(ub2.referrer_id AS TEXT)
-        AND COALESCE(ub2.commission_mode, 'normal') = 'normal'
-        AND COALESCE(ub3.commission_mode, 'normal') = 'normal'
         AND ub2.referrer_id IS NOT NULL AND ub2.referrer_id != ''
     `, [rates.f0, rates.f1, rates.f2, rates.f3]);
 

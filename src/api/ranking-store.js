@@ -61,7 +61,7 @@ async function getRanking(period = 'all', limit = 20) {
     `;
 
     // ── F1: referrer earnings (orders by users who have this user as referrer_id) ─
-    // Only from users in 'normal' commission_mode (custom mode stops chain)
+    // Pure referrer_id chain — commission_mode does not affect from_direct orders
     const f1SQL = `
       SELECT
         u_buyer.referrer_id                                AS user_id,
@@ -73,13 +73,11 @@ async function getRanking(period = 'all', limit = 20) {
         AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
         AND ${NOT_CANCELLED}
         AND u_buyer.referrer_id IS NOT NULL AND u_buyer.referrer_id != ''
-        AND COALESCE(u_buyer.commission_mode, 'normal') != 'custom'
         ${tf}
       GROUP BY u_buyer.referrer_id
     `;
 
     // ── F2: 2nd-level referrer earnings ──────────────────────────────────────
-    // user is referrer of buyer's referrer (grandparent in chain)
     const f2SQL = `
       SELECT
         u_f1.referrer_id                                   AS user_id,
@@ -93,8 +91,6 @@ async function getRanking(period = 'all', limit = 20) {
         AND ${NOT_CANCELLED}
         AND u_buyer.referrer_id IS NOT NULL AND u_buyer.referrer_id != ''
         AND u_f1.referrer_id IS NOT NULL    AND u_f1.referrer_id != ''
-        AND COALESCE(u_buyer.commission_mode, 'normal') != 'custom'
-        AND COALESCE(u_f1.commission_mode, 'normal') != 'custom'
         ${tf}
       GROUP BY u_f1.referrer_id
     `;
@@ -115,9 +111,6 @@ async function getRanking(period = 'all', limit = 20) {
         AND u_buyer.referrer_id IS NOT NULL AND u_buyer.referrer_id != ''
         AND u_f1.referrer_id IS NOT NULL    AND u_f1.referrer_id != ''
         AND u_f2.referrer_id IS NOT NULL    AND u_f2.referrer_id != ''
-        AND COALESCE(u_buyer.commission_mode, 'normal') != 'custom'
-        AND COALESCE(u_f1.commission_mode, 'normal') != 'custom'
-        AND COALESCE(u_f2.commission_mode, 'normal') != 'custom'
         ${tf}
       GROUP BY u_f2.referrer_id
     `;
