@@ -538,7 +538,7 @@ const payoutStore = {
       const paidIdsByRole = {};
       for (const p of allUserPayouts) {
         if (typeof p.paid_orders === 'string') {
-          try { p.paid_orders = JSON.parse(p.paid_orders); } catch { p.paid_orders = null; }
+          try { p.paid_orders = JSON.parse(p.paid_orders); } catch { p.paid_orders = []; }
         }
         if (!paidIdsByRole[p.role]) paidIdsByRole[p.role] = new Set();
         if (Array.isArray(p.paid_orders)) {
