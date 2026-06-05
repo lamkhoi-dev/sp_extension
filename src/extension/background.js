@@ -577,15 +577,20 @@ async function fetchAddlivetagCommission(itemId) {
     const data = await resp.json();
     if (data.status === 'success' && data.productInfo?.commission > 0) {
       const info = data.productInfo;
-      const rate = info.price > 0
-        ? Math.round((info.commission / info.price) * 10000) / 100
+      // `price` is 0 when out of stock / flash-sale ended — fall back to the
+      // last known price so the rate can still be derived.
+      const effPrice = info.price > 0
+        ? info.price
+        : (Number(info.latestPriceHistory?.price) || Math.round(Number(info.priceStats?.avgPrice) || 0) || 0);
+      const rate = effPrice > 0
+        ? Math.round((info.commission / effPrice) * 10000) / 100
         : 0;
       return {
         found: true,
         commission: rate,
         commissionAmount: info.commission,
         productName: info.productName,
-        price: info.price,
+        price: effPrice,
         shopName: info.shopName,
         isXtra: info.isXtra || false,
         source: 'addlivetag',
