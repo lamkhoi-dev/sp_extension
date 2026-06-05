@@ -12,6 +12,7 @@ import ReportsPage from './pages/Reports';
 import SettingsPage from './pages/Settings';
 import SystemHistoryPage from './pages/SystemHistory';
 import SimulateOrderPage from './pages/SimulateOrder';
+import TestReportPage from './pages/TestReport';
 
 function ProtectedRoute({ children }) {
   const { admin, loading } = useAuth();
@@ -52,6 +53,7 @@ function App() {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/system-history" element={<SystemHistoryPage />} />
               <Route path="/simulate" element={<SimulateOrderPage />} />
+              <Route path="/test-report" element={<TestReportPage />} />
             </Route>
           </Routes>
         </BrowserRouter>
