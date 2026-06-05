@@ -184,7 +184,7 @@ function renderReport(data) {
       <td class="text-right">
         <div class="ts-stack">
           <span class="ts-strong">${formatVND(userCashback)}</span>
-          <span class="ts-muted">raw ${formatVND(l.commission_amount)}</span>
+          <span class="ts-muted">HH gốc: ${formatVND(l.commission_amount)}</span>
         </div>
       </td>
       <td class="text-right text-muted">${formatDate(l.created_at)}</td>
@@ -204,7 +204,7 @@ function renderReport(data) {
       <td class="text-right">
         <div class="ts-stack">
           <span class="ts-strong" style="color:#34d399">${formatVND(userCashback)}</span>
-          <span class="ts-muted">raw ${formatVND(o.net_commission)}</span>
+          <span class="ts-muted">NET: ${formatVND(o.net_commission)}</span>
         </div>
       </td>
     </tr>`;
@@ -921,7 +921,7 @@ function renderReport(data) {
             <div class="section-header">
               <span class="section-icon">${icon('trendingUp', 14)}</span>
               <span class="section-title-wrap">
-                <span class="section-title">Doanh thu 6 tháng (raw)</span>
+                <span class="section-title">Doanh thu 6 tháng</span>
                 <span class="badge-count">${formatVND(monthlyChart.reduce((s,m) => s + m.commission, 0))}</span>
               </span>
             </div>
