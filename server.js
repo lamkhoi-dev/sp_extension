@@ -713,11 +713,6 @@ app.get('/api/users', async (req, res) => {
         ) inv
       ) AS invited_avatars,
       COALESCE((
-        SELECT SUM(net_commission)
-        FROM orders
-        WHERE sub_id1 = CAST(u.user_id AS TEXT) AND net_commission IS NOT NULL
-      ), 0) AS total_commission,
-      COALESCE((
         SELECT SUM(p.amount)
         FROM payouts p
         WHERE CAST(p.user_id AS TEXT) = CAST(u.user_id AS TEXT) AND p.status = 'paid'
@@ -739,6 +734,16 @@ app.get('/api/users', async (req, res) => {
   `, extraParams];
 
   try {
+    // total_commission = REAL money each user receives across all roles (F0+F1+F2+F3),
+    // net_commission × rate, cancelled excluded, EXISTS (same as the public ranking).
+    // Computed once for all users (4 aggregate queries, not per-user).
+    const earningsMap = await rankingStore.computeEarningsMap('all').catch(() => ({}));
+    const withCommission = (rows) => rows.map(r => ({
+      ...r,
+      invited_avatars: r.invited_avatars || [],
+      total_commission: earningsMap[String(r.user_id)]?.total || 0,
+    }));
+
     if (search) {
       const q = `%${search}%`;
       const [sql, params] = enrichedSQL(
@@ -746,12 +751,12 @@ app.get('/api/users', async (req, res) => {
         [q, q, q]
       );
       const rows = await db.all(sql + ` LIMIT ?`, [...params, lim]);
-      return res.json(rows.map(r => ({ ...r, invited_avatars: r.invited_avatars || [] })));
+      return res.json(withCommission(rows));
     }
 
     const [sql, params] = enrichedSQL();
     const rows = await db.all(sql + ` LIMIT ? OFFSET ?`, [...params, lim, off]);
-    res.json(rows.map(r => ({ ...r, invited_avatars: r.invited_avatars || [] })));
+    res.json(withCommission(rows));
   } catch (err) {
     logger.error('Users', `GET /api/users failed: ${err.message}`);
     res.status(500).json({ error: err.message });
