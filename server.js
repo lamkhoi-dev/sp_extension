@@ -956,6 +956,21 @@ app.get('/api/reports/dashboard', async (req, res) => {
   }
 });
 
+// ─── Generate /thongke report for any user (admin) ──────
+app.post('/api/reports/generate', async (req, res) => {
+  const { userId } = req.body || {};
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+  try {
+    const data = await reportGenerator.generateReport(userId);
+    const token = await reportStore.createReport(userId, data);
+    const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
+    res.json({ ok: true, token, url: `${serverUrl}/s/${token}`, userId, displayName: data.user?.displayName });
+  } catch (err) {
+    logger.error('Reports', `Generate report for ${userId} failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Payout API ─────────────────────────────────────────
 
 const billUpload = multer({

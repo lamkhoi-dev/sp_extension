@@ -14,7 +14,8 @@ import {
   Zap,
   Menu,
   X,
-  FlaskConical
+  FlaskConical,
+  FileSearch
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -28,6 +29,7 @@ const menuItems = [
   { path: '/system-history', icon: History, label: 'Lịch sử hệ thống' },
   { path: '/settings', icon: Settings, label: 'Cài đặt' },
   { path: '/simulate', icon: FlaskConical, label: 'Mô phỏng Đơn' },
+  { path: '/test-report', icon: FileSearch, label: 'Test /thongke' },
 ];
 
 function SidebarContent({ isMobile, collapsed, setCollapsed, setMobileOpen, location }) {
