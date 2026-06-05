@@ -22,11 +22,15 @@ const NOT_CANCELLED = `
   AND COALESCE(o.order_status, '') NOT LIKE '%Cancel%'
 `;
 
-// Matched-orders JOIN (buyer purchased through their own affiliate link)
-const BUYER_JOIN = `
-  INNER JOIN convert_logs cl ON (
-    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-    OR (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+// Matched-orders EXISTS (buyer purchased through their own affiliate link).
+// Uses EXISTS instead of JOIN so each order row is counted ONCE even if it
+// matches multiple convert_logs (avoids double-counting net_commission).
+const MATCHED_EXISTS = `
+  EXISTS (
+    SELECT 1 FROM convert_logs cl WHERE cl.status = 'success' AND (
+      (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
+      OR (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+    )
   )
 `;
 
@@ -52,8 +56,7 @@ async function getRanking(period = 'all', limit = 20) {
         COUNT(DISTINCT o.order_id)                         AS order_count,
         ROUND(SUM(o.net_commission) * ${rates.f0} / 100)  AS f0_earned
       FROM orders o
-      ${BUYER_JOIN}
-      WHERE cl.status = 'success'
+      WHERE ${MATCHED_EXISTS}
         AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
         AND ${NOT_CANCELLED}
         ${tf}
@@ -67,9 +70,8 @@ async function getRanking(period = 'all', limit = 20) {
         u_buyer.referrer_id                                AS user_id,
         ROUND(SUM(o.net_commission) * ${rates.f1} / 100)  AS f1_earned
       FROM orders o
-      ${BUYER_JOIN}
       INNER JOIN users u_buyer ON CAST(u_buyer.user_id AS TEXT) = CAST(o.sub_id1 AS TEXT)
-      WHERE cl.status = 'success'
+      WHERE ${MATCHED_EXISTS}
         AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
         AND ${NOT_CANCELLED}
         AND u_buyer.referrer_id IS NOT NULL AND u_buyer.referrer_id != ''
@@ -83,10 +85,9 @@ async function getRanking(period = 'all', limit = 20) {
         u_f1.referrer_id                                   AS user_id,
         ROUND(SUM(o.net_commission) * ${rates.f2} / 100)  AS f2_earned
       FROM orders o
-      ${BUYER_JOIN}
       INNER JOIN users u_buyer ON CAST(u_buyer.user_id AS TEXT) = CAST(o.sub_id1 AS TEXT)
       INNER JOIN users u_f1    ON CAST(u_f1.user_id AS TEXT) = CAST(u_buyer.referrer_id AS TEXT)
-      WHERE cl.status = 'success'
+      WHERE ${MATCHED_EXISTS}
         AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
         AND ${NOT_CANCELLED}
         AND u_buyer.referrer_id IS NOT NULL AND u_buyer.referrer_id != ''
@@ -101,11 +102,10 @@ async function getRanking(period = 'all', limit = 20) {
         u_f2.referrer_id                                   AS user_id,
         ROUND(SUM(o.net_commission) * ${rates.f3} / 100)  AS f3_earned
       FROM orders o
-      ${BUYER_JOIN}
       INNER JOIN users u_buyer ON CAST(u_buyer.user_id AS TEXT) = CAST(o.sub_id1 AS TEXT)
       INNER JOIN users u_f1    ON CAST(u_f1.user_id AS TEXT) = CAST(u_buyer.referrer_id AS TEXT)
       INNER JOIN users u_f2    ON CAST(u_f2.user_id AS TEXT) = CAST(u_f1.referrer_id AS TEXT)
-      WHERE cl.status = 'success'
+      WHERE ${MATCHED_EXISTS}
         AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
         AND ${NOT_CANCELLED}
         AND u_buyer.referrer_id IS NOT NULL AND u_buyer.referrer_id != ''
