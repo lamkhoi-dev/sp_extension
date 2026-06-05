@@ -516,15 +516,40 @@ const payoutStore = {
 
   async getUserDetail(userId) {
     try {
-      const rates = await commissionRatesStore.getRates();
-      // --- Buyer orders (this user bought) ---
-      const buyerOrders = await db.all(MATCHED_ORDERS_BY_USER_SQL, [userId]);
-      const userRow = await db.get(`
-        SELECT user_id, display_name, cashback_buyer_rate, cashback_referrer_rate,
+      // Pre-load all data in parallel — eliminates sequential round-trips
+      const [rates, buyerOrders, userRow, allUsersForChain, allUserPayouts, refOrders, customOrders, allMatchedOrders] = await Promise.all([
+        commissionRatesStore.getRates(),
+        db.all(MATCHED_ORDERS_BY_USER_SQL, [userId]),
+        db.get(`SELECT user_id, display_name, cashback_buyer_rate, cashback_referrer_rate,
                referrer_earn_rate, custom_rate, is_special, referrer_id, referrer_name,
-               commission_mode
-        FROM users WHERE user_id = ?
-      `, [userId]);
+               commission_mode FROM users WHERE user_id = ?`, [userId]),
+        db.all('SELECT user_id, referrer_id FROM users'),
+        db.all('SELECT * FROM payouts WHERE user_id = $1 ORDER BY paid_at DESC', [userId]),
+        db.all(REFERRER_ORDERS_BY_USER_SQL, [userId]),
+        db.all(CUSTOM_ORDERS_BY_USER_SQL, [userId]),
+        db.all(MATCHED_ORDERS_SQL),
+      ]);
+
+      // In-memory chain resolver — zero DB queries per order
+      const getChain = buildChainMap(allUsersForChain);
+
+      // Build paid-order ID sets for all roles from a single query.
+      // Also parse paid_orders JSON in-place so payoutHistory returned to frontend has arrays.
+      const paidIdsByRole = {};
+      for (const p of allUserPayouts) {
+        if (typeof p.paid_orders === 'string') {
+          try { p.paid_orders = JSON.parse(p.paid_orders); } catch { p.paid_orders = null; }
+        }
+        if (!paidIdsByRole[p.role]) paidIdsByRole[p.role] = new Set();
+        if (Array.isArray(p.paid_orders)) {
+          for (const o of p.paid_orders) { if (o.orderId) paidIdsByRole[p.role].add(o.orderId); }
+        }
+      }
+      const getPaidSet = (...roles) => {
+        const s = new Set();
+        for (const role of roles) for (const id of (paidIdsByRole[role] || new Set())) s.add(id);
+        return s;
+      };
 
       const commissionMode = userRow?.commission_mode || 'normal';
       const isCustomMode = commissionMode === 'custom';
@@ -534,14 +559,12 @@ const payoutStore = {
       const hasReferrer = !!(userRow?.referrer_id && userRow.referrer_id !== '');
 
       // Chain is referrer_id based, regardless of commission_mode
-      const chain = await resolveCommissionChain(userId);
+      const chain = getChain(userId);
 
       const completed = [];
       const pending = [];
 
-      const paidF0Ids = await _getPaidOrderIds(userId, 'f0');
-      const paidBuyerIds = await _getPaidOrderIds(userId, 'buyer');
-      const allPaidBuyerIds = new Set([...paidF0Ids, ...paidBuyerIds]);
+      const allPaidBuyerIds = getPaidSet('f0', 'buyer');
 
       for (const o of buyerOrders) {
         // Cancelled orders: skip cashback calc, don't add to completed or pending
@@ -578,9 +601,7 @@ const payoutStore = {
         }
       }
 
-      // --- Referrer orders (this user referred the buyer) ---
-      const refOrders = await db.all(REFERRER_ORDERS_BY_USER_SQL, [userId]);
-
+      // --- Referrer orders (this user referred the buyer) --- pre-loaded above
       // Fix Bug #6: Batch lookup all buyer IDs instead of N+1
       const buyerIds = [...new Set(refOrders.map(o => o.sub_id1).filter(Boolean))];
       const buyerMap = {};
@@ -596,9 +617,7 @@ const payoutStore = {
       const completedReferrer = [];
       const pendingReferrer = [];
 
-      const paidReferrerIds = await _getPaidOrderIds(userId, 'referrer');
-      const paidF1Ids = await _getPaidOrderIds(userId, 'f1');
-      const allPaidRefIds = new Set([...paidReferrerIds, ...paidF1Ids]);
+      const allPaidRefIds = getPaidSet('referrer', 'f1');
 
       for (const o of refOrders) {
         if (isCancelled(o.order_status)) continue;
@@ -635,11 +654,10 @@ const payoutStore = {
         }
       }
 
-      // --- Custom orders (F1 mode: this user created links for customers) ---
-      const customOrders = await db.all(CUSTOM_ORDERS_BY_USER_SQL, [userId]);
+      // --- Custom orders (F1 mode: this user created links for customers) --- pre-loaded above
       const completedCustom = [];
       const pendingCustom = [];
-      const paidCustomIds = await _getPaidOrderIds(userId, 'custom');
+      const paidCustomIds = getPaidSet('custom');
 
       for (const o of customOrders) {
         if (isCancelled(o.order_status)) continue;
@@ -668,16 +686,15 @@ const payoutStore = {
         }
       }
 
-      // --- F2/F3 referrer orders (this user is 2nd/3rd-level referrer) ---
+      // --- F2/F3 referrer orders (this user is 2nd/3rd-level referrer) --- pre-loaded above
       // Iterate all matched orders and resolve chain to find where userId sits at F2 or F3
-      const allMatchedOrders = await db.all(MATCHED_ORDERS_SQL);
       const completedF2 = [];
       const pendingF2 = [];
       const completedF3 = [];
       const pendingF3 = [];
 
-      const paidF2Ids = await _getPaidOrderIds(userId, 'f2');
-      const paidF3Ids = await _getPaidOrderIds(userId, 'f3');
+      const paidF2Ids = getPaidSet('f2');
+      const paidF3Ids = getPaidSet('f3');
 
       // Batch lookup all buyer IDs for F2/F3 display names
       const allBuyerIds = [...new Set(allMatchedOrders.map(o => o.sub_id1).filter(Boolean))];
@@ -700,7 +717,7 @@ const payoutStore = {
         if (nc <= 0) continue;
 
         const orderBuyerId = o.sub_id1;
-        const orderChain = await resolveCommissionChain(orderBuyerId);
+        const orderChain = getChain(orderBuyerId);
 
         // Check if this user is F2 for this order
         if (orderChain.f2 === userId) {
@@ -757,18 +774,8 @@ const payoutStore = {
         }
       }
 
-      // --- Payout history (buyer, referrer, and custom roles) ---
-      const payoutHistory = await db.all('SELECT * FROM payouts WHERE user_id = ? ORDER BY paid_at DESC', [userId]);
-
-      for (const p of payoutHistory) {
-        if (typeof p.paid_orders === 'string') {
-          try {
-            p.paid_orders = JSON.parse(p.paid_orders);
-          } catch (e) {
-            p.paid_orders = null;
-          }
-        }
-      }
+      // --- Payout history — reuse pre-loaded allUserPayouts (already sorted by paid_at DESC) ---
+      const payoutHistory = allUserPayouts;
 
       return {
         userId,
