@@ -83,14 +83,16 @@ function aggregateCommissionChain(items) {
       userId: chain.buyer.userId,
       displayName: chain.buyer.displayName,
       rate: chain.buyer.rate,
-      amount: 0
+      amount: 0,
+      paid: chain.buyer.paid,
     },
     referrers: chain.referrers.map(r => ({
       userId: r.userId,
       displayName: r.displayName,
       level: r.level,
       rate: r.rate,
-      amount: 0
+      amount: 0,
+      paid: r.paid,
     }))
   };
 
@@ -109,48 +111,47 @@ function aggregateCommissionChain(items) {
 }
 
 // Visual Referral Tree Component for first column
-function ReferralTree({ items }) {
+function ReferralTree({ items, isUnmatched }) {
   const chain = useMemo(() => aggregateCommissionChain(items), [items]);
 
   if (!chain) {
     return (
       <div className="text-center py-4 text-slate-400 text-xs italic">
-        Bỏ qua (N/A)
+        {isUnmatched ? 'Không có user' : 'Bỏ qua (N/A)'}
       </div>
     );
   }
 
-  const nodes = [];
-  nodes.push({
-    label: 'F0',
-    name: chain.buyer.displayName,
-    rate: chain.buyer.rate,
-    amount: chain.buyer.amount,
-  });
-
-  chain.referrers.forEach(r => {
-    nodes.push({
-      label: `F${r.level}`,
-      name: r.displayName,
-      rate: r.rate,
-      amount: r.amount,
-    });
-  });
+  // Unmatched orders: only show F0, no amount (won't be paid)
+  const nodes = isUnmatched
+    ? [{ label: 'F0', name: chain.buyer.displayName, rate: chain.buyer.rate, amount: null, paid: false }]
+    : [
+        { label: 'F0', name: chain.buyer.displayName, rate: chain.buyer.rate, amount: chain.buyer.amount, paid: chain.buyer.paid },
+        ...chain.referrers.map(r => ({ label: `F${r.level}`, name: r.displayName, rate: r.rate, amount: r.amount, paid: r.paid })),
+      ];
 
   return (
     <div className="flex flex-col gap-1 py-0.5">
       {nodes.map((node, idx) => {
         if (idx === 0) {
           return (
-            <div key={idx} className="flex items-center gap-1.5 px-2 py-1 rounded border border-emerald-100 dark:border-emerald-900/30 bg-emerald-50/50 dark:bg-emerald-950/10">
+            <div key={idx} className={`flex items-center gap-1.5 px-2 py-1 rounded border ${
+              node.paid
+                ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/25'
+                : 'border-emerald-100 dark:border-emerald-900/30 bg-emerald-50/50 dark:bg-emerald-950/10'
+            }`}>
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
               <div className="min-w-0 flex-1 text-[11px]">
-                <p className="font-semibold text-emerald-800 dark:text-emerald-300 truncate">
-                  {node.name} <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-100 dark:bg-emerald-900 text-emerald-600 dark:text-emerald-400 font-mono font-bold">F0</span>
+                <p className="font-semibold text-emerald-800 dark:text-emerald-300 truncate flex items-center gap-1">
+                  <span className="truncate">{node.name}</span>
+                  <span className="text-[9px] px-1 rounded bg-emerald-100 dark:bg-emerald-900 text-emerald-600 dark:text-emerald-400 font-mono font-bold flex-shrink-0">F0</span>
+                  {node.paid && <span className="flex-shrink-0 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">✓</span>}
                 </p>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                  {node.rate}% • {fmtPrice(node.amount)}
-                </p>
+                {!isUnmatched && (
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                    {node.rate}% • {fmtPrice(node.amount)}
+                  </p>
+                )}
               </div>
             </div>
           );
@@ -160,10 +161,16 @@ function ReferralTree({ items }) {
         return (
           <div key={idx} className="flex items-stretch select-none">
             <TreeLine isLast={isLast} />
-            <div className="flex-1 ml-1 mb-1 px-2 py-1 rounded border border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 min-w-0">
+            <div className={`flex-1 ml-1 mb-1 px-2 py-1 rounded border min-w-0 ${
+              node.paid
+                ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/20'
+                : 'border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30'
+            }`}>
               <div className="min-w-0 text-[11px]">
-                <p className="font-medium text-slate-700 dark:text-slate-300 truncate">
-                  {node.name} <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono font-bold">{node.label}</span>
+                <p className="font-medium text-slate-700 dark:text-slate-300 truncate flex items-center gap-1">
+                  <span className="truncate">{node.name}</span>
+                  <span className="text-[9px] px-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono font-bold flex-shrink-0">{node.label}</span>
+                  {node.paid && <span className="flex-shrink-0 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">✓</span>}
                 </p>
                 <p className="text-[10px] text-slate-500 dark:text-slate-400">
                   {node.rate}% • {fmtPrice(node.amount)}
@@ -586,6 +593,7 @@ export default function OrdersPage() {
 function OrderGroup({ orderId, items, expanded, onToggle, imgMap }) {
   const count = items.length;
   const first = items[0];
+  const isUnmatched = !!first.is_unmatched;
 
   return (
     <>
@@ -596,14 +604,18 @@ function OrderGroup({ orderId, items, expanded, onToggle, imgMap }) {
         return (
           <tr
             key={rowKey}
-            className={`border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50/50 dark:hover:bg-slate-700/20 align-top ${
+            className={`border-b border-slate-100 dark:border-slate-700/50 align-top ${
               isFirst ? 'border-t-2 border-t-slate-200 dark:border-t-slate-600' : ''
+            } ${
+              isUnmatched
+                ? 'bg-purple-50/70 dark:bg-purple-900/15 hover:bg-purple-100/60 dark:hover:bg-purple-900/25'
+                : 'hover:bg-slate-50/50 dark:hover:bg-slate-700/20'
             }`}
           >
             {/* ⓪ Sơ đồ cây hoa hồng F0 -> F3 */}
             {isFirst && (
               <td rowSpan={count} className="px-3 py-2.5 border-r border-slate-100 dark:border-slate-700/50 align-top min-w-[210px] max-w-[230px]">
-                <ReferralTree items={items} />
+                <ReferralTree items={items} isUnmatched={isUnmatched} />
               </td>
             )}
 
