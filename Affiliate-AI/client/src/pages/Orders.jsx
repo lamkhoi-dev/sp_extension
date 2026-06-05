@@ -135,17 +135,16 @@ function ReferralTree({ items, isUnmatched }) {
       {nodes.map((node, idx) => {
         if (idx === 0) {
           return (
-            <div key={idx} className={`flex items-center gap-1.5 px-2 py-1 rounded border ${
+            <div key={idx} className={`relative flex items-center gap-1.5 px-2 py-1 rounded border overflow-hidden ${
               node.paid
-                ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/25'
+                ? 'border-emerald-400 dark:border-emerald-600 bg-emerald-100/80 dark:bg-emerald-900/40'
                 : 'border-emerald-100 dark:border-emerald-900/30 bg-emerald-50/50 dark:bg-emerald-950/10'
             }`}>
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
-              <div className="min-w-0 flex-1 text-[11px]">
+              <div className="min-w-0 flex-1 text-[11px] pr-6">
                 <p className="font-semibold text-emerald-800 dark:text-emerald-300 truncate flex items-center gap-1">
                   <span className="truncate">{node.name}</span>
                   <span className="text-[9px] px-1 rounded bg-emerald-100 dark:bg-emerald-900 text-emerald-600 dark:text-emerald-400 font-mono font-bold flex-shrink-0">F0</span>
-                  {node.paid && <span className="flex-shrink-0 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">✓</span>}
                 </p>
                 {!isUnmatched && (
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
@@ -153,6 +152,9 @@ function ReferralTree({ items, isUnmatched }) {
                   </p>
                 )}
               </div>
+              {node.paid && (
+                <CheckCircle className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 text-emerald-500/50 dark:text-emerald-400/50 flex-shrink-0 pointer-events-none" strokeWidth={2} />
+              )}
             </div>
           );
         }
@@ -161,21 +163,23 @@ function ReferralTree({ items, isUnmatched }) {
         return (
           <div key={idx} className="flex items-stretch select-none">
             <TreeLine isLast={isLast} />
-            <div className={`flex-1 ml-1 mb-1 px-2 py-1 rounded border min-w-0 ${
+            <div className={`relative flex-1 ml-1 mb-1 px-2 py-1 rounded border min-w-0 overflow-hidden ${
               node.paid
-                ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/20'
+                ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-100/70 dark:bg-emerald-900/30'
                 : 'border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30'
             }`}>
-              <div className="min-w-0 text-[11px]">
+              <div className="min-w-0 text-[11px] pr-6">
                 <p className="font-medium text-slate-700 dark:text-slate-300 truncate flex items-center gap-1">
                   <span className="truncate">{node.name}</span>
                   <span className="text-[9px] px-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono font-bold flex-shrink-0">{node.label}</span>
-                  {node.paid && <span className="flex-shrink-0 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">✓</span>}
                 </p>
                 <p className="text-[10px] text-slate-500 dark:text-slate-400">
                   {node.rate}% • {fmtPrice(node.amount)}
                 </p>
               </div>
+              {node.paid && (
+                <CheckCircle className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 text-emerald-500/50 dark:text-emerald-400/50 flex-shrink-0 pointer-events-none" strokeWidth={2} />
+              )}
             </div>
           </div>
         );
@@ -594,6 +598,10 @@ function OrderGroup({ orderId, items, expanded, onToggle, imgMap }) {
   const count = items.length;
   const first = items[0];
   const isUnmatched = !!first.is_unmatched;
+  const anyPaid = !isUnmatched && items.some(item => {
+    const c = item.commission_chain;
+    return c && (c.buyer?.paid || c.referrers?.some(r => r.paid));
+  });
 
   return (
     <>
@@ -614,7 +622,9 @@ function OrderGroup({ orderId, items, expanded, onToggle, imgMap }) {
           >
             {/* ⓪ Sơ đồ cây hoa hồng F0 -> F3 */}
             {isFirst && (
-              <td rowSpan={count} className="px-3 py-2.5 border-r border-slate-100 dark:border-slate-700/50 align-top min-w-[210px] max-w-[230px]">
+              <td rowSpan={count} className={`px-3 py-2.5 border-r border-slate-100 dark:border-slate-700/50 align-top min-w-[210px] max-w-[230px] transition-colors ${
+                anyPaid ? 'bg-emerald-50 dark:bg-emerald-950/25' : ''
+              }`}>
                 <ReferralTree items={items} isUnmatched={isUnmatched} />
               </td>
             )}
