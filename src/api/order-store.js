@@ -299,10 +299,14 @@ const orderStore = {
       AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
     )`;
 
-    const MATCHED_JOIN = `
-      INNER JOIN convert_logs cl ON (
-        (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-        OR (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+    // EXISTS (not JOIN) so each order line-item counts once even if it matches
+    // multiple convert_logs — avoids double-counting net_commission.
+    const MATCHED_EXISTS = `
+      EXISTS (
+        SELECT 1 FROM convert_logs cl WHERE cl.status = 'success' AND (
+          (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
+          OR (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+        )
       )
     `;
 
@@ -338,10 +342,9 @@ const orderStore = {
         END), 0) as f3_total
 
       FROM (
-        SELECT DISTINCT o.order_id, o.item_id, o.net_commission, o.sub_id1
+        SELECT o.id, o.net_commission, o.sub_id1
         FROM orders o
-        ${MATCHED_JOIN}
-        WHERE cl.status = 'success'
+        WHERE ${MATCHED_EXISTS}
           AND ${NOT_CANCELLED}
           AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
       ) o
