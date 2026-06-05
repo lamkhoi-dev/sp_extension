@@ -153,15 +153,22 @@ class ShopeeDirectLink {
       const data = await resp.json();
       if (data.status === 'success' && data.productInfo?.commission > 0) {
         const info = data.productInfo;
-        const rate = info.price > 0
-          ? Math.round((info.commission / info.price) * 10000) / 100
+        // `price` is the CURRENT price and is 0 when the product is out of
+        // stock / flash-sale ended. Fall back to the last known price so the
+        // rate (commission ÷ price) can still be derived. commission is already
+        // the post-cap final amount (sellerComFinal + capped shopeeComFinal).
+        const effPrice = info.price > 0
+          ? info.price
+          : (Number(info.latestPriceHistory?.price) || Math.round(Number(info.priceStats?.avgPrice) || 0) || 0);
+        const rate = effPrice > 0
+          ? Math.round((info.commission / effPrice) * 10000) / 100
           : 0;
         return {
           found: true,
           commission: rate,
           commissionAmount: info.commission,
           productName: info.productName || '',
-          price: info.price || 0,
+          price: effPrice || 0,
           shopName: info.shopName || '',
           source: 'addlivetag',
         };
