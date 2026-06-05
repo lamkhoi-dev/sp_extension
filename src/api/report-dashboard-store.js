@@ -10,7 +10,11 @@ const reportDashboardStore = {
       const dateFromStr = dateFrom.toISOString().split('T')[0] + ' 00:00:00';
       
       const params = [dateFromStr];
-      const whereClause = `WHERE order_time >= ?`; // Not filtering Cancelled/Refunded per user's request
+      // Exclude cancelled orders from all financial metrics (match Shopee Dashboard + Dashboard page)
+      const whereClause = `WHERE order_time >= ?
+        AND COALESCE(order_status, '') NOT LIKE '%hủy%'
+        AND COALESCE(order_status, '') NOT LIKE '%huỷ%'
+        AND COALESCE(order_status, '') NOT LIKE '%Cancel%'`;
 
       // 1. Summary
       const summaryRow = await db.get(`
