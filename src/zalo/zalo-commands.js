@@ -658,9 +658,17 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
       const amountFmt = userAmount > 0
         ? `~${new Intl.NumberFormat('vi-VN').format(userAmount)}đ`
         : '';
-      const commissionLine = amountFmt
-        ? `💰 Hoa hồng đơn hàng: ${userRate}% (${amountFmt})`
-        : `💰 Hoa hồng đơn hàng: ${userRate}%`;
+      // Rate is derived (commission ÷ price); when addlivetag omits price it
+      // comes back 0. Never show a misleading "0%" alongside a real amount —
+      // show the amount alone (it's taken directly from the API, always valid).
+      let commissionLine;
+      if (userRate > 0 && amountFmt) {
+        commissionLine = `💰 Hoa hồng đơn hàng: ${userRate}% (${amountFmt})`;
+      } else if (amountFmt) {
+        commissionLine = `💰 Hoa hồng đơn hàng: ${amountFmt}`;
+      } else {
+        commissionLine = `💰 Hoa hồng đơn hàng: ${userRate}%`;
+      }
 
       const zaloGroupLink = process.env.ZALO_GROUP_LINK || 'https://zalo.me/g/3othppdezfzvxqthz7sg';
 
@@ -841,9 +849,18 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
 
       // Reply
       const mentionTag = `@${senderName}`;
-      let commissionText = `${result.commission}%`;
-      if (result.commissionAmount > 0) {
-        commissionText += ` (~${new Intl.NumberFormat('vi-VN').format(result.commissionAmount)}đ)`;
+      // Rate (result.commission) is derived from price; if addlivetag omits
+      // price it's 0 — show the amount alone instead of a misleading "0%".
+      const customAmountFmt = result.commissionAmount > 0
+        ? `~${new Intl.NumberFormat('vi-VN').format(result.commissionAmount)}đ`
+        : '';
+      let commissionText;
+      if (result.commission > 0 && customAmountFmt) {
+        commissionText = `${result.commission}% (${customAmountFmt})`;
+      } else if (customAmountFmt) {
+        commissionText = customAmountFmt;
+      } else {
+        commissionText = `${result.commission}%`;
       }
       const msg = `${mentionTag} ✅ Link tuỳ chỉnh đã tạo!\n\n` +
         `📱 Khách: ${phone}\n` +
