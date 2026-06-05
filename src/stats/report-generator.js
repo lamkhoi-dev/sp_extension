@@ -250,10 +250,11 @@ class ReportGenerator {
     }));
 
     // 8. Buyer (F0) cashback calculation
+    // from_direct orders always use standard F0 (custom_rate only for from_custom orders)
     const commissionMode = user.commission_mode || 'normal';
     const isCustomMode = commissionMode === 'custom';
     const customRate = user.custom_rate || 0;
-    const f0Rate = isCustomMode ? customRate : rates.f0;
+    const f0Rate = rates.f0;
     const hasReferrer = !!(user.referrer_id && user.referrer_id !== '');
 
     const isCompleted = (o) =>
