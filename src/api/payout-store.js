@@ -174,20 +174,87 @@ async function _getPaidOrderIds(userId, role) {
   return paidIds;
 }
 
+/**
+ * Build an in-memory chain resolver from ALL users rows (zero DB queries).
+ * Returns getChain(uid) => { f1, f2, f3 }.
+ * Pass the result of `SELECT user_id, referrer_id FROM users`.
+ */
+function buildChainMap(allUserRows) {
+  const parentOf = {};
+  for (const u of allUserRows) parentOf[String(u.user_id)] = u.referrer_id || null;
+  const memo = {};
+  return function getChain(uid) {
+    const key = String(uid);
+    if (memo[key] !== undefined) return memo[key];
+    const f1Id = parentOf[key] || null;
+    if (!f1Id) return (memo[key] = { f1: null, f2: null, f3: null });
+    const f2Id = parentOf[f1Id] || null;
+    if (!f2Id) return (memo[key] = { f1: f1Id, f2: null, f3: null });
+    const f3Id = parentOf[f2Id] || null;
+    return (memo[key] = { f1: f1Id, f2: f2Id, f3: f3Id || null });
+  };
+}
+
+/**
+ * Build paid-order-IDs and paid-sum maps from ALL payouts rows (zero DB queries).
+ * Returns { getPaidIds(userId, role), getPaidSum(userId, ...roles) }.
+ * Pass the result of `SELECT user_id, role, paid_orders, amount FROM payouts`.
+ */
+function buildPaidMaps(allPayouts) {
+  const paidOrderIds = {}; // `${userId}:${role}` → Set<orderId>
+  const paidSums = {};     // `${userId}:${role}` → number
+
+  for (const p of allPayouts) {
+    const key = `${p.user_id}:${p.role}`;
+    if (!paidOrderIds[key]) paidOrderIds[key] = new Set();
+    let orders = p.paid_orders;
+    if (typeof orders === 'string') { try { orders = JSON.parse(orders); } catch { orders = null; } }
+    if (Array.isArray(orders)) {
+      for (const o of orders) { if (o.orderId) paidOrderIds[key].add(o.orderId); }
+    }
+    paidSums[key] = (paidSums[key] || 0) + Number(p.amount || 0);
+  }
+
+  const getPaidIds = (userId, role) => paidOrderIds[`${userId}:${role}`] || new Set();
+  const getPaidSum = (userId, ...roles) =>
+    roles.reduce((s, r) => s + (paidSums[`${userId}:${r}`] || 0), 0);
+  return { getPaidIds, getPaidSum };
+}
+
 const payoutStore = {
   async getSummary() {
     try {
-      const rates = await commissionRatesStore.getRates();
-      const users = await db.all(USERS_WITH_ORDERS_SQL);
-      const allOrders = await db.all(MATCHED_ORDERS_SQL);
+      // All 6 initial fetches run in parallel — none depend on each other
+      const [
+        rates,
+        users,
+        allOrders,
+        allUsersForChain,
+        allPayoutsRows,
+        allCustomOrders,
+      ] = await Promise.all([
+        commissionRatesStore.getRates(),
+        db.all(USERS_WITH_ORDERS_SQL),
+        db.all(MATCHED_ORDERS_SQL),
+        db.all('SELECT user_id, referrer_id FROM users'),
+        db.all('SELECT user_id, role, paid_orders, amount FROM payouts'),
+        db.all(`SELECT * FROM orders WHERE COALESCE(sub_id4,'') IN ('from_custom','custom')`),
+      ]);
+      const getChain = buildChainMap(allUsersForChain);
+      const { getPaidIds, getPaidSum } = buildPaidMaps(allPayoutsRows);
 
-      // Group orders by buyer (sub_id1)
+      // Group orders by buyer in-memory
       const ordersByUser = {};
-      for (const order of allOrders) {
-        const uid = order.sub_id1;
-        if (!ordersByUser[uid]) ordersByUser[uid] = [];
-        ordersByUser[uid].push(order);
+      for (const o of allOrders) {
+        if (!ordersByUser[o.sub_id1]) ordersByUser[o.sub_id1] = [];
+        ordersByUser[o.sub_id1].push(o);
       }
+      const customByUser = {};
+      for (const o of allCustomOrders) {
+        if (!customByUser[o.sub_id1]) customByUser[o.sub_id1] = [];
+        customByUser[o.sub_id1].push(o);
+      }
+      // ───────────────────────────────────────────────────────────────────────
 
       const summaries = [];
 
@@ -201,14 +268,10 @@ const payoutStore = {
         // custom_rate only applies to from_custom orders (handled in custom section below).
         const f0Rate = rates.f0;
 
-        // Chain is referrer_id based, regardless of commission_mode
-        const chain = await resolveCommissionChain(uid);
-
-        // Collect paid order IDs
-        const paidF0Ids = await _getPaidOrderIds(uid, 'f0');
-        const paidBuyerIds = await _getPaidOrderIds(uid, 'buyer');
-        const paidCustomIds = await _getPaidOrderIds(uid, 'custom');
-        const allPaidBuyerIds = new Set([...paidF0Ids, ...paidBuyerIds]);
+        // Chain + paid IDs resolved from in-memory maps (zero DB queries)
+        const chain = getChain(uid);
+        const allPaidBuyerIds = new Set([...getPaidIds(uid, 'f0'), ...getPaidIds(uid, 'buyer')]);
+        const paidCustomIds = getPaidIds(uid, 'custom');
 
         let totalNetCommission = 0;
         let completedNetCommission = 0;
@@ -233,8 +296,8 @@ const payoutStore = {
           }
         }
 
-        // Custom orders (legacy from_custom flow)
-        const customOrders = await db.all(CUSTOM_ORDERS_BY_USER_SQL, [uid]);
+        // Custom orders — already grouped in-memory (no DB query)
+        const customOrders = customByUser[uid] || [];
         let totalCustomNetCommission = 0;
         let completedCustomCount = 0;
         let pendingCustomCount = 0;
@@ -258,16 +321,9 @@ const payoutStore = {
 
         const totalBuyerCashback = Math.round(totalNetCommission * f0Rate / 100);
 
-        const paidRow = await db.get(
-          `SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts WHERE user_id = ? AND role IN ('buyer','f0')`,
-          [uid]
-        );
-        const paidAsBuyer = paidRow.total_paid;
-        const paidCustomRow = await db.get(
-          'SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts WHERE user_id = ? AND role = ?',
-          [uid, 'custom']
-        );
-        const paidAsCustom = paidCustomRow.total_paid;
+        // Paid sums from in-memory map (no DB query)
+        const paidAsBuyer = getPaidSum(uid, 'f0', 'buyer');
+        const paidAsCustom = getPaidSum(uid, 'custom');
 
         summaries.push({
           userId: uid,
@@ -305,8 +361,8 @@ const payoutStore = {
         });
       }
 
-      // Merge F1/F2/F3 referrer earnings
-      const referrerSummaries = await this._calcReferrerSummaries(allOrders, users, rates);
+      // Merge F1/F2/F3 referrer earnings (pass in-memory maps — no extra DB queries)
+      const referrerSummaries = await this._calcReferrerSummaries(allOrders, users, rates, getChain, getPaidIds, getPaidSum);
       const userMap = {};
       for (const b of summaries) {
         userMap[b.userId] = {
@@ -358,7 +414,9 @@ const payoutStore = {
     }
   },
 
-  async _calcReferrerSummaries(allOrders, users, rates) {
+  // getChain, getPaidIds, getPaidSum are optional — passed from getSummary() for
+  // zero-query operation. When called standalone they fall back to DB queries.
+  async _calcReferrerSummaries(allOrders, users, rates, getChain, getPaidIds, getPaidSum) {
     if (!rates) rates = await commissionRatesStore.getRates();
     const userLookup = {};
     for (const u of users) userLookup[u.user_id] = u;
@@ -372,7 +430,8 @@ const payoutStore = {
       if (nc <= 0) continue;
 
       const buyerId = o.sub_id1;
-      const chain = await resolveCommissionChain(buyerId);
+      // Use in-memory chain map when available, fall back to DB
+      const chain = getChain ? getChain(buyerId) : await resolveCommissionChain(buyerId);
 
       const fLevels = [
         { id: chain.f1, level: 1, rate: rates.f1 },
@@ -389,35 +448,50 @@ const payoutStore = {
       }
     }
 
+    // Batch-fetch any referrer users not already in userLookup (edge case: referrer
+    // has no orders of their own so USERS_WITH_ORDERS_SQL didn't include them)
+    const missingIds = Object.keys(refEarnings).filter(id => !userLookup[id]);
+    if (missingIds.length > 0) {
+      const placeholders = missingIds.map((_, i) => `$${i + 1}`).join(',');
+      const missingRows = await db.all(
+        `SELECT user_id, display_name, zalo_name, avatar, bank_name, bank_account, qr_code, commission_mode FROM users WHERE user_id IN (${placeholders})`,
+        missingIds
+      );
+      for (const u of missingRows) userLookup[u.user_id] = u;
+    }
+
     const summaries = [];
     for (const [userId, levels] of Object.entries(refEarnings)) {
-      let refUser = userLookup[userId];
-      if (!refUser) {
-        refUser = await db.get(
-          'SELECT user_id, display_name, zalo_name, avatar, bank_name, bank_account, qr_code, commission_mode FROM users WHERE user_id = ?',
-          [userId]
-        );
-      }
+      const refUser = userLookup[userId];
 
       for (const [level, data] of Object.entries(levels)) {
         const fRole = `f${level}`;
-        const paidIds = await _getPaidOrderIds(userId, fRole);
-        const legacyPaidIds = level === '1' ? await _getPaidOrderIds(userId, 'referrer') : new Set();
-        const allPaidIds = new Set([...paidIds, ...legacyPaidIds]);
+
+        // Use in-memory paid maps when available, fall back to DB
+        let allPaidIds;
+        let totalPaidAmount = 0;
+        if (getPaidIds) {
+          const legacyIds = level === '1' ? getPaidIds(userId, 'referrer') : new Set();
+          allPaidIds = new Set([...getPaidIds(userId, fRole), ...legacyIds]);
+          totalPaidAmount = level === '1' ? (getPaidSum ? getPaidSum(userId, fRole, 'referrer') : 0) : 0;
+        } else {
+          const paidIds = await _getPaidOrderIds(userId, fRole);
+          const legacyPaidIds = level === '1' ? await _getPaidOrderIds(userId, 'referrer') : new Set();
+          allPaidIds = new Set([...paidIds, ...legacyPaidIds]);
+          const paidRow = await db.get(
+            `SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts WHERE user_id = ? AND role IN (?, 'referrer')`,
+            [userId, fRole]
+          );
+          totalPaidAmount = level === '1' ? (paidRow?.total_paid || 0) : 0;
+        }
 
         const rate = level === '1' ? rates.f1 : level === '2' ? rates.f2 : rates.f3;
         let unpaid = 0;
-
         for (const o of data.orders) {
           if (COMPLETED_STATUSES.has(o.order_status) && !allPaidIds.has(o.order_id)) {
             unpaid += Math.round((o.net_commission || 0) * rate / 100);
           }
         }
-
-        const paidRow = await db.get(
-          `SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts WHERE user_id = ? AND role IN (?, 'referrer')`,
-          [userId, fRole]
-        );
 
         summaries.push({
           userId,
@@ -432,7 +506,7 @@ const payoutStore = {
           totalCashback: data.total,
           pendingPayment: unpaid,
           orderCount: data.orders.length,
-          totalPaid: level === '1' ? (paidRow?.total_paid || 0) : 0,
+          totalPaid: totalPaidAmount,
         });
       }
     }
