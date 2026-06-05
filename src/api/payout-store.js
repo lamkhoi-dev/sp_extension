@@ -30,27 +30,27 @@ function isCancelled(status) {
  * - Chain only follows users in 'normal' mode
  */
 async function resolveCommissionChain(buyerId) {
+  // F0-F3 referral chain is purely based on referrer_id relationships.
+  // commission_mode/custom_rate ONLY affects from_custom orders (handled separately),
+  // NOT the normal from_direct buyer/referrer chain.
   try {
-    const f0 = await db.get('SELECT referrer_id, commission_mode FROM users WHERE user_id = ?', [buyerId]);
-    if (!f0 || f0.commission_mode === 'custom') return { f1: null, f2: null, f3: null };
+    const f0 = await db.get('SELECT referrer_id FROM users WHERE user_id = ?', [buyerId]);
+    if (!f0) return { f1: null, f2: null, f3: null };
 
     const f1Id = f0.referrer_id || null;
     if (!f1Id) return { f1: null, f2: null, f3: null };
 
-    const f1 = await db.get('SELECT referrer_id, commission_mode FROM users WHERE user_id = ?', [f1Id]);
-    if (!f1 || f1.commission_mode === 'custom') return { f1: null, f2: null, f3: null };
+    const f1 = await db.get('SELECT referrer_id FROM users WHERE user_id = ?', [f1Id]);
+    if (!f1) return { f1: f1Id, f2: null, f3: null };
 
     const f2Id = f1.referrer_id || null;
     if (!f2Id) return { f1: f1Id, f2: null, f3: null };
 
-    const f2 = await db.get('SELECT referrer_id, commission_mode FROM users WHERE user_id = ?', [f2Id]);
-    if (!f2 || f2.commission_mode === 'custom') return { f1: f1Id, f2: null, f3: null };
+    const f2 = await db.get('SELECT referrer_id FROM users WHERE user_id = ?', [f2Id]);
+    if (!f2) return { f1: f1Id, f2: f2Id, f3: null };
 
     const f3Id = f2.referrer_id || null;
     if (!f3Id) return { f1: f1Id, f2: f2Id, f3: null };
-
-    const f3 = await db.get('SELECT commission_mode FROM users WHERE user_id = ?', [f3Id]);
-    if (!f3 || f3.commission_mode === 'custom') return { f1: f1Id, f2: f2Id, f3: null };
 
     return { f1: f1Id, f2: f2Id, f3: f3Id };
   } catch (err) {
@@ -196,10 +196,12 @@ const payoutStore = {
         const commissionMode = user.commission_mode || 'normal';
         const isCustomMode = commissionMode === 'custom';
         const customRate = user.custom_rate ?? 0;
-        const f0Rate = isCustomMode ? customRate : rates.f0;
+        // from_direct buyer orders ALWAYS use standard F0 + chain.
+        // custom_rate only applies to from_custom orders (handled in custom section below).
+        const f0Rate = rates.f0;
 
-        // Resolve F-chain for normal mode users
-        const chain = isCustomMode ? { f1: null, f2: null, f3: null } : await resolveCommissionChain(uid);
+        // Chain is referrer_id based, regardless of commission_mode
+        const chain = await resolveCommissionChain(uid);
 
         // Collect paid order IDs
         const paidF0Ids = await _getPaidOrderIds(uid, 'f0');
@@ -280,7 +282,7 @@ const payoutStore = {
           customRate,
           chain,
           f0Rate,
-          adminRate: isCustomMode ? (100 - customRate) : rates.admin,
+          adminRate: rates.admin,
           totalNetCommission: Math.round(totalNetCommission),
           completedNetCommission: Math.round(completedNetCommission),
           pendingNetCommission: Math.round(pendingNetCommission),
@@ -452,11 +454,12 @@ const payoutStore = {
       const commissionMode = userRow?.commission_mode || 'normal';
       const isCustomMode = commissionMode === 'custom';
       const customRate = userRow?.custom_rate ?? 0;
-      const f0Rate = isCustomMode ? customRate : rates.f0;
+      // from_direct buyer orders ALWAYS use standard F0 + chain (custom_rate only for from_custom)
+      const f0Rate = rates.f0;
       const hasReferrer = !!(userRow?.referrer_id && userRow.referrer_id !== '');
 
-      // Resolve chain for this user
-      const chain = isCustomMode ? { f1: null, f2: null, f3: null } : await resolveCommissionChain(userId);
+      // Chain is referrer_id based, regardless of commission_mode
+      const chain = await resolveCommissionChain(userId);
 
       const completed = [];
       const pending = [];
@@ -700,7 +703,7 @@ const payoutStore = {
         f0Rate,
         customRate,
         chain,
-        adminRate: isCustomMode ? (100 - customRate) : rates.admin,
+        adminRate: rates.admin,
         isSpecial: isCustomMode,
         hasReferrer,
         referrerId: userRow?.referrer_id || '',
@@ -759,14 +762,16 @@ const payoutStore = {
           const paidIds = await getPaidIds('buyer');
           const paidF0 = await getPaidIds('f0');
           paidF0.forEach(id => paidIds.add(id));
-          const isCustom = userRow?.commission_mode === 'custom';
-          const rate = isCustom ? (userRow?.custom_rate ?? rates.f0) : rates.f0;
+          // from_direct buyer orders always use standard F0 (custom_rate only for from_custom)
+          const rate = rates.f0;
           const orders = await tx.all(`
             SELECT DISTINCT o.* FROM orders o
             INNER JOIN convert_logs cl ON (
               (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1) OR
               (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-            ) WHERE cl.status = 'success' AND o.sub_id1 = $1 ORDER BY o.order_time ASC
+            ) WHERE cl.status = 'success' AND o.sub_id1 = $1
+              AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
+            ORDER BY o.order_time ASC
           `, [userId]);
           const unpaid = [];
           for (const o of orders) {
