@@ -232,7 +232,7 @@ class ZaloCommands {
 
       // ─ Buyer block (luôn show) ─
       const buyerBlock = `🛒 Mua hàng (${isCustom ? 'Custom' : 'F0'} ${f0Rate}%)
-   Đơn: ${s.totalOrders} • NET: ${formatVND(s.totalNetCommission)}
+   Đơn: ${s.totalOrders}
    Bạn nhận: ${formatVND(s.totalBuyerCashback)}
    Đã trả: ${formatVND(s.totalPaidAsBuyer)}
    Chờ trả: ${formatVND(s.pendingBuyerPayment)}`;
