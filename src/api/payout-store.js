@@ -127,6 +127,7 @@ const REFERRER_ORDERS_BY_USER_SQL = `
     (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
   )
   WHERE cl.status = 'success' AND cl.sub_id2 = ?
+    AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
   ORDER BY o.order_time DESC
 `;
 
@@ -793,7 +794,9 @@ const payoutStore = {
             INNER JOIN convert_logs cl ON (
               (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1) OR
               (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-            ) WHERE cl.status = 'success' AND cl.sub_id2 = $1 ORDER BY o.order_time ASC
+            ) WHERE cl.status = 'success' AND cl.sub_id2 = $1
+              AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
+            ORDER BY o.order_time ASC
           `, [userId]);
           const refRate = rates.f1;
           const unpaid = [];
