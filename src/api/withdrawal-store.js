@@ -138,9 +138,17 @@ async function computeUserPending(userId) {
     const f3 = sum(detail.completedF3, 'fCashback');
     const custom = sum(detail.completedCustom, 'customCashback');
 
+    // Pending (processing) orders not yet withdrawable
+    const pendingBuyerAmt = sum(detail.pending || [], 'buyerCashback');
+    const pendingCustomAmt = sum(detail.pendingCustom || [], 'customCashback');
+    const pendingCount = (detail.pending || []).length + (detail.pendingCustom || []).length;
+    const pendingAmount = pendingBuyerAmt + pendingCustomAmt;
+
     return {
       total: buyer + f1 + f2 + f3 + custom,
       breakdown: { buyer, f1, f2, f3, custom },
+      pendingCount,
+      pendingAmount,
     };
   } catch (err) {
     logger.error('WithdrawalStore', `computeUserPending(${userId}) failed: ${err.message}`);

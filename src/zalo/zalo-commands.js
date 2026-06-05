@@ -423,6 +423,9 @@ Vào trang Admin → Payouts để xử lý.`;
       const updateNote = bankInfoSource === 'new'
         ? '\n\n✅ Thông tin tài khoản đã được cập nhật.'
         : '';
+      const pendingNote = (pending.pendingCount > 0 && pending.pendingAmount > 0)
+        ? `\n\n⏳ Còn ${pending.pendingCount} đơn đang xử lý (~${formatVND(pending.pendingAmount)}) chưa được tính vào lần này — sẽ rút được sau khi Shopee xác nhận hoàn thành.`
+        : '';
       const replyText = `✅ Đã ghi nhận yêu cầu rút tiền!
 
 💰 Số tiền: ${formatVND(pending.total)}
@@ -431,7 +434,7 @@ ${breakdownBlock}
 🏦 ${withdrawalStore.bankDisplayName(bankCode)} • ${accountNumber}
 👤 ${accountHolder}
 
-⏳ Hệ thống sẽ thanh toán trong thời gian sớm nhất.${updateNote}
+⏳ Hệ thống sẽ thanh toán trong thời gian sớm nhất.${pendingNote}${updateNote}
 
 💡 Gửi /thongke để xem lịch sử chi tiết.`;
 
