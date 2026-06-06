@@ -382,11 +382,11 @@ class ZaloBot {
     const msg =
 `🔴 THÔNG BÁO THỐNG KÊ HOA HỒNG VÀ TIỀN ĐƯỢC HOÀN TRẢ TỪ SHOPEE & HƯỚNG DẪN CÁCH RÚT TIỀN
 ⬇️
-Sẽ cập nhật vào *20:00* mỗi ngày
+Sẽ cập nhật vào 20:00 mỗi ngày
 
-💰 Lệnh rút tiền : */ruttien*
-📊 Lệnh xem thống kê : */thongke*
-- Đường link chi tiết đơn hàng: *https://cashback-shopee.vercel.app/baocao.html*`;
+💰 Lệnh rút tiền : /ruttien
+📊 Lệnh xem thống kê : /thongke
+- Đường link chi tiết đơn hàng: https://cashback-shopee.vercel.app/baocao.html`;
 
     const testUid = ZaloBot.BROADCAST_TEST_UID;
 

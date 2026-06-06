@@ -131,7 +131,7 @@ export default function PayoutsPage() {
   const { users = [] } = summary;
 
   // Stats — unified buyer + referrer
-  const totalCommission = users.reduce((s, u) => s + u.totalNetCommission, 0);
+  const totalCommission = users.reduce((s, u) => s + u.totalBuyerCashback + u.totalReferrerCashback + (u.totalCustomCashback || 0), 0);
   const totalPending = users.reduce((s, u) => s + u.pendingPayment, 0);
   const totalPaid = users.reduce((s, u) => s + u.totalPaid, 0);
 
@@ -280,7 +280,7 @@ export default function PayoutsPage() {
                   </div>
                   {/* Total Net Commission */}
                   <div className="hidden sm:block col-span-2 text-right">
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">{formatVND(user.totalNetCommission)}</p>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">{formatVND(user.totalBuyerCashback + user.totalReferrerCashback + (user.totalCustomCashback || 0))}</p>
                     {user.completedCount > 0 && <p className="text-[10px] text-slate-400">{user.completedCount}✓ {user.pendingCount}⏳</p>}
                   </div>
                   {/* Buyer+Referrer+Custom Cashback Breakdown */}

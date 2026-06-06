@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect } from 'react';
+import { useState, useRef, useMemo, useEffect, useCallback, memo } from 'react';
 import Tooltip from '../components/ui/Tooltip';
 import {
   RefreshCw, ShoppingCart, CheckCircle, DollarSign, Percent,
@@ -367,13 +367,13 @@ export default function OrdersPage() {
     setFilters(prev => ({ ...prev, dateFrom: fromStr, dateTo: toStr }));
   };
 
-  const toggleExpand = (key) => {
+  const toggleExpand = useCallback((key) => {
     setExpandedRows(prev => {
       const next = new Set(prev);
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
-  };
+  }, []);
 
   const filteredOrders = orders || [];
   const grouped = useMemo(() => groupByOrder(filteredOrders), [filteredOrders]);
@@ -573,7 +573,7 @@ export default function OrdersPage() {
                     orderId={orderId}
                     items={items}
                     expanded={expandedRows.has(orderId)}
-                    onToggle={() => toggleExpand(orderId)}
+                    onToggle={toggleExpand}
                     imgMap={imgMap}
                   />
                 ))}
@@ -594,7 +594,7 @@ export default function OrdersPage() {
 }
 
 // ─── Order Group (rowspan logic) ────────────────────────
-function OrderGroup({ orderId, items, expanded, onToggle, imgMap }) {
+const OrderGroup = memo(function OrderGroup({ orderId, items, expanded, onToggle, imgMap }) {
   const count = items.length;
   const first = items[0];
   const isUnmatched = !!first.is_unmatched;
@@ -652,7 +652,7 @@ function OrderGroup({ orderId, items, expanded, onToggle, imgMap }) {
                   </p>
                   {/* Expand toggle */}
                   <button
-                    onClick={onToggle}
+                    onClick={() => onToggle(orderId)}
                     className="mt-1.5 flex items-center gap-1 text-[11px] text-blue-500 hover:text-blue-600 transition-colors"
                   >
                     {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
@@ -766,7 +766,7 @@ function OrderGroup({ orderId, items, expanded, onToggle, imgMap }) {
       )}
     </>
   );
-}
+});
 
 // ─── Product Thumbnail ──────────────────────────────────
 function ProductThumb({ imgCode }) {

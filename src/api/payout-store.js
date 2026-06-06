@@ -344,6 +344,7 @@ const payoutStore = {
           completedNetCommission: Math.round(completedNetCommission),
           pendingNetCommission: Math.round(pendingNetCommission),
           totalBuyerCashback,
+          totalCustomCashback: Math.round(totalCustomNetCommission * (user.custom_rate || 0) / 100),
           totalPaid: paidAsBuyer + paidAsCustom,
           pendingBuyerPayment: unpaidCompletedCashback,
           completedCount,
@@ -383,7 +384,7 @@ const payoutStore = {
             customRate: 0, chain: { f1: null, f2: null, f3: null },
             f0Rate: rates.f0, adminRate: rates.admin,
             totalNetCommission: 0, completedNetCommission: 0, pendingNetCommission: 0,
-            totalBuyerCashback: 0, totalPaid: 0,
+            totalBuyerCashback: 0, totalCustomCashback: 0, totalPaid: 0,
             pendingBuyerPayment: 0, completedCount: 0, pendingCount: 0, totalOrders: 0,
             pendingCustomPayment: 0, customOrderCount: 0, completedCustomCount: 0, pendingCustomCount: 0,
             isSpecial: false, buyerRate: rates.f0, referrerRate: 0, referrerEarnRate: 0,
@@ -473,16 +474,19 @@ const payoutStore = {
         if (getPaidIds) {
           const legacyIds = level === '1' ? getPaidIds(userId, 'referrer') : new Set();
           allPaidIds = new Set([...getPaidIds(userId, fRole), ...legacyIds]);
-          totalPaidAmount = level === '1' ? (getPaidSum ? getPaidSum(userId, fRole, 'referrer') : 0) : 0;
+          totalPaidAmount = getPaidSum
+            ? (level === '1' ? getPaidSum(userId, fRole, 'referrer') : getPaidSum(userId, fRole))
+            : 0;
         } else {
           const paidIds = await _getPaidOrderIds(userId, fRole);
           const legacyPaidIds = level === '1' ? await _getPaidOrderIds(userId, 'referrer') : new Set();
           allPaidIds = new Set([...paidIds, ...legacyPaidIds]);
+          const roleFilter = level === '1' ? `role IN ('${fRole}', 'referrer')` : `role = '${fRole}'`;
           const paidRow = await db.get(
-            `SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts WHERE user_id = ? AND role IN (?, 'referrer')`,
-            [userId, fRole]
+            `SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts WHERE user_id = ? AND ${roleFilter}`,
+            [userId]
           );
-          totalPaidAmount = level === '1' ? (paidRow?.total_paid || 0) : 0;
+          totalPaidAmount = paidRow?.total_paid || 0;
         }
 
         const rate = level === '1' ? rates.f1 : level === '2' ? rates.f2 : rates.f3;
@@ -601,18 +605,23 @@ const payoutStore = {
         }
       }
 
-      // --- Referrer orders (this user referred the buyer) --- pre-loaded above
-      // Fix Bug #6: Batch lookup all buyer IDs instead of N+1
-      const buyerIds = [...new Set(refOrders.map(o => o.sub_id1).filter(Boolean))];
-      const buyerMap = {};
-      if (buyerIds.length > 0) {
-        const placeholders = buyerIds.map((_, i) => `$${i + 1}`).join(',');
+      // One-shot buyer lookup for all F1/F2/F3 display names (refOrders + allMatchedOrders merged)
+      const allBuyerIdSet = new Set([
+        ...refOrders.map(o => o.sub_id1),
+        ...allMatchedOrders.map(o => o.sub_id1),
+      ].filter(Boolean));
+      const allBuyerMap = {};
+      if (allBuyerIdSet.size > 0) {
+        const allBuyerIds = [...allBuyerIdSet];
+        const ph = allBuyerIds.map((_, i) => `$${i + 1}`).join(',');
         const buyerRows = await db.all(
-          `SELECT user_id, display_name, avatar, cashback_referrer_rate FROM users WHERE user_id IN (${placeholders})`,
-          buyerIds
+          `SELECT user_id, display_name, avatar, cashback_referrer_rate FROM users WHERE user_id IN (${ph})`,
+          allBuyerIds
         );
-        for (const b of buyerRows) buyerMap[b.user_id] = b;
+        for (const b of buyerRows) allBuyerMap[b.user_id] = b;
       }
+
+      // --- Referrer orders (this user referred the buyer) --- pre-loaded above
 
       const completedReferrer = [];
       const pendingReferrer = [];
@@ -623,7 +632,7 @@ const payoutStore = {
         if (isCancelled(o.order_status)) continue;
 
         const nc = o.net_commission || 0;
-        const buyerUser = buyerMap[o.sub_id1];
+        const buyerUser = allBuyerMap[o.sub_id1];
         const refRate = rates.f1;
         const buyerDisplayName = buyerUser?.display_name || o.sub_id1;
 
@@ -644,6 +653,7 @@ const payoutStore = {
           buyerAvatar: buyerUser?.avatar || '',
           type: 'f1',
         };
+
 
         if (COMPLETED_STATUSES.has(o.order_status)) {
           if (!allPaidRefIds.has(o.order_id)) {
@@ -695,21 +705,6 @@ const payoutStore = {
 
       const paidF2Ids = getPaidSet('f2');
       const paidF3Ids = getPaidSet('f3');
-
-      // Batch lookup all buyer IDs for F2/F3 display names
-      const allBuyerIds = [...new Set(allMatchedOrders.map(o => o.sub_id1).filter(Boolean))];
-      const allBuyerMap = { ...buyerMap }; // Start with existing buyerMap from F1
-      if (allBuyerIds.length > 0) {
-        const missingIds = allBuyerIds.filter(id => !allBuyerMap[id]);
-        if (missingIds.length > 0) {
-          const placeholders = missingIds.map((_, i) => `$${i + 1}`).join(',');
-          const rows = await db.all(
-            `SELECT user_id, display_name, avatar FROM users WHERE user_id IN (${placeholders})`,
-            missingIds
-          );
-          for (const r of rows) allBuyerMap[r.user_id] = r;
-        }
-      }
 
       for (const o of allMatchedOrders) {
         if (isCancelled(o.order_status)) continue;
@@ -821,29 +816,31 @@ const payoutStore = {
     try {
       const rates = await commissionRatesStore.getRates();
       return await db.transaction(async (tx) => {
-        const userRow = await tx.get(
-          'SELECT display_name, zalo_name, commission_mode, custom_rate FROM users WHERE user_id = $1',
-          [userId]
-        );
+        // Pre-load all shared data in parallel — eliminates redundant per-role queries
+        const [userRow, allUsersForChain, sharedMatchedOrders, allUserPayouts] = await Promise.all([
+          tx.get('SELECT display_name, zalo_name, commission_mode, custom_rate FROM users WHERE user_id = $1', [userId]),
+          tx.all('SELECT user_id, referrer_id FROM users'),
+          tx.all(MATCHED_ORDERS_SQL),
+          tx.all('SELECT role, paid_orders FROM payouts WHERE user_id = $1', [userId]),
+        ]);
         const userName = userRow?.display_name || userRow?.zalo_name || userId;
+        const getChainLocal = buildChainMap(allUsersForChain);
 
-        // Helper: get paid order IDs for a specific role
-        const getPaidIds = async (r) => {
-          const rows = await tx.all('SELECT paid_orders FROM payouts WHERE user_id = $1 AND role = $2', [userId, r]);
-          const ids = new Set();
-          for (const p of rows) {
-            let o = p.paid_orders;
-            if (typeof o === 'string') { try { o = JSON.parse(o); } catch { o = null; } }
-            if (Array.isArray(o)) o.forEach(x => x.orderId && ids.add(x.orderId));
+        // Build in-memory paid-order ID sets from the single pre-loaded payouts query
+        const paidIdsByRole = {};
+        for (const p of allUserPayouts) {
+          if (!paidIdsByRole[p.role]) paidIdsByRole[p.role] = new Set();
+          let orders = p.paid_orders;
+          if (typeof orders === 'string') { try { orders = JSON.parse(orders); } catch { orders = null; } }
+          if (Array.isArray(orders)) {
+            for (const o of orders) { if (o.orderId) paidIdsByRole[p.role].add(o.orderId); }
           }
-          return ids;
-        };
+        }
+        const getPaidIds = (r) => paidIdsByRole[r] || new Set();
 
         // Helper: collect unpaid buyer orders
         const getBuyerUnpaid = async () => {
-          const paidIds = await getPaidIds('buyer');
-          const paidF0 = await getPaidIds('f0');
-          paidF0.forEach(id => paidIds.add(id));
+          const paidIds = new Set([...getPaidIds('buyer'), ...getPaidIds('f0')]);
           // from_direct buyer orders always use standard F0 (custom_rate only for from_custom)
           const rate = rates.f0;
           const orders = await tx.all(`
@@ -867,9 +864,7 @@ const payoutStore = {
 
         // Helper: collect unpaid referrer orders
         const getReferrerUnpaid = async () => {
-          const paidIds = await getPaidIds('referrer');
-          const paidF1 = await getPaidIds('f1');
-          paidF1.forEach(id => paidIds.add(id));
+          const paidIds = new Set([...getPaidIds('referrer'), ...getPaidIds('f1')]);
           const refOrders = await tx.all(`
             SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id1 as buyer_id FROM orders o
             INNER JOIN convert_logs cl ON (
@@ -890,40 +885,34 @@ const payoutStore = {
           return unpaid;
         };
 
-        // Helper: collect unpaid F2 orders
-        const getF2Unpaid = async () => {
-          const paidIds = await getPaidIds('f2');
-          const allMatchedOrders = await tx.all(MATCHED_ORDERS_SQL);
+        // Helper: collect unpaid F2 orders — uses shared matched orders + in-memory chain map
+        const getF2Unpaid = () => {
+          const paidIds = getPaidIds('f2');
           const f2Rate = rates.f2;
           const unpaid = [];
-          for (const o of allMatchedOrders) {
+          for (const o of sharedMatchedOrders) {
             if (isCancelled(o.order_status)) continue;
             if (!COMPLETED_STATUSES.has(o.order_status) || paidIds.has(o.order_id)) continue;
             const nc = o.net_commission || 0;
             if (nc <= 0) continue;
-            
-            const orderChain = await resolveCommissionChain(o.sub_id1);
-            if (orderChain.f2 === userId) {
+            if (getChainLocal(o.sub_id1).f2 === userId) {
               unpaid.push({ orderId: o.order_id, itemName: o.item_name, shopName: o.shop_name, netCommission: nc, cashback: Math.round(nc * f2Rate / 100), appliedRate: f2Rate, role: 'f2', buyerId: o.sub_id1 });
             }
           }
           return unpaid;
         };
 
-        // Helper: collect unpaid F3 orders
-        const getF3Unpaid = async () => {
-          const paidIds = await getPaidIds('f3');
-          const allMatchedOrders = await tx.all(MATCHED_ORDERS_SQL);
+        // Helper: collect unpaid F3 orders — uses shared matched orders + in-memory chain map
+        const getF3Unpaid = () => {
+          const paidIds = getPaidIds('f3');
           const f3Rate = rates.f3;
           const unpaid = [];
-          for (const o of allMatchedOrders) {
+          for (const o of sharedMatchedOrders) {
             if (isCancelled(o.order_status)) continue;
             if (!COMPLETED_STATUSES.has(o.order_status) || paidIds.has(o.order_id)) continue;
             const nc = o.net_commission || 0;
             if (nc <= 0) continue;
-            
-            const orderChain = await resolveCommissionChain(o.sub_id1);
-            if (orderChain.f3 === userId) {
+            if (getChainLocal(o.sub_id1).f3 === userId) {
               unpaid.push({ orderId: o.order_id, itemName: o.item_name, shopName: o.shop_name, netCommission: nc, cashback: Math.round(nc * f3Rate / 100), appliedRate: f3Rate, role: 'f3', buyerId: o.sub_id1 });
             }
           }
@@ -932,7 +921,7 @@ const payoutStore = {
 
         // Helper: collect unpaid Custom orders
         const getCustomUnpaid = async () => {
-          const paidIds = await getPaidIds('custom');
+          const paidIds = getPaidIds('custom');
           const customRate = userRow?.custom_rate || 0;
           const customOrders = await tx.all(CUSTOM_ORDERS_BY_USER_SQL, [userId]);
           const unpaid = [];
@@ -960,29 +949,29 @@ const payoutStore = {
           return { payoutId: res?.lastInsertRowid, amount: amt, paidOrders: orders };
         };
 
-        if (role === 'combined' || role === 'f0' || role === 'buyer') {
+        if (role === 'combined') {
+          // All 3 DB-querying helpers run in parallel; F2/F3 are synchronous (in-memory only)
+          const [buyerOrders, refOrders, customOrders] = await Promise.all([
+            getBuyerUnpaid(), getReferrerUnpaid(), getCustomUnpaid(),
+          ]);
+          const f2Orders = getF2Unpaid();
+          const f3Orders = getF3Unpaid();
+
+          const bResult = await insertPayout('f0', buyerOrders);
+          const rResult = await insertPayout('f1', refOrders);
+          const f2Result = await insertPayout('f2', f2Orders);
+          const f3Result = await insertPayout('f3', f3Orders);
+          const customResult = await insertPayout('custom', customOrders);
+
+          const totalAmount = (bResult?.amount || 0) + (rResult?.amount || 0) + (f2Result?.amount || 0) + (f3Result?.amount || 0) + (customResult?.amount || 0);
+          if (totalAmount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
+          return { amount: totalAmount, userName, buyerPayout: bResult, referrerPayout: rResult, f2Payout: f2Result, f3Payout: f3Result, customPayout: customResult };
+        } else if (role === 'f0' || role === 'buyer') {
           const buyerOrders = await getBuyerUnpaid();
-          if (role === 'combined') {
-            const refOrders = await getReferrerUnpaid();
-            const f2Orders = await getF2Unpaid();
-            const f3Orders = await getF3Unpaid();
-            const customOrders = await getCustomUnpaid();
-            
-            const bResult = await insertPayout('f0', buyerOrders);
-            const rResult = await insertPayout('f1', refOrders);
-            const f2Result = await insertPayout('f2', f2Orders);
-            const f3Result = await insertPayout('f3', f3Orders);
-            const customResult = await insertPayout('custom', customOrders);
-            
-            const totalAmount = (bResult?.amount || 0) + (rResult?.amount || 0) + (f2Result?.amount || 0) + (f3Result?.amount || 0) + (customResult?.amount || 0);
-            if (totalAmount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
-            return { amount: totalAmount, userName, buyerPayout: bResult, referrerPayout: rResult, f2Payout: f2Result, f3Payout: f3Result, customPayout: customResult };
-          } else {
-            const amount = buyerOrders.reduce((s, o) => s + o.cashback, 0);
-            if (amount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
-            const result = await insertPayout('f0', buyerOrders);
-            return { ...result, userName };
-          }
+          const amount = buyerOrders.reduce((s, o) => s + o.cashback, 0);
+          if (amount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
+          const result = await insertPayout('f0', buyerOrders);
+          return { ...result, userName };
         } else if (role === 'referrer' || role === 'f1') {
           const orders = await getReferrerUnpaid();
           const amount = orders.reduce((s, o) => s + o.cashback, 0);
@@ -990,13 +979,13 @@ const payoutStore = {
           const result = await insertPayout('f1', orders);
           return { ...result, userName };
         } else if (role === 'f2') {
-          const orders = await getF2Unpaid();
+          const orders = getF2Unpaid();
           const amount = orders.reduce((s, o) => s + o.cashback, 0);
           if (amount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
           const result = await insertPayout('f2', orders);
           return { ...result, userName };
         } else if (role === 'f3') {
-          const orders = await getF3Unpaid();
+          const orders = getF3Unpaid();
           const amount = orders.reduce((s, o) => s + o.cashback, 0);
           if (amount <= 0) return { amount: 0, userName, error: 'No unpaid orders found' };
           const result = await insertPayout('f3', orders);

@@ -452,11 +452,18 @@ const orderStore = {
   },
 
   async getFilterOptions() {
-    const shopTypes = (await db.all("SELECT DISTINCT shop_type FROM orders WHERE shop_type != '' ORDER BY shop_type")).map(r => r.shop_type);
-    const commissionTypes = (await db.all("SELECT DISTINCT commission_type FROM orders WHERE commission_type != '' ORDER BY commission_type")).map(r => r.commission_type);
-    const channels = (await db.all("SELECT DISTINCT channel FROM orders WHERE channel != '' ORDER BY channel")).map(r => r.channel);
-    const statuses = (await db.all("SELECT DISTINCT order_status FROM orders WHERE order_status != '' ORDER BY order_status")).map(r => r.order_status);
-    return { shopTypes, commissionTypes, channels, statuses };
+    const [shopTypeRows, commissionTypeRows, channelRows, statusRows] = await Promise.all([
+      db.all("SELECT DISTINCT shop_type FROM orders WHERE shop_type != '' ORDER BY shop_type"),
+      db.all("SELECT DISTINCT commission_type FROM orders WHERE commission_type != '' ORDER BY commission_type"),
+      db.all("SELECT DISTINCT channel FROM orders WHERE channel != '' ORDER BY channel"),
+      db.all("SELECT DISTINCT order_status FROM orders WHERE order_status != '' ORDER BY order_status"),
+    ]);
+    return {
+      shopTypes: shopTypeRows.map(r => r.shop_type),
+      commissionTypes: commissionTypeRows.map(r => r.commission_type),
+      channels: channelRows.map(r => r.channel),
+      statuses: statusRows.map(r => r.order_status),
+    };
   },
 };
 

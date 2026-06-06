@@ -786,19 +786,24 @@ async function enrichOrdersWithCommissionChain(orders) {
   if (!orders || orders.length === 0) return orders;
 
   try {
+    // Scope matchedRows to only the order IDs in this batch (max 200) instead of full-table scan
+    const batchOrderIds = orders.map(o => o.order_id);
+    const placeholders = batchOrderIds.map((_, i) => `$${i + 1}`).join(',');
+
     const [rates, users, allPayouts, matchedRows] = await Promise.all([
       commissionRatesStore.getRates(),
       db.all('SELECT user_id, display_name, zalo_name, commission_mode, custom_rate, referrer_id FROM users'),
       db.all('SELECT user_id, paid_orders FROM payouts'),
-      // Batch-check which orders have a convert_log match (excludes custom orders)
       db.all(`
         SELECT DISTINCT o.order_id FROM orders o
         INNER JOIN convert_logs cl ON (
           (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
           OR (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
         )
-        WHERE cl.status = 'success' AND COALESCE(o.sub_id4,'') NOT IN ('from_custom','custom')
-      `),
+        WHERE cl.status = 'success'
+          AND COALESCE(o.sub_id4,'') NOT IN ('from_custom','custom')
+          AND o.order_id IN (${placeholders})
+      `, batchOrderIds),
     ]);
 
     const userMap = {};
