@@ -214,11 +214,25 @@ class ReportGenerator {
 
     // 4. Payout history
     const payouts = await db.all(
-      `SELECT amount, role, payment_method, bill_image, admin_note, status, paid_at
+      `SELECT amount, role, payment_method, bill_image, admin_note, status, paid_at, paid_orders
        FROM payouts WHERE user_id = ?
        ORDER BY paid_at DESC`,
       [userId]
     );
+
+    // Build paid order ID sets (to separate paid vs unpaid completed orders)
+    const paidBuyerOrderIds = new Set();
+    const paidCustomOrderIds = new Set();
+    for (const p of payouts) {
+      let orders = p.paid_orders;
+      if (typeof orders === 'string') { try { orders = JSON.parse(orders); } catch { orders = null; } }
+      if (!Array.isArray(orders)) continue;
+      for (const o of orders) {
+        if (!o.orderId) continue;
+        if (['f0', 'buyer'].includes(p.role)) paidBuyerOrderIds.add(o.orderId);
+        if (p.role === 'custom') paidCustomOrderIds.add(o.orderId);
+      }
+    }
 
     // 4b. Custom orders — F1 gửi link cho F2 (sub_id4 = from_custom)
     const customOrders = await db.all(
@@ -315,15 +329,19 @@ class ReportGenerator {
     const completedNetCommission = completedOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
     const pendingNetCommission = pendingOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
 
-    // What the user actually receives (raw × F0%) — this is the headline number
-    const totalBuyerCashback = Math.round(totalNetCommission * f0Rate / 100);
-    const completedBuyerCashback = Math.round(completedNetCommission * f0Rate / 100);
-    const pendingBuyerCashback = Math.round(pendingNetCommission * f0Rate / 100);
-
+    // Tổng HH = paid actual (rate lịch sử) + unpaid completed × rate + processing × rate
     const totalPaidAsBuyer = payouts
       .filter(p => ['buyer', 'f0'].includes(p.role))
       .reduce((s, p) => s + (p.amount || 0), 0);
-    const pendingBuyerPayment = Math.max(0, completedBuyerCashback - totalPaidAsBuyer);
+
+    const unpaidCompletedBuyerCashback = completedOrders
+      .filter(o => !paidBuyerOrderIds.has(o.order_id))
+      .reduce((s, o) => s + Math.round((o.net_commission || 0) * f0Rate / 100), 0);
+    const pendingBuyerCashback = Math.round(pendingNetCommission * f0Rate / 100);
+
+    const totalBuyerCashback = totalPaidAsBuyer + unpaidCompletedBuyerCashback + pendingBuyerCashback;
+    const completedBuyerCashback = totalPaidAsBuyer + unpaidCompletedBuyerCashback;
+    const pendingBuyerPayment = unpaidCompletedBuyerCashback;
 
     // 9. Referrer earnings (F1+F2+F3) — chain-based: earn rate on buyers by registration depth
     const totalReferrerEarnings =
@@ -336,11 +354,17 @@ class ReportGenerator {
     const completedCustomOrders = customOrders.filter(isCompleted);
     const pendingCustomOrders = customOrders.filter(o => !isCompleted(o));
     const totalCustomNetCommission = customOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
-    const completedCustomNetCommission = completedCustomOrders.reduce((s, o) => s + (o.net_commission || 0), 0);
-    const totalCustomCashback = Math.round(totalCustomNetCommission * customRate / 100);
-    const completedCustomCashback = Math.round(completedCustomNetCommission * customRate / 100);
+
     const totalCustomPaid = payouts.filter(p => p.role === 'custom').reduce((s, p) => s + (p.amount || 0), 0);
-    const pendingCustomPayment = Math.max(0, completedCustomCashback - totalCustomPaid);
+    const unpaidCustomCashback = completedCustomOrders
+      .filter(o => !paidCustomOrderIds.has(o.order_id))
+      .reduce((s, o) => s + Math.round((o.net_commission || 0) * customRate / 100), 0);
+    const processingCustomCashback = Math.round(
+      pendingCustomOrders.reduce((s, o) => s + (o.net_commission || 0), 0) * customRate / 100
+    );
+    const totalCustomCashback = totalCustomPaid + unpaidCustomCashback + processingCustomCashback;
+    const completedCustomCashback = totalCustomPaid + unpaidCustomCashback;
+    const pendingCustomPayment = unpaidCustomCashback;
 
     const uniqueF2Phones = [...new Set(customOrders.map(o => o.sub_id2).filter(Boolean))];
 
@@ -404,7 +428,7 @@ class ReportGenerator {
         completedCustomCount: completedCustomOrders.length,
         pendingCustomCount: pendingCustomOrders.length,
         totalCustomNetCommission,
-        completedCustomNetCommission,
+        completedCustomNetCommission: completedCustomOrders.reduce((s,o)=>s+(o.net_commission||0),0),
         totalCustomCashback,
         completedCustomCashback,
         totalCustomPaid,
