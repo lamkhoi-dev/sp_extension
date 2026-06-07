@@ -2,6 +2,51 @@ const db = require('../db');
 const logger = require('../logger');
 const commissionRatesStore = require('../api/commission-rates-store');
 
+// All matched orders (non-custom) — same pattern as payout-store MATCHED_ORDERS_SQL
+const CHAIN_ORDERS_SQL = `
+  SELECT DISTINCT o.order_id, o.sub_id1, o.order_status, o.net_commission
+  FROM orders o
+  INNER JOIN convert_logs cl ON (
+    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
+    OR
+    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+  )
+  WHERE cl.status = 'success' AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
+`;
+
+function isChainCancelled(status) {
+  if (!status) return false;
+  const s = status.toLowerCase();
+  return s.includes('hủy') || s.includes('huỷ') || s.includes('cancel') || s.includes('chưa thanh toán');
+}
+
+// Calculate referrer earnings using buyer registration chain — matches payout-store logic exactly.
+// LNK earns F1 rate on buyers directly under LNK, F2 rate on buyers under LNK's F1s, etc.
+async function calcReferrerEarnings(userId, rates) {
+  const uid = String(userId);
+  const allUsers = await db.all('SELECT user_id, referrer_id FROM users');
+  const parentOf = {};
+  for (const u of allUsers) parentOf[String(u.user_id)] = u.referrer_id ? String(u.referrer_id) : null;
+
+  const orders = await db.all(CHAIN_ORDERS_SQL);
+  let f1 = 0, f2 = 0, f3 = 0;
+
+  for (const o of orders) {
+    if (isChainCancelled(o.order_status)) continue;
+    const nc = Number(o.net_commission) || 0;
+    if (nc <= 0) continue;
+    const b = String(o.sub_id1);
+    const p1 = parentOf[b] || null;
+    const p2 = p1 ? (parentOf[p1] || null) : null;
+    const p3 = p2 ? (parentOf[p2] || null) : null;
+    if (p1 === uid) f1 += Math.round(nc * rates.f1 / 100);
+    else if (p2 === uid) f2 += Math.round(nc * rates.f2 / 100);
+    else if (p3 === uid) f3 += Math.round(nc * rates.f3 / 100);
+  }
+
+  return { totalF1Earnings: f1, totalF2Earnings: f2, totalF3Earnings: f3 };
+}
+
 // SQL: Load a user's direct downline (CTVs) with their order/commission stats.
 // Excludes cancelled orders. `referrerId` = userId of the parent.
 const DOWNLINE_SQL = `
@@ -207,9 +252,10 @@ class ReportGenerator {
       }
     }
 
-    // 6. Downline tree (F1 + F2 + F3) with earnings at each level
+    // 6. Downline tree (F1 + F2 + F3) for display + correct chain-based earnings
     const downline = await loadDownlineTree(userId, rates);
     const ctvList = downline.list;
+    const referrerEarnings = await calcReferrerEarnings(userId, rates);
 
     // 7. Monthly revenue chart (last 6 months) — based on user's own orders only
     const monthlyRevenue = await db.all(
@@ -279,9 +325,9 @@ class ReportGenerator {
       .reduce((s, p) => s + (p.amount || 0), 0);
     const pendingBuyerPayment = Math.max(0, completedBuyerCashback - totalPaidAsBuyer);
 
-    // 9. Referrer earnings (F1+F2+F3 from downline)
+    // 9. Referrer earnings (F1+F2+F3) — chain-based: earn rate on buyers by registration depth
     const totalReferrerEarnings =
-      downline.totalF1Earnings + downline.totalF2Earnings + downline.totalF3Earnings;
+      referrerEarnings.totalF1Earnings + referrerEarnings.totalF2Earnings + referrerEarnings.totalF3Earnings;
     const totalPaidAsReferrer = payouts
       .filter(p => ['referrer', 'f1', 'f2', 'f3'].includes(p.role))
       .reduce((s, p) => s + (p.amount || 0), 0);
@@ -337,10 +383,10 @@ class ReportGenerator {
         totalPaidAsBuyer,
         pendingBuyerPayment,
 
-        // Referrer (F1+F2+F3) earnings — số tiền nhận từ downline
-        totalF1Earnings: downline.totalF1Earnings,
-        totalF2Earnings: downline.totalF2Earnings,
-        totalF3Earnings: downline.totalF3Earnings,
+        // Referrer (F1+F2+F3) earnings — số tiền nhận từ downline (chain-based, khớp trang Payouts)
+        totalF1Earnings: referrerEarnings.totalF1Earnings,
+        totalF2Earnings: referrerEarnings.totalF2Earnings,
+        totalF3Earnings: referrerEarnings.totalF3Earnings,
         totalReferrerEarnings,
         totalPaidAsReferrer,
         ctvCount: ctvList.length,
