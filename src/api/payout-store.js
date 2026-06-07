@@ -275,22 +275,18 @@ const payoutStore = {
         const paidCustomIds = getPaidIds(uid, 'custom');
 
         let totalNetCommission = 0;
-        let completedNetCommission = 0;
+        let completedNetCommission = 0;  // ALL completed (paid + unpaid) — for pendingPayment calc
         let pendingNetCommission = 0;
-        let completedCount = 0;
+        let completedCount = 0;          // unpaid completed only — for UI display
         let pendingCount = 0;
-        let unpaidCompletedCashback = 0;
 
         for (const o of orders) {
           if (isCancelled(o.order_status)) continue;
           const nc = o.net_commission || 0;
           totalNetCommission += nc;
           if (COMPLETED_STATUSES.has(o.order_status)) {
-            if (!allPaidBuyerIds.has(o.order_id)) {
-              completedNetCommission += nc;
-              completedCount++;
-              unpaidCompletedCashback += Math.round(nc * f0Rate / 100);
-            }
+            completedNetCommission += nc;
+            if (!allPaidBuyerIds.has(o.order_id)) completedCount++;
           } else {
             pendingNetCommission += nc;
             pendingCount++;
@@ -300,19 +296,17 @@ const payoutStore = {
         // Custom orders — already grouped in-memory (no DB query)
         const customOrders = customByUser[uid] || [];
         let totalCustomNetCommission = 0;
+        let completedCustomNetCommission = 0;
         let completedCustomCount = 0;
         let pendingCustomCount = 0;
-        let unpaidCustomCashback = 0;
 
         for (const o of customOrders) {
           if (isCancelled(o.order_status)) continue;
           const nc = o.net_commission || 0;
           totalCustomNetCommission += nc;
           if (COMPLETED_STATUSES.has(o.order_status)) {
-            if (!paidCustomIds.has(o.order_id)) {
-              completedCustomCount++;
-              unpaidCustomCashback += Math.round(nc * (user.custom_rate || 0) / 100);
-            }
+            completedCustomNetCommission += nc;
+            if (!paidCustomIds.has(o.order_id)) completedCustomCount++;
           } else {
             pendingCustomCount++;
           }
@@ -321,10 +315,17 @@ const payoutStore = {
         if (orders.length === 0 && customOrders.length === 0) continue;
 
         const totalBuyerCashback = Math.round(totalNetCommission * f0Rate / 100);
+        const completedBuyerCashback = Math.round(completedNetCommission * f0Rate / 100);
+        const completedCustomCashback = Math.round(completedCustomNetCommission * (user.custom_rate || 0) / 100);
 
         // Paid sums from in-memory map (no DB query)
         const paidAsBuyer = getPaidSum(uid, 'f0', 'buyer');
         const paidAsCustom = getPaidSum(uid, 'custom');
+
+        // pendingPayment = completed cashback − already paid
+        // Using sum-based diff (not per-order) so partial payments and rate changes are handled correctly
+        const pendingBuyerPayment = Math.max(0, completedBuyerCashback - paidAsBuyer);
+        const pendingCustomPayment = Math.max(0, completedCustomCashback - paidAsCustom);
 
         summaries.push({
           userId: uid,
@@ -347,11 +348,11 @@ const payoutStore = {
           totalBuyerCashback,
           totalCustomCashback: Math.round(totalCustomNetCommission * (user.custom_rate || 0) / 100),
           totalPaid: paidAsBuyer + paidAsCustom,
-          pendingBuyerPayment: unpaidCompletedCashback,
+          pendingBuyerPayment,
           completedCount,
           pendingCount,
           totalOrders: orders.length + customOrders.length,
-          pendingCustomPayment: unpaidCustomCashback,
+          pendingCustomPayment,
           customOrderCount: customOrders.length,
           completedCustomCount,
           pendingCustomCount,
