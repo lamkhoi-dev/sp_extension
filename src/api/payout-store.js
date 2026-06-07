@@ -320,14 +320,23 @@ const payoutStore = {
 
         if (orders.length === 0 && customOrders.length === 0) continue;
 
-        const totalBuyerCashback = Math.round(totalNetCommission * f0Rate / 100);
-
         // Paid sums from in-memory map (no DB query)
         const paidAsBuyer = getPaidSum(uid, 'f0', 'buyer');
         const paidAsCustom = getPaidSum(uid, 'custom');
 
         const pendingBuyerPayment = unpaidCompletedCashback;
         const pendingCustomPayment = unpaidCustomCashback;
+
+        // Tổng HH = thực trả (rate lịch sử) + chưa trả (rate hiện tại) + đang xử lý (rate hiện tại)
+        // Đảm bảo: Tổng HH = Đã trả + Cần trả + Đang xử lý (không bị lệch khi rate thay đổi)
+        const processingBuyerCashback = Math.round(pendingNetCommission * f0Rate / 100);
+        const totalBuyerCashback = paidAsBuyer + unpaidCompletedCashback + processingBuyerCashback;
+
+        const processingCustomCashback = Math.round(
+          customOrders.filter(o => !isCancelled(o.order_status) && !COMPLETED_STATUSES.has(o.order_status))
+            .reduce((s, o) => s + (o.net_commission || 0), 0) * (user.custom_rate || 0) / 100
+        );
+        const totalCustomCashback = paidAsCustom + unpaidCustomCashback + processingCustomCashback;
 
         summaries.push({
           userId: uid,
@@ -348,7 +357,7 @@ const payoutStore = {
           completedNetCommission: Math.round(completedNetCommission),
           pendingNetCommission: Math.round(pendingNetCommission),
           totalBuyerCashback,
-          totalCustomCashback: Math.round(totalCustomNetCommission * (user.custom_rate || 0) / 100),
+          totalCustomCashback,
           totalPaid: paidAsBuyer + paidAsCustom,
           pendingBuyerPayment,
           completedCount,
