@@ -469,6 +469,19 @@ const orderStore = {
       statuses: statusRows.map(r => r.order_status),
     };
   },
+
+  async getTotalNetCommission() {
+    const NOT_CANCELLED = `(
+      COALESCE(order_status,'') NOT LIKE '%hủy%'
+      AND COALESCE(order_status,'') NOT LIKE '%huỷ%'
+      AND COALESCE(order_status,'') NOT LIKE '%Cancel%'
+      AND order_status != 'Chưa thanh toán'
+    )`;
+    const row = await db.get(
+      `SELECT COALESCE(SUM(net_commission), 0) as total_net FROM orders WHERE ${NOT_CANCELLED}`
+    );
+    return Number(row?.total_net || 0);
+  },
 };
 
 module.exports = orderStore;

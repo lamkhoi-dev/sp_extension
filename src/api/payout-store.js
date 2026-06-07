@@ -1111,6 +1111,86 @@ const payoutStore = {
     return this.updateUserCommissionMode(userId, 'normal', 0);
   },
 
+  /**
+   * Fast aggregate: total cashback owed to all users across all roles.
+   * Uses 4 batch queries + in-memory — matches what getSummary() totals.
+   * Buyer/custom: paid-actual + unpaid-at-current-rate (rate-history-aware).
+   * Referrer: all non-cancelled orders × F1/F2/F3 rates (mirrors _calcReferrerSummaries).
+   */
+  async getTotalUserCashback(rates) {
+    if (!rates) rates = await commissionRatesStore.getRates();
+    const f0Rate = rates.f0 || 60;
+    const f1Rate = rates.f1 || 20;
+    const f2Rate = rates.f2 || 3;
+    const f3Rate = rates.f3 || 2;
+
+    const [allOrders, allPayouts, allUsers, allCustomOrders] = await Promise.all([
+      db.all(MATCHED_ORDERS_SQL),
+      db.all('SELECT user_id, role, paid_orders, amount FROM payouts'),
+      db.all('SELECT user_id, referrer_id, custom_rate FROM users'),
+      db.all(`SELECT * FROM orders WHERE COALESCE(sub_id4,'') IN ('from_custom','custom')`),
+    ]);
+
+    const getChain = buildChainMap(allUsers);
+
+    // Build global paid sets + totals from payouts table
+    const paidBuyerOrderIds = new Set();
+    const paidCustomOrderIds = new Set();
+    let paidBuyerTotal = 0;
+    let paidCustomTotal = 0;
+
+    for (const p of allPayouts) {
+      let orders = p.paid_orders;
+      if (typeof orders === 'string') { try { orders = JSON.parse(orders); } catch { orders = null; } }
+      const ids = Array.isArray(orders) ? orders.filter(o => o.orderId).map(o => o.orderId) : [];
+      if (['f0', 'buyer'].includes(p.role)) {
+        for (const id of ids) paidBuyerOrderIds.add(id);
+        paidBuyerTotal += Number(p.amount || 0);
+      } else if (p.role === 'custom') {
+        for (const id of ids) paidCustomOrderIds.add(id);
+        paidCustomTotal += Number(p.amount || 0);
+      }
+    }
+
+    // Buyer: paid actual + unpaid non-cancelled orders at current f0 rate
+    let unpaidBuyerCashback = 0;
+    for (const o of allOrders) {
+      if (isCancelled(o.order_status)) continue;
+      if (paidBuyerOrderIds.has(o.order_id)) continue;
+      unpaidBuyerCashback += Math.round((o.net_commission || 0) * f0Rate / 100);
+    }
+
+    // Referrer: ALL non-cancelled matched orders × F1/F2/F3 rates (mirrors data.total in _calcReferrerSummaries)
+    let totalReferrerCashback = 0;
+    for (const o of allOrders) {
+      if (isCancelled(o.order_status)) continue;
+      const nc = o.net_commission || 0;
+      if (nc <= 0) continue;
+      const chain = getChain(o.sub_id1);
+      if (chain.f1) totalReferrerCashback += Math.round(nc * f1Rate / 100);
+      if (chain.f2) totalReferrerCashback += Math.round(nc * f2Rate / 100);
+      if (chain.f3) totalReferrerCashback += Math.round(nc * f3Rate / 100);
+    }
+
+    // Custom: paid actual + unpaid non-cancelled orders at each user's custom rate
+    const userCustomRates = {};
+    for (const u of allUsers) userCustomRates[String(u.user_id)] = u.custom_rate || 0;
+
+    let unpaidCustomCashback = 0;
+    for (const o of allCustomOrders) {
+      if (isCancelled(o.order_status)) continue;
+      if (paidCustomOrderIds.has(o.order_id)) continue;
+      const customRate = userCustomRates[String(o.sub_id1)] || 0;
+      unpaidCustomCashback += Math.round((o.net_commission || 0) * customRate / 100);
+    }
+
+    return Math.round(
+      (paidBuyerTotal + unpaidBuyerCashback) +
+      totalReferrerCashback +
+      (paidCustomTotal + unpaidCustomCashback)
+    );
+  },
+
 };
 
 module.exports = payoutStore;
