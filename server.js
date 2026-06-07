@@ -396,6 +396,7 @@ app.get('/public-orders', async (req, res) => {
         AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
         AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
         AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
+        AND o.order_status != 'Chưa thanh toán'
       ORDER BY o.order_time DESC
       LIMIT $1
     `, [limit]);
@@ -786,8 +787,26 @@ async function enrichOrdersWithCommissionChain(orders) {
   if (!orders || orders.length === 0) return orders;
 
   try {
-    const rates = await commissionRatesStore.getRates();
-    const users = await db.all('SELECT user_id, display_name, zalo_name, commission_mode, custom_rate, referrer_id FROM users');
+    // Scope matchedRows to only the order IDs in this batch (max 200) instead of full-table scan
+    const batchOrderIds = orders.map(o => o.order_id);
+    const placeholders = batchOrderIds.map((_, i) => `$${i + 1}`).join(',');
+
+    const [rates, users, allPayouts, matchedRows] = await Promise.all([
+      commissionRatesStore.getRates(),
+      db.all('SELECT user_id, display_name, zalo_name, commission_mode, custom_rate, referrer_id FROM users'),
+      db.all('SELECT user_id, paid_orders FROM payouts'),
+      db.all(`
+        SELECT DISTINCT o.order_id FROM orders o
+        INNER JOIN convert_logs cl ON (
+          (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
+          OR (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
+        )
+        WHERE cl.status = 'success'
+          AND COALESCE(o.sub_id4,'') NOT IN ('from_custom','custom')
+          AND o.order_id IN (${placeholders})
+      `, batchOrderIds),
+    ]);
+
     const userMap = {};
     for (const u of users) {
       userMap[u.user_id] = {
@@ -799,11 +818,29 @@ async function enrichOrdersWithCommissionChain(orders) {
       };
     }
 
+    // paidByUser[userId] = Set of order_ids that have been paid to this user
+    const paidByUser = {};
+    for (const p of allPayouts) {
+      let po = p.paid_orders;
+      if (typeof po === 'string') { try { po = JSON.parse(po); } catch { po = null; } }
+      if (Array.isArray(po)) {
+        if (!paidByUser[p.user_id]) paidByUser[p.user_id] = new Set();
+        for (const o of po) { if (o.orderId) paidByUser[p.user_id].add(o.orderId); }
+      }
+    }
+    const isPaidFor = (userId, orderId) => !!(paidByUser[userId]?.has(orderId));
+
+    const matchedOrderIds = new Set(matchedRows.map(r => r.order_id));
+
     const chainCache = {};
 
     for (const order of orders) {
       const status = (order.order_status || '').trim();
-      const isCancelled = status === 'Đã hủy' || status === 'Đã huỷ' || status.toLowerCase() === 'cancelled';
+      const isCancelled = status === 'Đã hủy' || status === 'Đã huỷ' || status.toLowerCase() === 'cancelled' || status === 'Chưa thanh toán';
+      const isCustomOrder = ['from_custom', 'custom'].includes(order.sub_id4 || '');
+
+      // Unmatched = non-cancelled, non-custom order with no convert_log entry
+      order.is_unmatched = !isCancelled && !isCustomOrder && !matchedOrderIds.has(order.order_id);
 
       if (isCancelled || !order.sub_id1) {
         order.commission_chain = null;
@@ -811,6 +848,7 @@ async function enrichOrdersWithCommissionChain(orders) {
       }
 
       const buyerId = order.sub_id1;
+      const orderId = order.order_id;
 
       if (chainCache[buyerId] === undefined) {
         const buyer = userMap[buyerId];
@@ -874,7 +912,11 @@ async function enrichOrdersWithCommissionChain(orders) {
           for (const ref of chainInfo.referrers) {
             const refAmount = Math.round(nc * ref.rate / 100);
             distributed += refAmount;
-            referrers.push({ userId: ref.userId, displayName: ref.displayName, level: ref.level, rate: ref.rate, amount: refAmount });
+            referrers.push({
+              userId: ref.userId, displayName: ref.displayName, level: ref.level,
+              rate: ref.rate, amount: refAmount,
+              paid: isPaidFor(ref.userId, orderId),
+            });
           }
         }
 
@@ -885,7 +927,11 @@ async function enrichOrdersWithCommissionChain(orders) {
 
         order.commission_chain = {
           mode: chainInfo.mode,
-          buyer: { userId: chainInfo.buyer.userId, displayName: chainInfo.buyer.displayName, rate: buyerRate, amount: buyerAmount },
+          buyer: {
+            userId: chainInfo.buyer.userId, displayName: chainInfo.buyer.displayName,
+            rate: buyerRate, amount: buyerAmount,
+            paid: isPaidFor(chainInfo.buyer.userId, orderId),
+          },
           referrers,
           admin: { rate: adminRateVal, amount: adminAmount }
         };

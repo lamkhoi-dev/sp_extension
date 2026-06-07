@@ -107,6 +107,8 @@ function parseShopeeCSV(csvText) {
       record.order_status = 'Đang giao hàng';
     } else if (rawStatus.includes('chờ xử lý') || rawStatus.includes('chờ')) {
       record.order_status = 'Đang chờ xử lý';
+    } else if (rawStatus.includes('chưa thanh toán')) {
+      record.order_status = 'Chưa thanh toán';
     } else if (rawStatus.includes('hủy') || rawStatus.includes('huy')) {
       record.order_status = 'Đã hủy';
     } else {
@@ -246,6 +248,7 @@ const orderStore = {
       COALESCE(order_status,'') NOT LIKE '%hủy%'
       AND COALESCE(order_status,'') NOT LIKE '%huỷ%'
       AND COALESCE(order_status,'') NOT LIKE '%Cancel%'
+      AND order_status != 'Chưa thanh toán'
     )`;
 
     const baseStats = await db.get(`
@@ -297,6 +300,7 @@ const orderStore = {
       COALESCE(o.order_status,'') NOT LIKE '%hủy%'
       AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
       AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
+      AND o.order_status != 'Chưa thanh toán'
     )`;
 
     // EXISTS (not JOIN) so each order line-item counts once even if it matches
@@ -452,11 +456,18 @@ const orderStore = {
   },
 
   async getFilterOptions() {
-    const shopTypes = (await db.all("SELECT DISTINCT shop_type FROM orders WHERE shop_type != '' ORDER BY shop_type")).map(r => r.shop_type);
-    const commissionTypes = (await db.all("SELECT DISTINCT commission_type FROM orders WHERE commission_type != '' ORDER BY commission_type")).map(r => r.commission_type);
-    const channels = (await db.all("SELECT DISTINCT channel FROM orders WHERE channel != '' ORDER BY channel")).map(r => r.channel);
-    const statuses = (await db.all("SELECT DISTINCT order_status FROM orders WHERE order_status != '' ORDER BY order_status")).map(r => r.order_status);
-    return { shopTypes, commissionTypes, channels, statuses };
+    const [shopTypeRows, commissionTypeRows, channelRows, statusRows] = await Promise.all([
+      db.all("SELECT DISTINCT shop_type FROM orders WHERE shop_type != '' ORDER BY shop_type"),
+      db.all("SELECT DISTINCT commission_type FROM orders WHERE commission_type != '' ORDER BY commission_type"),
+      db.all("SELECT DISTINCT channel FROM orders WHERE channel != '' ORDER BY channel"),
+      db.all("SELECT DISTINCT order_status FROM orders WHERE order_status != '' ORDER BY order_status"),
+    ]);
+    return {
+      shopTypes: shopTypeRows.map(r => r.shop_type),
+      commissionTypes: commissionTypeRows.map(r => r.commission_type),
+      channels: channelRows.map(r => r.channel),
+      statuses: statusRows.map(r => r.order_status),
+    };
   },
 };
 

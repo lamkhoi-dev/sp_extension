@@ -232,13 +232,13 @@ class ZaloCommands {
 
       // ─ Buyer block (luôn show) ─
       const buyerBlock = `🛒 Mua hàng (${isCustom ? 'Custom' : 'F0'} ${f0Rate}%)
-   Đơn: ${s.totalOrders} • Raw: ${formatVND(s.totalNetCommission)}
+   Đơn: ${s.totalOrders}
    Bạn nhận: ${formatVND(s.totalBuyerCashback)}
    Đã trả: ${formatVND(s.totalPaidAsBuyer)}
    Chờ trả: ${formatVND(s.pendingBuyerPayment)}`;
 
       // ─ Referrer block (chỉ show nếu có downline) ─
-      const referrerBlock = (s.ctvCount > 0)
+      const referrerBlock = (s.ctvCount > 0 || s.totalReferrerEarnings > 0)
         ? `\n\n👥 Thu nhập từ CTV (${s.ctvCount} F1 trực tiếp)
    F1 (×${rates.f1}%): ${formatVND(s.totalF1Earnings)}
    F2 (×${rates.f2}%): ${formatVND(s.totalF2Earnings)}

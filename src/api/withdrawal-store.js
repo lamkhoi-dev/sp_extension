@@ -141,8 +141,12 @@ async function computeUserPending(userId) {
     // Pending (processing) orders not yet withdrawable
     const pendingBuyerAmt = sum(detail.pending || [], 'buyerCashback');
     const pendingCustomAmt = sum(detail.pendingCustom || [], 'customCashback');
-    const pendingCount = (detail.pending || []).length + (detail.pendingCustom || []).length;
-    const pendingAmount = pendingBuyerAmt + pendingCustomAmt;
+    const pendingF1Amt = sum(detail.pendingReferrer || [], 'referrerCashback');
+    const pendingF2Amt = sum(detail.pendingF2 || [], 'fCashback');
+    const pendingF3Amt = sum(detail.pendingF3 || [], 'fCashback');
+    const pendingCount = (detail.pending || []).length + (detail.pendingCustom || []).length
+      + (detail.pendingReferrer || []).length + (detail.pendingF2 || []).length + (detail.pendingF3 || []).length;
+    const pendingAmount = pendingBuyerAmt + pendingCustomAmt + pendingF1Amt + pendingF2Amt + pendingF3Amt;
 
     return {
       total: buyer + f1 + f2 + f3 + custom,
