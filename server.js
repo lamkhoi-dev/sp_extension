@@ -652,7 +652,7 @@ app.get('/api/dashboard-stats', async (req, res) => {
     payoutStore.getTotalUserCashback(rates),
   ]);
 
-  const totalCommission = orderStats.totalEstimatedCommission || orderStats.totalCommissionNew || 0;
+  const totalCommission = orderStats.totalCommissionNew || orderStats.totalEstimatedCommission || 0;
   const totalPaidOut = Number(payoutTotalRow?.total_paid || 0);
   const adminProfit = Math.round(totalNetCommission - totalUserCashback);
   const profitPercent = totalNetCommission > 0 ? Math.round((adminProfit / totalNetCommission) * 10000) / 100 : 0;
