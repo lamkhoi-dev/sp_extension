@@ -17,7 +17,8 @@ const statusStyle = {
   'Hoàn thành':       { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-400', dot: 'bg-emerald-500' },
   'Đang giao hàng':   { bg: 'bg-blue-100 dark:bg-blue-900/30',       text: 'text-blue-700 dark:text-blue-400',       dot: 'bg-blue-500' },
   'Đang chờ xử lý':   { bg: 'bg-amber-100 dark:bg-amber-900/30',     text: 'text-amber-700 dark:text-amber-400',     dot: 'bg-amber-500' },
-  'Chưa thanh toán':  { bg: 'bg-orange-100 dark:bg-orange-900/30',   text: 'text-orange-700 dark:text-orange-400',   dot: 'bg-orange-500' },
+  'Đã hủy':           { bg: 'bg-red-100 dark:bg-red-900/30',         text: 'text-red-600 dark:text-red-400',         dot: 'bg-red-400' },
+  'Chưa thanh toán':  { bg: 'bg-red-100 dark:bg-red-900/30',         text: 'text-red-600 dark:text-red-400',         dot: 'bg-red-400' },
 };
 
 function StatusBadge({ status }) {
