@@ -396,6 +396,7 @@ app.get('/public-orders', async (req, res) => {
         AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
         AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
         AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
+        AND o.order_status != 'Chưa thanh toán'
       ORDER BY o.order_time DESC
       LIMIT $1
     `, [limit]);
@@ -835,7 +836,7 @@ async function enrichOrdersWithCommissionChain(orders) {
 
     for (const order of orders) {
       const status = (order.order_status || '').trim();
-      const isCancelled = status === 'Đã hủy' || status === 'Đã huỷ' || status.toLowerCase() === 'cancelled';
+      const isCancelled = status === 'Đã hủy' || status === 'Đã huỷ' || status.toLowerCase() === 'cancelled' || status === 'Chưa thanh toán';
       const isCustomOrder = ['from_custom', 'custom'].includes(order.sub_id4 || '');
 
       // Unmatched = non-cancelled, non-custom order with no convert_log entry

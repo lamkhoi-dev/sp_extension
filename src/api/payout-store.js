@@ -7,14 +7,15 @@ const COMPLETED_STATUSES = new Set(['Hoàn thành', 'Completed']);
 
 // Cancelled orders — excluded entirely from all cashback calculations
 // Vietnamese has two spellings: "hủy" (hook above ủ) vs "huỷ" (tilde+dot ỷ)
-const CANCELLED_STATUSES = new Set(['Đã hủy', 'Đã huỷ', 'Cancelled']);
+const CANCELLED_STATUSES = new Set(['Đã hủy', 'Đã huỷ', 'Cancelled', 'Chưa thanh toán']);
 
 /** Robust cancelled check — handles Unicode variants + partial matches */
 function isCancelled(status) {
   if (!status) return false;
   if (CANCELLED_STATUSES.has(status)) return true;
   const lower = status.toLowerCase();
-  return lower.includes('hủy') || lower.includes('huỷ') || lower.includes('cancelled') || lower.includes('cancel');
+  return lower.includes('hủy') || lower.includes('huỷ') || lower.includes('cancelled') || lower.includes('cancel')
+    || lower.includes('chưa thanh toán');
 }
 
 // ═══ Multi-level Commission System (F0-F3) ═══

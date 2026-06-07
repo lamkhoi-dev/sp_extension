@@ -107,6 +107,8 @@ function parseShopeeCSV(csvText) {
       record.order_status = 'Đang giao hàng';
     } else if (rawStatus.includes('chờ xử lý') || rawStatus.includes('chờ')) {
       record.order_status = 'Đang chờ xử lý';
+    } else if (rawStatus.includes('chưa thanh toán')) {
+      record.order_status = 'Chưa thanh toán';
     } else if (rawStatus.includes('hủy') || rawStatus.includes('huy')) {
       record.order_status = 'Đã hủy';
     } else {
@@ -246,6 +248,7 @@ const orderStore = {
       COALESCE(order_status,'') NOT LIKE '%hủy%'
       AND COALESCE(order_status,'') NOT LIKE '%huỷ%'
       AND COALESCE(order_status,'') NOT LIKE '%Cancel%'
+      AND order_status != 'Chưa thanh toán'
     )`;
 
     const baseStats = await db.get(`
@@ -297,6 +300,7 @@ const orderStore = {
       COALESCE(o.order_status,'') NOT LIKE '%hủy%'
       AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
       AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
+      AND o.order_status != 'Chưa thanh toán'
     )`;
 
     // EXISTS (not JOIN) so each order line-item counts once even if it matches
