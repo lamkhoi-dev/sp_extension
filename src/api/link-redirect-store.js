@@ -142,9 +142,25 @@ const linkRedirectStore = {
         (@token, @convertLogId, @affiliateLink, @userId, @userName, @itemId, @productName, @expiresAt)
     `, { token, convertLogId, affiliateLink, userId, userName, itemId, productName, expiresAt: expiresAtStr });
 
-    // Warm the cache immediately so next click is a HIT
+    // Warm the cache — fetch commission data from convert_logs if available
+    let commission_rate = null, commission_amount = null, product_price = null;
+    if (convertLogId) {
+      try {
+        const cl = await db.get(
+          'SELECT commission_rate, commission_amount, price FROM convert_logs WHERE id = ?',
+          [convertLogId]
+        );
+        if (cl) { commission_rate = cl.commission_rate; commission_amount = cl.commission_amount; product_price = cl.price; }
+      } catch (_) {}
+    }
     const ttlMs = expiresAt.getTime() - Date.now();
-    const row = { token, affiliate_link: affiliateLink, expires_at: expiresAtStr, id: null, click_count: 0 };
+    const row = {
+      token, affiliate_link: affiliateLink, expires_at: expiresAtStr,
+      id: null, click_count: 0,
+      user_id: userId, user_name: userName, item_id: itemId,
+      product_name: productName, convert_log_id: convertLogId,
+      commission_rate, commission_amount, product_price,
+    };
     tokenCache.set(token, row, ttlMs);
 
     logger.info('LinkRedirect', `Created token=${token} user=${userId}`);
