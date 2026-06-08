@@ -131,13 +131,9 @@ export function useConvertLogs() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Immediate input values (typed by user)
   const [productInput, setProductInput] = useState('');
-  const [userInput, setUserInput] = useState('');
-
-  // Debounced values sent to API
-  const [product, setProduct] = useState('');
-  const [userName, setUserName] = useState('');
+  const [product, setProduct] = useState(''); // debounced
+  const [selectedUserId, setSelectedUserId] = useState(''); // exact match, no debounce
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -148,18 +144,13 @@ export function useConvertLogs() {
     return () => clearTimeout(t);
   }, [productInput]);
 
-  useEffect(() => {
-    const t = setTimeout(() => { setUserName(userInput); setCurrentPage(1); }, 400);
-    return () => clearTimeout(t);
-  }, [userInput]);
-
-  const fetchLogs = useCallback(async (page, size, prod = '', usr = '') => {
+  const fetchLogs = useCallback(async (page, size, prod = '', uid = '') => {
     setLoading(true);
     try {
       const offset = (page - 1) * size;
       const params = new URLSearchParams({ limit: String(size), offset: String(offset) });
       if (prod) params.set('product', prod);
-      if (usr) params.set('user', usr);
+      if (uid) params.set('user_id', uid);
       const [logsResponse, statsData] = await Promise.all([
         apiFetch(`/convert-logs?${params}`),
         apiFetch('/convert-logs/stats'),
@@ -175,8 +166,8 @@ export function useConvertLogs() {
   }, []);
 
   useEffect(() => {
-    fetchLogs(currentPage, pageSize, product, userName);
-  }, [fetchLogs, currentPage, pageSize, product, userName]);
+    fetchLogs(currentPage, pageSize, product, selectedUserId);
+  }, [fetchLogs, currentPage, pageSize, product, selectedUserId]);
 
   return {
     logs,
@@ -184,15 +175,27 @@ export function useConvertLogs() {
     loading,
     productInput,
     setProductInput,
-    userInput,
-    setUserInput,
+    selectedUserId,
+    setSelectedUserId: (val) => { setSelectedUserId(val); setCurrentPage(1); },
     currentPage,
     setCurrentPage,
     pageSize,
     setPageSize,
     totalCount,
-    refresh: () => fetchLogs(currentPage, pageSize, product, userName),
+    refresh: () => fetchLogs(currentPage, pageSize, product, selectedUserId),
   };
+}
+
+export function useUserSelect() {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    apiFetch('/users/select')
+      .then(data => setUsers(data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+  return { users, loading };
 }
 
 // Click Events for redirect analytics

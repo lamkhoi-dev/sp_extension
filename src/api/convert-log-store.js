@@ -116,11 +116,11 @@ const convertLogStore = {
     `, [todayStart.toISOString()]);
   },
 
-  async getFiltered(product = '', userName = '', limit = 50, offset = 0) {
+  async getFiltered(product = '', userId = '', limit = 50, offset = 0) {
     const conditions = [];
     const params = [];
     if (product) { conditions.push('cl.product_name LIKE ?'); params.push(`%${product}%`); }
-    if (userName) { conditions.push('cl.user_name LIKE ?'); params.push(`%${userName}%`); }
+    if (userId) { conditions.push('cl.user_id = ?'); params.push(userId); }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     return db.all(`
       SELECT cl.*,
@@ -138,11 +138,11 @@ const convertLogStore = {
     `, [...params, limit, offset]);
   },
 
-  async getFilteredCount(product = '', userName = '') {
+  async getFilteredCount(product = '', userId = '') {
     const conditions = [];
     const params = [];
     if (product) { conditions.push('product_name LIKE ?'); params.push(`%${product}%`); }
-    if (userName) { conditions.push('user_name LIKE ?'); params.push(`%${userName}%`); }
+    if (userId) { conditions.push('user_id = ?'); params.push(userId); }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const row = await db.get(`SELECT COUNT(*) as count FROM convert_logs ${where}`, params);
     return Number(row?.count || 0);

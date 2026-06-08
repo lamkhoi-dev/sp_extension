@@ -2,12 +2,13 @@ import { useState } from 'react';
 import Tooltip from '../components/ui/Tooltip';
 import {
   Link2, ExternalLink, Copy, Check, RefreshCw, CheckCircle,
-  XCircle, MousePointerClick, X, Monitor, Smartphone, Tablet, Bot, Search, User,
+  XCircle, MousePointerClick, X, Monitor, Smartphone, Tablet, Bot, Search,
 } from 'lucide-react';
 import DataTable from '../components/ui/DataTable';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
-import { useConvertLogs, useClickEvents, formatVND } from '../hooks/useApi';
+import UserSelectDropdown from '../components/ui/UserSelectDropdown';
+import { useConvertLogs, useClickEvents, useUserSelect, formatVND } from '../hooks/useApi';
 
 // ─── Device Icon ────────────────────────────────────────
 function DeviceIcon({ type, className = 'w-3.5 h-3.5' }) {
@@ -149,8 +150,8 @@ export default function ConvertLogsPage() {
     loading,
     productInput,
     setProductInput,
-    userInput,
-    setUserInput,
+    selectedUserId,
+    setSelectedUserId,
     currentPage,
     setCurrentPage,
     pageSize,
@@ -158,6 +159,7 @@ export default function ConvertLogsPage() {
     totalCount,
     refresh,
   } = useConvertLogs();
+  const { users } = useUserSelect();
   const [copiedId, setCopiedId] = useState(null);
   const [clicksModal, setClicksModal] = useState(null); // log row being inspected
 
@@ -404,14 +406,12 @@ export default function ConvertLogsPage() {
             className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        <div className="relative sm:w-56">
-          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Tìm theo user..."
-            value={userInput}
-            onChange={e => setUserInput(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        <div className="sm:w-56">
+          <UserSelectDropdown
+            users={users}
+            value={selectedUserId}
+            onChange={setSelectedUserId}
+            placeholder="Tất cả user"
           />
         </div>
       </div>

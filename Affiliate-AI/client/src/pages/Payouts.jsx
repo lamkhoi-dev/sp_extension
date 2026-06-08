@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { Wallet, Check, Clock, ChevronDown, ChevronUp, ChevronRight, Upload, RefreshCw, Building2, FileText, ExternalLink, History, QrCode, BanknoteIcon, X } from 'lucide-react';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
+import UserSelectDropdown from '../components/ui/UserSelectDropdown';
 import { usePayouts, formatVND, useCommissionRates } from '../hooks/useApi';
 import { buildVietQrUrl, getBankLogoUrl, VIET_BANKS } from '../constants/banks';
 
@@ -31,6 +32,7 @@ export default function PayoutsPage() {
   const [payingUserId, setPayingUserId] = useState(null);
   const [adminNote, setAdminNote] = useState('');
   const [mainTab, setMainTab] = useState('pending');
+  const [userFilter, setUserFilter] = useState('');
   const [markingWithdrawalId, setMarkingWithdrawalId] = useState(null);
   const [expandedHistoryIds, setExpandedHistoryIds] = useState(new Set());
 
@@ -130,6 +132,10 @@ export default function PayoutsPage() {
 
   const { users = [] } = summary;
 
+  const visibleUsers = useMemo(() =>
+    userFilter ? users.filter(u => u.userId === userFilter) : users,
+  [users, userFilter]);
+
   // Stats — unified buyer + referrer
   const totalCommission = users.reduce((s, u) => s + u.totalBuyerCashback + u.totalReferrerCashback + (u.totalCustomCashback || 0), 0);
   const totalPending = users.reduce((s, u) => s + u.pendingPayment, 0);
@@ -222,6 +228,16 @@ export default function PayoutsPage() {
         </div>
       </div>
 
+      {/* User Filter */}
+      <div className="w-64">
+        <UserSelectDropdown
+          users={users}
+          value={userFilter}
+          onChange={setUserFilter}
+          placeholder="Tất cả user"
+        />
+      </div>
+
       {/* Payout List */}
       <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
         {loading ? (
@@ -246,7 +262,7 @@ export default function PayoutsPage() {
               <div className="col-span-1"></div>
             </div>
 
-            {users.map((user) => (
+            {visibleUsers.map((user) => (
               <div key={user.userId}>
                 {/* Main Row */}
                 <div

@@ -771,12 +771,12 @@ app.get('/api/users', async (req, res) => {
 // Convert Logs API
 app.get('/api/convert-logs', async (req, res) => {
   try {
-    const { product = '', user = '', limit = 50, offset = 0 } = req.query;
+    const { product = '', user_id = '', limit = 50, offset = 0 } = req.query;
     const parsedLimit = parseInt(limit);
     const parsedOffset = parseInt(offset);
     const [logs, total] = await Promise.all([
-      convertLogStore.getFiltered(product, user, parsedLimit, parsedOffset),
-      convertLogStore.getFilteredCount(product, user),
+      convertLogStore.getFiltered(product, user_id, parsedLimit, parsedOffset),
+      convertLogStore.getFilteredCount(product, user_id),
     ]);
     res.json({ logs, total });
   } catch (err) {
