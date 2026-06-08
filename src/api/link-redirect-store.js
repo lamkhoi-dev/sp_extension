@@ -164,10 +164,13 @@ const linkRedirectStore = {
 
     // 2. Cache miss → DB (expiry enforced in SQL to use index)
     const now = new Date().toISOString();
-    const row = await db.get(
-      'SELECT * FROM link_redirects WHERE token = ? AND expires_at > ?',
-      [token, now]
-    );
+    const row = await db.get(`
+      SELECT lr.*,
+             cl.commission_rate, cl.commission_amount, cl.price as product_price
+      FROM link_redirects lr
+      LEFT JOIN convert_logs cl ON lr.convert_log_id = cl.id
+      WHERE lr.token = ? AND lr.expires_at > ?
+    `, [token, now]);
 
     if (!row) {
       // Cache negative result for 60s to prevent DB hammering on invalid tokens
