@@ -84,28 +84,43 @@ function calculateCustomSplit(nc, customRate) {
   return { admin, user: userAmount };
 }
 
-// SQL: Get all matched orders — fetch sub_id4 from orders directly + referrer_id from convert_logs
+// SQL: Get all matched orders — match at ORDER level, not item level.
+// If ANY item in an order has a convert_log entry (status=success), ALL items of that order
+// are included. This handles the case where Shopee stores net_commission on a different
+// item_id row than the one that generated the convert_log (e.g. multi-item orders).
 const MATCHED_ORDERS_SQL = `
-  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id4 as cl_sub_id4
+  SELECT DISTINCT o.*, matched.sub_id2 as referrer_id, o.sub_id4 as cl_sub_id4
   FROM orders o
-  INNER JOIN convert_logs cl ON (
-    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-    OR
-    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-  )
-  WHERE cl.status = 'success' AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
+  INNER JOIN (
+    SELECT o2.order_id, o2.sub_id1, MIN(cl2.sub_id2) as sub_id2
+    FROM orders o2
+    INNER JOIN convert_logs cl2 ON (
+      cl2.status = 'success' AND (
+        (o2.item_id != '' AND o2.item_id = cl2.item_id AND o2.sub_id1 = cl2.sub_id1)
+        OR (cl2.item_id = '' AND o2.item_name != '' AND o2.item_name = cl2.product_name AND o2.sub_id1 = cl2.sub_id1)
+      )
+    )
+    GROUP BY o2.order_id, o2.sub_id1
+  ) matched ON (matched.order_id = o.order_id AND matched.sub_id1 = o.sub_id1)
+  WHERE COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
   ORDER BY o.order_time DESC
 `;
 
 const MATCHED_ORDERS_BY_USER_SQL = `
-  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id4 as cl_sub_id4
+  SELECT DISTINCT o.*, matched.sub_id2 as referrer_id, o.sub_id4 as cl_sub_id4
   FROM orders o
-  INNER JOIN convert_logs cl ON (
-    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-    OR
-    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-  )
-  WHERE cl.status = 'success' AND o.sub_id1 = ? AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
+  INNER JOIN (
+    SELECT o2.order_id, o2.sub_id1, MIN(cl2.sub_id2) as sub_id2
+    FROM orders o2
+    INNER JOIN convert_logs cl2 ON (
+      cl2.status = 'success' AND (
+        (o2.item_id != '' AND o2.item_id = cl2.item_id AND o2.sub_id1 = cl2.sub_id1)
+        OR (cl2.item_id = '' AND o2.item_name != '' AND o2.item_name = cl2.product_name AND o2.sub_id1 = cl2.sub_id1)
+      )
+    )
+    GROUP BY o2.order_id, o2.sub_id1
+  ) matched ON (matched.order_id = o.order_id AND matched.sub_id1 = o.sub_id1)
+  WHERE o.sub_id1 = ? AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
   ORDER BY o.order_time DESC
 `;
 
@@ -118,17 +133,21 @@ const CUSTOM_ORDERS_BY_USER_SQL = `
   ORDER BY o.order_time DESC
 `;
 
-// Orders where this user is the REFERRER (not the buyer)
+// Orders where this user is the REFERRER (not the buyer) — order-level match same as above
 const REFERRER_ORDERS_BY_USER_SQL = `
-  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id1 as buyer_id
+  SELECT DISTINCT o.*, matched.sub_id2 as referrer_id, o.sub_id1 as buyer_id
   FROM orders o
-  INNER JOIN convert_logs cl ON (
-    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-    OR
-    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-  )
-  WHERE cl.status = 'success' AND cl.sub_id2 = ?
-    AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
+  INNER JOIN (
+    SELECT DISTINCT o2.order_id, o2.sub_id1, cl2.sub_id2
+    FROM orders o2
+    INNER JOIN convert_logs cl2 ON (
+      cl2.status = 'success' AND cl2.sub_id2 = ? AND (
+        (o2.item_id != '' AND o2.item_id = cl2.item_id AND o2.sub_id1 = cl2.sub_id1)
+        OR (cl2.item_id = '' AND o2.item_name != '' AND o2.item_name = cl2.product_name AND o2.sub_id1 = cl2.sub_id1)
+      )
+    )
+  ) matched ON (matched.order_id = o.order_id AND matched.sub_id1 = o.sub_id1)
+  WHERE COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
   ORDER BY o.order_time DESC
 `;
 
@@ -858,10 +877,18 @@ const payoutStore = {
           const rate = rates.f0;
           const orders = await tx.all(`
             SELECT DISTINCT o.* FROM orders o
-            INNER JOIN convert_logs cl ON (
-              (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1) OR
-              (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-            ) WHERE cl.status = 'success' AND o.sub_id1 = $1
+            INNER JOIN (
+              SELECT o2.order_id, o2.sub_id1
+              FROM orders o2
+              INNER JOIN convert_logs cl2 ON (
+                cl2.status = 'success' AND (
+                  (o2.item_id != '' AND o2.item_id = cl2.item_id AND o2.sub_id1 = cl2.sub_id1)
+                  OR (cl2.item_id = '' AND o2.item_name != '' AND o2.item_name = cl2.product_name AND o2.sub_id1 = cl2.sub_id1)
+                )
+              )
+              GROUP BY o2.order_id, o2.sub_id1
+            ) matched ON (matched.order_id = o.order_id AND matched.sub_id1 = o.sub_id1)
+            WHERE o.sub_id1 = $1
               AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
             ORDER BY o.order_time ASC
           `, [userId]);
@@ -879,12 +906,18 @@ const payoutStore = {
         const getReferrerUnpaid = async () => {
           const paidIds = new Set([...getPaidIds('referrer'), ...getPaidIds('f1')]);
           const refOrders = await tx.all(`
-            SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id1 as buyer_id FROM orders o
-            INNER JOIN convert_logs cl ON (
-              (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1) OR
-              (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-            ) WHERE cl.status = 'success' AND cl.sub_id2 = $1
-              AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
+            SELECT DISTINCT o.*, matched.sub_id2 as referrer_id, o.sub_id1 as buyer_id FROM orders o
+            INNER JOIN (
+              SELECT DISTINCT o2.order_id, o2.sub_id1, cl2.sub_id2
+              FROM orders o2
+              INNER JOIN convert_logs cl2 ON (
+                cl2.status = 'success' AND cl2.sub_id2 = $1 AND (
+                  (o2.item_id != '' AND o2.item_id = cl2.item_id AND o2.sub_id1 = cl2.sub_id1)
+                  OR (cl2.item_id = '' AND o2.item_name != '' AND o2.item_name = cl2.product_name AND o2.sub_id1 = cl2.sub_id1)
+                )
+              )
+            ) matched ON (matched.order_id = o.order_id AND matched.sub_id1 = o.sub_id1)
+            WHERE COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
             ORDER BY o.order_time ASC
           `, [userId]);
           const refRate = rates.f1;
