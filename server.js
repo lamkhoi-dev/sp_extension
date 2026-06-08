@@ -284,7 +284,7 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
 
     ${commissionBox}
 
-    <a class="btn" href="${link}">Mua ngay trên Shopee 🛍️</a>
+    <a class="btn" href="${link}">Mua ngay trên Shopee</a>
 
     <div class="notes-wrap">
       <button class="notes-toggle" id="notesBtn" onclick="toggleNotes()">
