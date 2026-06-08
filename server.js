@@ -311,16 +311,7 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
         </div>
 
         <div class="note-section">
-          <div class="note-sec-title">3. Mẹo "Làm sạch" giỏ hàng (Tránh dính mã ngầm)</div>
-          <div class="note-sec-body">
-            Nếu bạn đặt nhiều đơn trong 1 ngày hoặc tài khoản thường xuyên rớt đơn, hãy tiến hành <b>XÓA BỘ NHỚ ĐỆM</b> sau mỗi đơn hàng.<br><br>
-            <b>Cách xử lý:</b> Xem hướng dẫn ở video bên trên.<br>
-            <b>Mục đích:</b> Thao tác này giúp "reset" lại Cookie và xóa sạch dấu vết của Live/Video trước đó.
-          </div>
-        </div>
-
-        <div class="note-section">
-          <div class="note-sec-title">4. Tỉ lệ rủi ro ngoài ý muốn</div>
+          <div class="note-sec-title">3. Tỉ lệ rủi ro ngoài ý muốn</div>
           <div class="note-sec-body">
             Dù làm đúng các bước, vẫn có khoảng 10% đơn bị rớt do:<br>
             • <b>9%:</b> App bị lag, không kịp nhảy mã tiếp thị.<br>
