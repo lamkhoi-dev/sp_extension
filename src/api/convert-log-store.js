@@ -64,7 +64,7 @@ const convertLogStore = {
     `, [limit, offset]);
   },
 
-  async getByUser(userId, limit = 20) {
+  async getByUser(userId, limit = 20, offset = 0) {
     return db.all(`
       SELECT cl.*,
              u.avatar as user_avatar,
@@ -77,8 +77,13 @@ const convertLogStore = {
       LEFT JOIN link_redirects lr ON cl.redirect_token = lr.token
       WHERE cl.user_id = ?
       ORDER BY cl.created_at DESC
-      LIMIT ?
-    `, [userId, limit]);
+      LIMIT ? OFFSET ?
+    `, [userId, limit, offset]);
+  },
+
+  async getByUserCount(userId) {
+    const row = await db.get('SELECT COUNT(*) as count FROM convert_logs WHERE user_id = ?', [userId]);
+    return row?.count || 0;
   },
 
   async getCount() {
@@ -111,7 +116,7 @@ const convertLogStore = {
     `, [todayStart.toISOString()]);
   },
 
-  async search(query, limit = 20) {
+  async search(query, limit = 20, offset = 0) {
     const q = `%${query}%`;
     return db.all(`
       SELECT cl.*,
@@ -125,8 +130,18 @@ const convertLogStore = {
       LEFT JOIN link_redirects lr ON cl.redirect_token = lr.token
       WHERE cl.user_name LIKE ? OR cl.product_name LIKE ? OR cl.original_link LIKE ?
       ORDER BY cl.created_at DESC
-      LIMIT ?
-    `, [q, q, q, limit]);
+      LIMIT ? OFFSET ?
+    `, [q, q, q, limit, offset]);
+  },
+
+  async searchCount(query) {
+    const q = `%${query}%`;
+    const row = await db.get(`
+      SELECT COUNT(*) as count 
+      FROM convert_logs 
+      WHERE user_name LIKE ? OR product_name LIKE ? OR original_link LIKE ?
+    `, [q, q, q]);
+    return row?.count || 0;
   },
 
   async getAllByUser(userId) {

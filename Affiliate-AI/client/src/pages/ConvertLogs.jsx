@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import Tooltip from '../components/ui/Tooltip';
 import {
   Link2, ExternalLink, Copy, Check, RefreshCw, CheckCircle,
@@ -143,7 +143,18 @@ function ClicksModal({ log, onClose }) {
 
 // ─── Main Page ───────────────────────────────────────────
 export default function ConvertLogsPage() {
-  const { logs, stats, loading, search, setSearch, refresh } = useConvertLogs();
+  const {
+    logs,
+    stats,
+    loading,
+    search,
+    setSearch,
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    totalCount,
+    refresh,
+  } = useConvertLogs();
   const [copiedId, setCopiedId] = useState(null);
   const [clicksModal, setClicksModal] = useState(null); // log row being inspected
 
@@ -167,7 +178,9 @@ export default function ConvertLogsPage() {
       textArea.select();
       if (document.execCommand('copy')) { setCopiedId(id); setTimeout(() => setCopiedId(null), 2000); }
       document.body.removeChild(textArea);
-    } catch {}
+    } catch (err) {
+      console.warn('Fallback copy failed', err);
+    }
   };
 
   const columns = [
@@ -387,6 +400,13 @@ export default function ConvertLogsPage() {
             columns={columns}
             data={logs}
             searchPlaceholder="Tìm kiếm theo user, sản phẩm, link..."
+            serverSide={true}
+            totalCount={totalCount}
+            currentPage={currentPage}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onSearchChange={setSearch}
+            searchValue={search}
           />
         )}
       </div>

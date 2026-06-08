@@ -10,36 +10,53 @@ export default function DataTable({
   pageSize = 10,
   onRowClick,
   getRowClassName,
+  // Server-side pagination props
+  serverSide = false,
+  totalCount = 0,
+  currentPage = 1,
+  onPageChange,
+  onSearchChange,
+  searchValue = '',
 }) {
   const [search, setSearch] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPageState, setCurrentPageState] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
+  const searchVal = serverSide ? searchValue : search;
+  const activePage = serverSide ? currentPage : currentPageState;
+
   // Filter data based on search
-  const filteredData = data.filter((row) =>
-    columns.some((col) => {
-      const value = row[col.key];
-      if (value === null || value === undefined) return false;
-      return String(value).toLowerCase().includes(search.toLowerCase());
-    })
-  );
+  const filteredData = serverSide
+    ? data
+    : data.filter((row) =>
+        columns.some((col) => {
+          const value = row[col.key];
+          if (value === null || value === undefined) return false;
+          return String(value).toLowerCase().includes(searchVal.toLowerCase());
+        })
+      );
 
   // Sort data
-  const sortedData = [...filteredData].sort((a, b) => {
-    if (!sortConfig.key) return 0;
-    const aVal = a[sortConfig.key];
-    const bVal = b[sortConfig.key];
-    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-    return 0;
-  });
+  const sortedData = serverSide
+    ? filteredData
+    : [...filteredData].sort((a, b) => {
+        if (!sortConfig.key) return 0;
+        const aVal = a[sortConfig.key];
+        const bVal = b[sortConfig.key];
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
 
   // Pagination
-  const totalPages = Math.ceil(sortedData.length / pageSize);
-  const startIndex = (currentPage - 1) * pageSize;
-  const paginatedData = sortedData.slice(startIndex, startIndex + pageSize);
+  const totalPages = serverSide
+    ? Math.ceil(totalCount / pageSize)
+    : Math.ceil(sortedData.length / pageSize);
+  const startIndex = (activePage - 1) * pageSize;
+  const paginatedData = serverSide ? data : sortedData.slice(startIndex, startIndex + pageSize);
 
   const handleSort = (key) => {
+    if (serverSide) return; // Disable client-side sorting in server-side mode
     setSortConfig((prev) => ({
       key,
       direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
@@ -56,10 +73,14 @@ export default function DataTable({
             <input
               type="text"
               placeholder={searchPlaceholder}
-              value={search}
+              value={searchVal}
               onChange={(e) => {
-                setSearch(e.target.value);
-                setCurrentPage(1);
+                if (serverSide) {
+                  onSearchChange?.(e.target.value);
+                } else {
+                  setSearch(e.target.value);
+                  setCurrentPageState(1);
+                }
               }}
               className="w-full md:w-80 pl-10 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -136,22 +157,38 @@ export default function DataTable({
       {/* Pagination - always visible */}
       <div className="flex items-center justify-between mt-4">
         <p className="text-sm text-slate-500">
-          Hiển thị {sortedData.length === 0 ? 0 : startIndex + 1}–{Math.min(startIndex + pageSize, sortedData.length)} / {sortedData.length} kết quả
+          Hiển thị {serverSide ? (totalCount === 0 ? 0 : startIndex + 1) : (sortedData.length === 0 ? 0 : startIndex + 1)}–
+          {serverSide ? Math.min(startIndex + pageSize, totalCount) : Math.min(startIndex + pageSize, sortedData.length)} / 
+          {serverSide ? totalCount : sortedData.length} kết quả
         </p>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
+            onClick={() => {
+              const newPage = Math.max(1, activePage - 1);
+              if (serverSide) {
+                onPageChange?.(newPage);
+              } else {
+                setCurrentPageState(newPage);
+              }
+            }}
+            disabled={activePage === 1}
             className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <span className="px-3 py-1 text-sm text-slate-600 dark:text-slate-400">
-            {totalPages === 0 ? '0 / 0' : `${currentPage} / ${totalPages}`}
+            {totalPages === 0 ? '0 / 0' : `${activePage} / ${totalPages}`}
           </span>
           <button
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages || totalPages === 0}
+            onClick={() => {
+              const newPage = Math.min(totalPages, activePage + 1);
+              if (serverSide) {
+                onPageChange?.(newPage);
+              } else {
+                setCurrentPageState(newPage);
+              }
+            }}
+            disabled={activePage === totalPages || totalPages === 0}
             className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
           >
             <ChevronRight className="h-4 w-4" />

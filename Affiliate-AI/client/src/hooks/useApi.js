@@ -131,16 +131,24 @@ export function useConvertLogs() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
 
-  const fetchLogs = useCallback(async (query = '') => {
+  const fetchLogs = useCallback(async (page, size, query = '') => {
     setLoading(true);
     try {
-      const params = query ? `?search=${encodeURIComponent(query)}&limit=100` : '?limit=100';
-      const [logsData, statsData] = await Promise.all([
-        apiFetch(`/convert-logs${params}`),
+      const offset = (page - 1) * size;
+      let url = `/convert-logs?limit=${size}&offset=${offset}`;
+      if (query) {
+        url += `&search=${encodeURIComponent(query)}`;
+      }
+      const [logsResponse, statsData] = await Promise.all([
+        apiFetch(url),
         apiFetch('/convert-logs/stats'),
       ]);
-      setLogs(logsData);
+      setLogs(logsResponse.logs || []);
+      setTotalCount(logsResponse.total || 0);
       setStats(statsData);
     } catch (err) {
       console.error('Convert logs error:', err);
@@ -149,9 +157,26 @@ export function useConvertLogs() {
     }
   }, []);
 
-  useEffect(() => { fetchLogs(search); }, [fetchLogs, search]);
+  useEffect(() => {
+    fetchLogs(currentPage, pageSize, search);
+  }, [fetchLogs, currentPage, pageSize, search]);
 
-  return { logs, stats, loading, search, setSearch, refresh: () => fetchLogs(search) };
+  return {
+    logs,
+    stats,
+    loading,
+    search,
+    setSearch: (val) => {
+      setSearch(val);
+      setCurrentPage(1);
+    },
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    totalCount,
+    refresh: () => fetchLogs(currentPage, pageSize, search),
+  };
 }
 
 // Click Events for redirect analytics

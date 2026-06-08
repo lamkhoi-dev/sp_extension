@@ -770,13 +770,41 @@ app.get('/api/users', async (req, res) => {
 
 // Convert Logs API
 app.get('/api/convert-logs', async (req, res) => {
-  const { search, user_id, limit = 50, offset = 0 } = req.query;
-  if (search) {
-    res.json(await convertLogStore.search(search, parseInt(limit)));
-  } else if (user_id) {
-    res.json(await convertLogStore.getByUser(user_id, parseInt(limit)));
-  } else {
-    res.json(await convertLogStore.getRecent(parseInt(limit), parseInt(offset)));
+  try {
+    const { search, user_id, limit = 50, offset = 0 } = req.query;
+    const parsedLimit = parseInt(limit);
+    const parsedOffset = parseInt(offset);
+
+    let logs = [];
+    let total = 0;
+
+    if (search) {
+      const [logsData, totalCount] = await Promise.all([
+        convertLogStore.search(search, parsedLimit, parsedOffset),
+        convertLogStore.searchCount(search),
+      ]);
+      logs = logsData;
+      total = totalCount;
+    } else if (user_id) {
+      const [logsData, totalCount] = await Promise.all([
+        convertLogStore.getByUser(user_id, parsedLimit, parsedOffset),
+        convertLogStore.getByUserCount(user_id),
+      ]);
+      logs = logsData;
+      total = totalCount;
+    } else {
+      const [logsData, totalCount] = await Promise.all([
+        convertLogStore.getRecent(parsedLimit, parsedOffset),
+        convertLogStore.getCount(),
+      ]);
+      logs = logsData;
+      total = totalCount;
+    }
+
+    res.json({ logs, total });
+  } catch (err) {
+    logger.error('ConvertLogs', `GET /api/convert-logs failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
   }
 });
 
