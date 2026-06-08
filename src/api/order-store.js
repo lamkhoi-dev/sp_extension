@@ -118,7 +118,49 @@ function parseShopeeCSV(csvText) {
     records.push(record);
   }
 
+  // Redistribute net commission for multi-item orders
+  redistributeNetCommissions(records);
+
   return records;
+}
+
+function redistributeNetCommissions(records) {
+  if (!records || records.length === 0) return;
+
+  const ordersMap = {};
+  for (const r of records) {
+    if (!r.order_id) continue;
+    if (!ordersMap[r.order_id]) {
+      ordersMap[r.order_id] = [];
+    }
+    ordersMap[r.order_id].push(r);
+  }
+
+  for (const orderId in ordersMap) {
+    const group = ordersMap[orderId];
+    if (group.length <= 1) continue;
+
+    const sumNet = group.reduce((sum, r) => sum + (r.net_commission || 0), 0);
+    const sumProd = group.reduce((sum, r) => sum + (r.total_product_commission || 0), 0);
+
+    if (sumNet <= 0) continue;
+
+    for (const r of group) {
+      let expectedNet = 0;
+      if (sumProd > 0) {
+        expectedNet = ((r.total_product_commission || 0) / sumProd) * sumNet;
+      } else {
+        const itemVal = (r.price || 0) * (r.quantity || 0);
+        const sumVal = group.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 0), 0);
+        if (sumVal > 0) {
+          expectedNet = (itemVal / sumVal) * sumNet;
+        } else {
+          expectedNet = sumNet / group.length;
+        }
+      }
+      r.net_commission = parseFloat(expectedNet.toFixed(4));
+    }
+  }
 }
 
 // ─── Upsert SQL ─────────────────────────────────────────
