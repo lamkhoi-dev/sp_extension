@@ -676,8 +676,8 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
       const zaloGroupLink = process.env.ZALO_GROUP_LINK || 'https://zalo.me/g/3othppdezfzvxqthz7sg';
 
       const msg = `${mentionTag} ✅ Em gửi link ạ!\n\n` +
-        `✨ Link hoàn tiền:\n${linkToShow}\n\n` +
         `${commissionLine}\n\n` +
+        `✨ Link hoàn tiền:\n${linkToShow}\n\n` +
         `⚠️ Lưu ý QUAN TRỌNG:\n` +
         `1. ẤN và GIỮ link bên trên ⤴️\n` +
         `2. Chọn "Mở link bằng trình duyệt"\n\n` +
