@@ -239,7 +239,8 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
   .popup-title{font-size:14px;font-weight:700;color:#c0392b;text-align:center;line-height:1.5;margin-bottom:4px}
   .popup-intro{font-size:12px;color:#666;text-align:center;margin-bottom:14px;line-height:1.5}
   .popup-sum-title{font-size:13px;font-weight:700;color:#222;margin:14px 0 8px}
-  .popup-step{display:flex;align-items:flex-start;gap:6px;margin-bottom:7px;font-size:13px;color:#333;line-height:1.5}
+  .popup-step{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;font-size:16px;color:#333;line-height:1.5}
+  .popup-step-emoji{font-size:20px;flex-shrink:0;line-height:1.3}
   .popup-arrow{color:#ee4d2d;font-weight:700;flex-shrink:0}
   .popup-btn{display:block;width:100%;background:#ee4d2d;color:#fff;font-size:15px;font-weight:700;text-align:center;padding:13px;border-radius:8px;border:none;cursor:pointer;margin-top:16px}
   .popup-btn:hover{background:#d43f22}
@@ -264,11 +265,10 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
   <div class="popup-box">
     <p class="popup-title">⚠️ Để nhận được tiền hoàn, vui lòng đọc kỹ các quy tắc "vàng" bên dưới!</p>
     <p class="popup-intro">Xem thêm video hướng dẫn chi tiết trong phần Lưu ý bên dưới trang.</p>
-    <p class="popup-sum-title">💡 Tóm lại — quy trình chuẩn:</p>
-    <div class="popup-step"><span class="popup-arrow">➡️</span><span>Dọn sạch giỏ hàng + Thoát hẳn app Shopee</span></div>
-    <div class="popup-step"><span class="popup-arrow">➡️</span><span>Click nút <b>Mua Ngay Trên Shopee</b> bên dưới</span></div>
-    <div class="popup-step"><span class="popup-arrow">➡️</span><span>Lướt xem ảnh, đọc mô tả, đọc đánh giá sản phẩm</span></div>
-    <div class="popup-step"><span class="popup-arrow">➡️</span><span>Đặt hàng thường — <b>không mua từ Live/Video</b></span></div>
+    <div class="popup-step"><span class="popup-step-emoji">1️⃣</span><span>Xóa giỏ hàng + thoát App Shopee trước khi click link</span></div>
+    <div class="popup-step"><span class="popup-step-emoji">2️⃣</span><span>Click link: Mua Ngay Trên Shopee</span></div>
+    <div class="popup-step"><span class="popup-step-emoji">3️⃣</span><span>Lướt xem ảnh, đọc mô tả, đánh giá <b>(khoảng 5 đến 10 giây)</b></span></div>
+    <div class="popup-step"><span class="popup-step-emoji">4️⃣</span><span>Đặt hàng (không Live/Video)</span></div>
     <button class="popup-btn" onclick="closePopup()">Đã hiểu / Đóng</button>
   </div>
 </div>
