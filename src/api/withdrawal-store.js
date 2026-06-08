@@ -109,8 +109,8 @@ function parseRuttienArgs(text) {
   const bankCode = normaliseBankCode(bankRaw);
   if (!bankCode) return { ok: false, error: 'unknown_bank', value: bankRaw };
 
-  // Account number: 8-19 digits
-  if (!/^\d{8,19}$/.test(accountRaw)) {
+  // Account number: 6-20 digits (old accounts like ACB can be 7 digits)
+  if (!/^\d{6,20}$/.test(accountRaw)) {
     return { ok: false, error: 'bad_account' };
   }
 
