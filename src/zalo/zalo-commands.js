@@ -678,10 +678,9 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
       const msg = `${mentionTag} ✅ Em gửi link ạ!\n\n` +
         `✨ Link hoàn tiền:\n${linkToShow}\n\n` +
         `${commissionLine}\n\n` +
-        `⚠️ Lưu ý:\n` +
-        `1.Không xem VIDEO/LIVE sau khi click link\n` +
-        `2.Xóa sản phẩm khỏi giỏ hàng nếu đã thêm trước đó\n` +
-        `3.Xác nhận "Đã nhận được hàng" khi đơn giao thành công\n\n` +
+        `⚠️ Lưu ý QUAN TRỌNG:\n` +
+        `1. ẤN và GIỮ link bên trên ⤴️\n` +
+        `2. Chọn "Mở link bằng trình duyệt"\n\n` +
         `🚀 Kiếm thêm hoa hồng khi giới thiệu bạn bè:\n` +
         `🌹 F1: ${rates.f1}% hoa hồng\n` +
         `🌹 F2: ${rates.f2}% hoa hồng\n` +
@@ -869,10 +868,9 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
         `📱 Khách: ${phone}\n` +
         `✨ Link hoàn tiền:\n${linkToShow}\n` +
         `💰 Hoa hồng ước tính: ${commissionText}\n\n` +
-        `⚠️ Lưu ý:\n` +
-        `1. Không xem VIDEO/LIVE sau khi click link\n` +
-        `2. Hãy xóa giỏ hàng nếu đã thêm trước đó\n` +
-        `3. Vui lòng xác nhận "Đã nhận được hàng" trên Shopee khi đơn đã giao thành công\n\n` +
+        `⚠️ Lưu ý QUAN TRỌNG:\n` +
+        `1. ẤN và GIỮ link bên trên ⤴️\n` +
+        `2. Chọn "Mở link bằng trình duyệt"\n\n` +
         `🔔 Gửi link cho khách và nhắc đặt hàng trong hôm nay nhé 🎉`;
 
       const msgContent = {

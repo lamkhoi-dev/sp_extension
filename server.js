@@ -185,17 +185,19 @@ app.get('/s/:token', async (req, res) => {
 function buildLandingPage({ product_name, affiliate_link, commission_rate, commission_amount, product_price, user_name, token }) {
   const name = (product_name || 'Sản phẩm Shopee').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const link = (affiliate_link || '#').replace(/"/g, '&quot;');
-  const rate = Number(commission_rate) || 0;
-  const amount = Number(commission_amount) || 0;
+  // User (F0) receives 60% of gross commission
+  const F0 = 0.6;
+  const rate = Math.round((Number(commission_rate) || 0) * F0 * 10) / 10;
+  const amount = Math.round((Number(commission_amount) || 0) * F0);
   const price = Number(product_price) || 0;
   const fmtVND = n => n.toLocaleString('vi-VN') + 'đ';
 
   const commissionBox = (rate > 0 || amount > 0) ? `
     <div class="comm-box">
-      <div class="comm-title">💰 Hoa hồng ước tính</div>
+      <div class="comm-title">💰 Hoa hồng hoàn tiền của bạn</div>
       <div class="comm-row">
-        <span class="comm-rate">~${rate.toFixed(1)}%</span>
-        ${amount > 0 ? `<span class="comm-sep">≈</span><span class="comm-amount">${fmtVND(amount)}</span>` : ''}
+        ${rate > 0 ? `<span class="comm-rate">~${rate}%</span>` : ''}
+        ${amount > 0 ? `<span class="comm-sep">${rate > 0 ? '≈' : ''}</span><span class="comm-amount">${fmtVND(amount)}</span>` : ''}
       </div>
       ${price > 0 ? `<div class="comm-note">Giá sản phẩm: ${fmtVND(price)}</div>` : ''}
     </div>` : '';
@@ -210,10 +212,9 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:#f5f5f5;font-family:'Inter',system-ui,sans-serif;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:0 0 40px}
   .card{background:#fff;width:100%;max-width:450px;border-radius:0 0 12px 12px;box-shadow:0 4px 24px rgba(0,0,0,.08);overflow:hidden}
-  .header{background:#ee4d2d;padding:16px 20px;display:flex;align-items:center;gap:10px}
-  .header-logo{width:28px;height:28px;background:rgba(255,255,255,.2);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;line-height:1}
-  .header-title{color:#fff;font-size:16px;font-weight:700;letter-spacing:.2px}
-  .header-sub{color:rgba(255,255,255,.8);font-size:11px;margin-top:1px}
+  .header{background:#ee4d2d;padding:16px 20px}
+  .header-title{color:#fff;font-size:17px;font-weight:700;letter-spacing:.2px}
+  .header-sub{color:rgba(255,255,255,.85);font-size:11px;margin-top:2px}
   .body{padding:20px}
   .product-name{font-size:16px;font-weight:600;color:#222;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:16px}
   .comm-box{background:#fdf5e6;border:1.5px dashed #ee4d2d;border-radius:10px;padding:14px 16px;margin-bottom:16px}
@@ -226,26 +227,49 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
   .btn{display:block;width:100%;background:#ee4d2d;color:#fff;font-size:16px;font-weight:700;text-align:center;padding:15px 20px;border-radius:8px;text-decoration:none;transition:background .15s;margin-bottom:16px}
   .btn:hover{background:#d43f22}
   .notes-wrap{border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}
-  .notes-toggle{width:100%;background:#fffbf5;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;border:none;font-size:13px;font-weight:600;color:#555;text-align:left;gap:8px}
+  .notes-toggle{width:100%;background:#fffbf5;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;border:none;font-size:13px;font-weight:600;color:#c0392b;text-align:left;gap:8px}
   .arrow{font-size:10px;transition:transform .2s;display:inline-block;flex-shrink:0}
   .notes-toggle.open .arrow{transform:rotate(180deg)}
   .notes-body{display:none;padding:14px 16px;background:#fff;border-top:1px solid #f0e6d3}
   .notes-body.open{display:block}
   .note-item{display:flex;gap:10px;margin-bottom:10px;font-size:13px;color:#444;line-height:1.5}
   .note-item:last-child{margin-bottom:0}
-  .note-num{background:#ee4d2d;color:#fff;border-radius:50%;width:20px;height:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;margin-top:1px}
-  .note-text b{color:#d44000}
+  .note-emoji{font-size:18px;flex-shrink:0;line-height:1.4}
+  .note-text{color:#c0392b;font-weight:600}
+  .note-warn{margin-top:12px;padding:8px 10px;background:#fff3f2;border-radius:6px;font-size:13px;font-weight:700;color:#c0392b;text-align:center}
   .footer{padding:14px 20px;text-align:center;font-size:11px;color:#bbb;border-top:1px solid #f5f5f5}
+  /* Popup overlay */
+  .popup-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px}
+  .popup-box{background:#fff;border-radius:16px;padding:24px 20px;max-width:360px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2)}
+  .popup-title{font-size:15px;font-weight:700;color:#222;text-align:center;line-height:1.5;margin-bottom:6px}
+  .popup-subtitle{font-size:12px;color:#888;text-align:center;margin-bottom:16px}
+  .popup-step{display:flex;gap:8px;margin-bottom:10px;font-size:13px;color:#c0392b;font-weight:600;line-height:1.5}
+  .popup-step-emoji{font-size:18px;flex-shrink:0;line-height:1.3}
+  .popup-warn{font-size:14px;font-weight:800;color:#c0392b;text-align:center;margin:14px 0}
+  .popup-btn{display:block;width:100%;background:#ee4d2d;color:#fff;font-size:15px;font-weight:700;text-align:center;padding:13px;border-radius:8px;border:none;cursor:pointer;margin-top:16px}
+  .popup-btn:hover{background:#d43f22}
 </style>
 </head>
 <body>
+
+<!-- Popup on load -->
+<div class="popup-overlay" id="popup">
+  <div class="popup-box">
+    <p class="popup-title">Quý khách đọc kỹ lưu ý dưới nút<br>Mua Ngay Trên Shopee<br>để không bị mất hoa hồng!</p>
+    <p class="popup-subtitle">Cập nhật hướng dẫn mới nhất</p>
+    <div class="popup-step"><span class="popup-step-emoji">1️⃣</span><span>Xóa giỏ hàng + thoát App Shopee trước khi click link</span></div>
+    <div class="popup-step"><span class="popup-step-emoji">2️⃣</span><span>Click link: Mua Ngay Trên Shopee</span></div>
+    <div class="popup-step"><span class="popup-step-emoji">3️⃣</span><span>Lướt xem ảnh, đọc mô tả, đánh giá</span></div>
+    <div class="popup-step"><span class="popup-step-emoji">4️⃣</span><span>Đặt hàng (không Live/Video)</span></div>
+    <p class="popup-warn">‼️ Xóa bộ nhớ đệm thường xuyên</p>
+    <button class="popup-btn" onclick="closePopup()">Đã hiểu / Đóng</button>
+  </div>
+</div>
+
 <div class="card">
   <div class="header">
-    <div class="header-logo">🛍️</div>
-    <div>
-      <div class="header-title">Hoàn Tiền Shopee</div>
-      <div class="header-sub">Mua sắm thông minh — nhận tiền về tài khoản</div>
-    </div>
+    <div class="header-title">Hoàn Tiền Shopee</div>
+    <div class="header-sub">Mua sắm thông minh — nhận tiền về tài khoản</div>
   </div>
 
   <div class="body">
@@ -257,21 +281,23 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
 
     <div class="notes-wrap">
       <button class="notes-toggle" id="notesBtn" onclick="toggleNotes()">
-        <span>⚠️ Lưu ý để được hoàn tiền</span>
+        <span>⚠️ Lưu ý QUAN TRỌNG — bấm để xem</span>
         <span class="arrow">▼</span>
       </button>
       <div class="notes-body" id="notesBody">
-        <div class="note-item"><div class="note-num">1</div><div class="note-text"><b>Đăng nhập Shopee trước</b> khi bấm nút mua — chưa đăng nhập sẽ không được ghi nhận hoa hồng.</div></div>
-        <div class="note-item"><div class="note-num">2</div><div class="note-text"><b>Không tìm kiếm lại</b> sản phẩm hoặc dùng link khác sau khi bấm — phải mua trực tiếp từ trang này.</div></div>
-        <div class="note-item"><div class="note-num">3</div><div class="note-text"><b>Thanh toán ngay</b> sau khi đặt hàng — không để đơn chờ lâu.</div></div>
-        <div class="note-item"><div class="note-num">4</div><div class="note-text">Hoa hồng sẽ được <b>cộng vào tài khoản</b> sau khi đơn hàng hoàn thành (thường 1–3 ngày).</div></div>
+        <div class="note-item"><span class="note-emoji">1️⃣</span><span class="note-text">Xóa giỏ hàng + thoát App Shopee trước khi click link</span></div>
+        <div class="note-item"><span class="note-emoji">2️⃣</span><span class="note-text">Click link: Mua Ngay Trên Shopee</span></div>
+        <div class="note-item"><span class="note-emoji">3️⃣</span><span class="note-text">Lướt xem ảnh, đọc mô tả, đánh giá</span></div>
+        <div class="note-item"><span class="note-emoji">4️⃣</span><span class="note-text">Đặt hàng (không Live/Video)</span></div>
+        <div class="note-warn">‼️ Xóa bộ nhớ đệm thường xuyên</div>
       </div>
     </div>
   </div>
 
-  <div class="footer">Được tạo bởi hệ thống Hoàn Tiền Shopee • Dùng chính xác link này để đảm bảo nhận hoàn tiền</div>
+  <div class="footer">Được tạo bởi hệ thống Hoàn Tiền Shopee</div>
 </div>
 <script>
+function closePopup(){ document.getElementById('popup').style.display='none'; }
 function toggleNotes(){
   var btn=document.getElementById('notesBtn');
   var body=document.getElementById('notesBody');
