@@ -232,22 +232,29 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
   .notes-toggle.open .arrow{transform:rotate(180deg)}
   .notes-body{display:none;padding:14px 16px;background:#fff;border-top:1px solid #f0e6d3}
   .notes-body.open{display:block}
-  .note-item{display:flex;gap:10px;margin-bottom:10px;font-size:13px;color:#444;line-height:1.5}
-  .note-item:last-child{margin-bottom:0}
-  .note-emoji{font-size:18px;flex-shrink:0;line-height:1.4}
-  .note-text{color:#c0392b;font-weight:600}
-  .note-warn{margin-top:12px;padding:8px 10px;background:#fff3f2;border-radius:6px;font-size:13px;font-weight:700;color:#c0392b;text-align:center}
   .footer{padding:14px 20px;text-align:center;font-size:11px;color:#bbb;border-top:1px solid #f5f5f5}
   /* Popup overlay */
-  .popup-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px}
-  .popup-box{background:#fff;border-radius:16px;padding:24px 20px;max-width:360px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2)}
-  .popup-title{font-size:15px;font-weight:700;color:#222;text-align:center;line-height:1.5;margin-bottom:6px}
-  .popup-subtitle{font-size:12px;color:#888;text-align:center;margin-bottom:16px}
-  .popup-step{display:flex;gap:8px;margin-bottom:10px;font-size:13px;color:#c0392b;font-weight:600;line-height:1.5}
-  .popup-step-emoji{font-size:18px;flex-shrink:0;line-height:1.3}
-  .popup-warn{font-size:14px;font-weight:800;color:#c0392b;text-align:center;margin:14px 0}
+  .popup-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto}
+  .popup-box{background:#fff;border-radius:16px;padding:20px 18px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.25);max-height:90vh;overflow-y:auto}
+  .popup-title{font-size:14px;font-weight:700;color:#c0392b;text-align:center;line-height:1.5;margin-bottom:4px}
+  .popup-intro{font-size:12px;color:#666;text-align:center;margin-bottom:14px;line-height:1.5}
+  .popup-sum-title{font-size:13px;font-weight:700;color:#222;margin:14px 0 8px}
+  .popup-step{display:flex;align-items:flex-start;gap:6px;margin-bottom:7px;font-size:13px;color:#333;line-height:1.5}
+  .popup-arrow{color:#ee4d2d;font-weight:700;flex-shrink:0}
   .popup-btn{display:block;width:100%;background:#ee4d2d;color:#fff;font-size:15px;font-weight:700;text-align:center;padding:13px;border-radius:8px;border:none;cursor:pointer;margin-top:16px}
   .popup-btn:hover{background:#d43f22}
+  /* Notes detail */
+  .note-section{margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #f0e6d3}
+  .note-section:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+  .note-sec-title{font-size:13px;font-weight:700;color:#c0392b;margin-bottom:6px;line-height:1.4}
+  .note-sec-body{font-size:12.5px;color:#444;line-height:1.7}
+  .note-sec-body b{color:#222}
+  .note-sec-quote{background:#fff3f2;border-left:3px solid #ee4d2d;padding:8px 10px;border-radius:0 6px 6px 0;font-size:12px;color:#c0392b;font-weight:600;margin:8px 0;line-height:1.5}
+  .note-sum{background:#fdf5e6;border-radius:8px;padding:12px 14px;margin-top:4px}
+  .note-sum-title{font-size:13px;font-weight:700;color:#222;margin-bottom:8px}
+  .note-sum-row{display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;font-size:13px;color:#333;line-height:1.5}
+  .note-sum-row:last-child{margin-bottom:0}
+  .note-sum-arrow{color:#ee4d2d;font-weight:700;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -255,13 +262,13 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
 <!-- Popup on load -->
 <div class="popup-overlay" id="popup">
   <div class="popup-box">
-    <p class="popup-title">Quý khách đọc kỹ lưu ý dưới nút<br>Mua Ngay Trên Shopee<br>để không bị mất hoa hồng!</p>
-    <p class="popup-subtitle">Cập nhật hướng dẫn mới nhất</p>
-    <div class="popup-step"><span class="popup-step-emoji">1️⃣</span><span>Xóa giỏ hàng + thoát App Shopee trước khi click link</span></div>
-    <div class="popup-step"><span class="popup-step-emoji">2️⃣</span><span>Click link: Mua Ngay Trên Shopee</span></div>
-    <div class="popup-step"><span class="popup-step-emoji">3️⃣</span><span>Lướt xem ảnh, đọc mô tả, đánh giá</span></div>
-    <div class="popup-step"><span class="popup-step-emoji">4️⃣</span><span>Đặt hàng (không Live/Video)</span></div>
-    <p class="popup-warn">‼️ Xóa bộ nhớ đệm thường xuyên</p>
+    <p class="popup-title">⚠️ Để nhận được tiền hoàn, vui lòng đọc kỹ các quy tắc "vàng" bên dưới!</p>
+    <p class="popup-intro">Xem thêm video hướng dẫn chi tiết trong phần Lưu ý bên dưới trang.</p>
+    <p class="popup-sum-title">💡 Tóm lại — quy trình chuẩn:</p>
+    <div class="popup-step"><span class="popup-arrow">➡️</span><span>Dọn sạch giỏ hàng + Thoát hẳn app Shopee</span></div>
+    <div class="popup-step"><span class="popup-arrow">➡️</span><span>Click nút <b>Mua Ngay Trên Shopee</b> bên dưới</span></div>
+    <div class="popup-step"><span class="popup-arrow">➡️</span><span>Lướt xem ảnh, đọc mô tả, đọc đánh giá sản phẩm</span></div>
+    <div class="popup-step"><span class="popup-arrow">➡️</span><span>Đặt hàng thường — <b>không mua từ Live/Video</b></span></div>
     <button class="popup-btn" onclick="closePopup()">Đã hiểu / Đóng</button>
   </div>
 </div>
@@ -285,11 +292,51 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
         <span class="arrow">▼</span>
       </button>
       <div class="notes-body" id="notesBody">
-        <div class="note-item"><span class="note-emoji">1️⃣</span><span class="note-text">Xóa giỏ hàng + thoát App Shopee trước khi click link</span></div>
-        <div class="note-item"><span class="note-emoji">2️⃣</span><span class="note-text">Click link: Mua Ngay Trên Shopee</span></div>
-        <div class="note-item"><span class="note-emoji">3️⃣</span><span class="note-text">Lướt xem ảnh, đọc mô tả, đánh giá</span></div>
-        <div class="note-item"><span class="note-emoji">4️⃣</span><span class="note-text">Đặt hàng (không Live/Video)</span></div>
-        <div class="note-warn">‼️ Xóa bộ nhớ đệm thường xuyên</div>
+        <p style="font-size:12.5px;color:#666;line-height:1.6;margin-bottom:14px">Để đảm bảo đơn hàng được ghi nhận và bạn nhận được tiền hoàn, vui lòng chú ý các quy tắc "vàng" dưới đây.</p>
+
+        <div class="note-section">
+          <div class="note-sec-title">1. Thao tác "NHƯ NGƯỜI MUA THẬT"</div>
+          <div class="note-sec-quote">Hệ thống AI Shopee rất thông minh, có thể phát hiện ra hành vi bất thường.<br>Người mua hàng bình thường không ai click link tiếp thị rồi thanh toán ngay cả!!!</div>
+          <div class="note-sec-body">
+            <b>Quy trình chuẩn:</b> Bấm vào link ➡️ Lướt xem sản phẩm: Ảnh, mô tả, đánh giá ➡️ Thêm vào giỏ và tiến hành thanh toán.<br><br>
+            <b>Nên làm:</b> Thoát hẳn app Shopee trước khi click vào nút "Mua Ngay Trên Shopee".
+          </div>
+        </div>
+
+        <div class="note-section">
+          <div class="note-sec-title">2. Tuyệt đối KHÔNG mua hàng từ Live hoặc Video</div>
+          <div class="note-sec-body">
+            <b>Lý do:</b> Shopee ưu tiên tính hoa hồng cho người Livestream/Video. Nếu bạn mua tại đó, hệ thống sẽ không tính hoa hồng cho link của mình, dẫn đến việc không có tiền để hoàn lại cho bạn.
+          </div>
+        </div>
+
+        <div class="note-section">
+          <div class="note-sec-title">3. Mẹo "Làm sạch" giỏ hàng (Tránh dính mã ngầm)</div>
+          <div class="note-sec-body">
+            Nếu bạn đặt nhiều đơn trong 1 ngày hoặc tài khoản thường xuyên rớt đơn, hãy tiến hành <b>XÓA BỘ NHỚ ĐỆM</b> sau mỗi đơn hàng.<br><br>
+            <b>Cách xử lý:</b> Xem hướng dẫn ở video bên trên.<br>
+            <b>Mục đích:</b> Thao tác này giúp "reset" lại Cookie và xóa sạch dấu vết của Live/Video trước đó.
+          </div>
+        </div>
+
+        <div class="note-section">
+          <div class="note-sec-title">4. Tỉ lệ rủi ro ngoài ý muốn</div>
+          <div class="note-sec-body">
+            Dù làm đúng các bước, vẫn có khoảng 10% đơn bị rớt do:<br>
+            • <b>9%:</b> App bị lag, không kịp nhảy mã tiếp thị.<br>
+            • <b>1%:</b> Shopee "nuốt đơn" ngẫu nhiên (lỗi hệ thống).<br><br>
+            Trường hợp này chúng ta cùng "hoan hỉ" bỏ qua cho anh Pee nhé! 😄
+          </div>
+        </div>
+
+        <div class="note-sum">
+          <div class="note-sum-title">💡 Tóm lại:</div>
+          <div class="note-sum-row"><span class="note-sum-arrow">➡️</span><span>Dọn sạch giỏ hàng + Thoát hẳn app Shopee</span></div>
+          <div class="note-sum-row"><span class="note-sum-arrow">➡️</span><span>Click nút Mua Ngay Trên Shopee</span></div>
+          <div class="note-sum-row"><span class="note-sum-arrow">➡️</span><span>Lướt xem ảnh, đọc mô tả, đọc đánh giá sản phẩm</span></div>
+          <div class="note-sum-row"><span class="note-sum-arrow">➡️</span><span>Đặt hàng thường (không Live/Video)</span></div>
+          <p style="font-size:13px;color:#e67e22;font-weight:700;margin-top:10px">Chúc bạn săn sale thành công! 🎉</p>
+        </div>
       </div>
     </div>
   </div>
