@@ -605,6 +605,16 @@ const OrderGroup = memo(function OrderGroup({ orderId, items, expanded, onToggle
     return c && (c.buyer?.paid || c.referrers?.some(r => r.paid));
   });
 
+  // For XTRA Comm orders, Shopee only populates item-level commission fields;
+  // order-level order_commission / order_bonus / total_order_commission stay 0.
+  // Fall back to summing item-level fields so column ⑦ shows the correct total.
+  const orderBonus = first.order_bonus > 0 ? first.order_bonus
+    : items.reduce((s, i) => s + (i.xtra_product_commission || 0), 0);
+  const orderShopeeComm = first.order_commission > 0 ? first.order_commission
+    : items.reduce((s, i) => s + (i.shopee_product_commission || 0), 0);
+  const orderCommTotal = first.total_order_commission > 0 ? first.total_order_commission
+    : orderBonus + orderShopeeComm;
+
   return (
     <>
       {items.map((item, idx) => {
@@ -738,18 +748,18 @@ const OrderGroup = memo(function OrderGroup({ orderId, items, expanded, onToggle
             {isFirst && (
               <td rowSpan={count} className="px-3 py-2.5 align-top text-right min-w-[130px]">
                 <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                  {fmtPrice(first.total_order_commission || first.order_commission)}
+                  {fmtPrice(orderCommTotal)}
                 </p>
-                {first.order_bonus > 0 && (
+                {orderBonus > 0 && (
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     Hoa hồng Xtra:&nbsp;
-                    <span className="text-slate-600 dark:text-slate-300">{fmtPrice(first.order_bonus)}</span>
+                    <span className="text-slate-600 dark:text-slate-300">{fmtPrice(orderBonus)}</span>
                   </p>
                 )}
-                {first.order_commission > 0 && (
+                {orderShopeeComm > 0 && (
                   <p className="text-[11px] text-slate-400">
                     Hoa hồng từ Shopee:&nbsp;
-                    <span className="text-slate-600 dark:text-slate-300">{fmtPrice(first.order_commission)}</span>
+                    <span className="text-slate-600 dark:text-slate-300">{fmtPrice(orderShopeeComm)}</span>
                   </p>
                 )}
               </td>

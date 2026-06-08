@@ -111,7 +111,7 @@ export default function Dashboard() {
           value={formatVND(stats.orders?.totalEstimatedCommission || 0)}
           icon={DollarSign}
           iconBg="bg-gradient-to-br from-emerald-500 to-emerald-600"
-          tooltip="Hoa hồng ước tính = order_commission + order_bonus. Khớp với Shopee Affiliate Dashboard."
+          tooltip="Tổng net_commission từ tất cả đơn không huỷ. Bao gồm cả XTRA Comm."
           delay={0}
         />
         <KPICard

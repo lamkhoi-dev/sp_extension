@@ -84,28 +84,43 @@ function calculateCustomSplit(nc, customRate) {
   return { admin, user: userAmount };
 }
 
-// SQL: Get all matched orders — fetch sub_id4 from orders directly + referrer_id from convert_logs
+// SQL: Get all matched orders — match at ORDER level, not item level.
+// If ANY item in an order has a convert_log entry (status=success), ALL items of that order
+// are included. This handles the case where Shopee stores net_commission on a different
+// item_id row than the one that generated the convert_log (e.g. multi-item orders).
 const MATCHED_ORDERS_SQL = `
-  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id4 as cl_sub_id4
+  SELECT DISTINCT o.*, matched.sub_id2 as referrer_id, o.sub_id4 as cl_sub_id4
   FROM orders o
-  INNER JOIN convert_logs cl ON (
-    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-    OR
-    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-  )
-  WHERE cl.status = 'success' AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
+  INNER JOIN (
+    SELECT o2.order_id, o2.sub_id1, MIN(cl2.sub_id2) as sub_id2
+    FROM orders o2
+    INNER JOIN convert_logs cl2 ON (
+      cl2.status = 'success' AND (
+        (o2.item_id != '' AND o2.item_id = cl2.item_id AND o2.sub_id1 = cl2.sub_id1)
+        OR (cl2.item_id = '' AND o2.item_name != '' AND o2.item_name = cl2.product_name AND o2.sub_id1 = cl2.sub_id1)
+      )
+    )
+    GROUP BY o2.order_id, o2.sub_id1
+  ) matched ON (matched.order_id = o.order_id AND matched.sub_id1 = o.sub_id1)
+  WHERE COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
   ORDER BY o.order_time DESC
 `;
 
 const MATCHED_ORDERS_BY_USER_SQL = `
-  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id4 as cl_sub_id4
+  SELECT DISTINCT o.*, matched.sub_id2 as referrer_id, o.sub_id4 as cl_sub_id4
   FROM orders o
-  INNER JOIN convert_logs cl ON (
-    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-    OR
-    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-  )
-  WHERE cl.status = 'success' AND o.sub_id1 = ? AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
+  INNER JOIN (
+    SELECT o2.order_id, o2.sub_id1, MIN(cl2.sub_id2) as sub_id2
+    FROM orders o2
+    INNER JOIN convert_logs cl2 ON (
+      cl2.status = 'success' AND (
+        (o2.item_id != '' AND o2.item_id = cl2.item_id AND o2.sub_id1 = cl2.sub_id1)
+        OR (cl2.item_id = '' AND o2.item_name != '' AND o2.item_name = cl2.product_name AND o2.sub_id1 = cl2.sub_id1)
+      )
+    )
+    GROUP BY o2.order_id, o2.sub_id1
+  ) matched ON (matched.order_id = o.order_id AND matched.sub_id1 = o.sub_id1)
+  WHERE o.sub_id1 = ? AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
   ORDER BY o.order_time DESC
 `;
 
@@ -118,17 +133,21 @@ const CUSTOM_ORDERS_BY_USER_SQL = `
   ORDER BY o.order_time DESC
 `;
 
-// Orders where this user is the REFERRER (not the buyer)
+// Orders where this user is the REFERRER (not the buyer) — order-level match same as above
 const REFERRER_ORDERS_BY_USER_SQL = `
-  SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id1 as buyer_id
+  SELECT DISTINCT o.*, matched.sub_id2 as referrer_id, o.sub_id1 as buyer_id
   FROM orders o
-  INNER JOIN convert_logs cl ON (
-    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-    OR
-    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-  )
-  WHERE cl.status = 'success' AND cl.sub_id2 = ?
-    AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
+  INNER JOIN (
+    SELECT DISTINCT o2.order_id, o2.sub_id1, cl2.sub_id2
+    FROM orders o2
+    INNER JOIN convert_logs cl2 ON (
+      cl2.status = 'success' AND cl2.sub_id2 = ? AND (
+        (o2.item_id != '' AND o2.item_id = cl2.item_id AND o2.sub_id1 = cl2.sub_id1)
+        OR (cl2.item_id = '' AND o2.item_name != '' AND o2.item_name = cl2.product_name AND o2.sub_id1 = cl2.sub_id1)
+      )
+    )
+  ) matched ON (matched.order_id = o.order_id AND matched.sub_id1 = o.sub_id1)
+  WHERE COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
   ORDER BY o.order_time DESC
 `;
 
@@ -858,10 +877,18 @@ const payoutStore = {
           const rate = rates.f0;
           const orders = await tx.all(`
             SELECT DISTINCT o.* FROM orders o
-            INNER JOIN convert_logs cl ON (
-              (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1) OR
-              (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-            ) WHERE cl.status = 'success' AND o.sub_id1 = $1
+            INNER JOIN (
+              SELECT o2.order_id, o2.sub_id1
+              FROM orders o2
+              INNER JOIN convert_logs cl2 ON (
+                cl2.status = 'success' AND (
+                  (o2.item_id != '' AND o2.item_id = cl2.item_id AND o2.sub_id1 = cl2.sub_id1)
+                  OR (cl2.item_id = '' AND o2.item_name != '' AND o2.item_name = cl2.product_name AND o2.sub_id1 = cl2.sub_id1)
+                )
+              )
+              GROUP BY o2.order_id, o2.sub_id1
+            ) matched ON (matched.order_id = o.order_id AND matched.sub_id1 = o.sub_id1)
+            WHERE o.sub_id1 = $1
               AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
             ORDER BY o.order_time ASC
           `, [userId]);
@@ -879,12 +906,18 @@ const payoutStore = {
         const getReferrerUnpaid = async () => {
           const paidIds = new Set([...getPaidIds('referrer'), ...getPaidIds('f1')]);
           const refOrders = await tx.all(`
-            SELECT DISTINCT o.*, cl.sub_id2 as referrer_id, o.sub_id1 as buyer_id FROM orders o
-            INNER JOIN convert_logs cl ON (
-              (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1) OR
-              (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-            ) WHERE cl.status = 'success' AND cl.sub_id2 = $1
-              AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
+            SELECT DISTINCT o.*, matched.sub_id2 as referrer_id, o.sub_id1 as buyer_id FROM orders o
+            INNER JOIN (
+              SELECT DISTINCT o2.order_id, o2.sub_id1, cl2.sub_id2
+              FROM orders o2
+              INNER JOIN convert_logs cl2 ON (
+                cl2.status = 'success' AND cl2.sub_id2 = $1 AND (
+                  (o2.item_id != '' AND o2.item_id = cl2.item_id AND o2.sub_id1 = cl2.sub_id1)
+                  OR (cl2.item_id = '' AND o2.item_name != '' AND o2.item_name = cl2.product_name AND o2.sub_id1 = cl2.sub_id1)
+                )
+              )
+            ) matched ON (matched.order_id = o.order_id AND matched.sub_id1 = o.sub_id1)
+            WHERE COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
             ORDER BY o.order_time ASC
           `, [userId]);
           const refRate = rates.f1;
@@ -1109,6 +1142,86 @@ const payoutStore = {
       return this.updateUserCommissionMode(userId, 'custom', customRate);
     }
     return this.updateUserCommissionMode(userId, 'normal', 0);
+  },
+
+  /**
+   * Fast aggregate: total cashback owed to all users across all roles.
+   * Uses 4 batch queries + in-memory — matches what getSummary() totals.
+   * Buyer/custom: paid-actual + unpaid-at-current-rate (rate-history-aware).
+   * Referrer: all non-cancelled orders × F1/F2/F3 rates (mirrors _calcReferrerSummaries).
+   */
+  async getTotalUserCashback(rates) {
+    if (!rates) rates = await commissionRatesStore.getRates();
+    const f0Rate = rates.f0 || 60;
+    const f1Rate = rates.f1 || 20;
+    const f2Rate = rates.f2 || 3;
+    const f3Rate = rates.f3 || 2;
+
+    const [allOrders, allPayouts, allUsers, allCustomOrders] = await Promise.all([
+      db.all(MATCHED_ORDERS_SQL),
+      db.all('SELECT user_id, role, paid_orders, amount FROM payouts'),
+      db.all('SELECT user_id, referrer_id, custom_rate FROM users'),
+      db.all(`SELECT * FROM orders WHERE COALESCE(sub_id4,'') IN ('from_custom','custom')`),
+    ]);
+
+    const getChain = buildChainMap(allUsers);
+
+    // Build global paid sets + totals from payouts table
+    const paidBuyerOrderIds = new Set();
+    const paidCustomOrderIds = new Set();
+    let paidBuyerTotal = 0;
+    let paidCustomTotal = 0;
+
+    for (const p of allPayouts) {
+      let orders = p.paid_orders;
+      if (typeof orders === 'string') { try { orders = JSON.parse(orders); } catch { orders = null; } }
+      const ids = Array.isArray(orders) ? orders.filter(o => o.orderId).map(o => o.orderId) : [];
+      if (['f0', 'buyer'].includes(p.role)) {
+        for (const id of ids) paidBuyerOrderIds.add(id);
+        paidBuyerTotal += Number(p.amount || 0);
+      } else if (p.role === 'custom') {
+        for (const id of ids) paidCustomOrderIds.add(id);
+        paidCustomTotal += Number(p.amount || 0);
+      }
+    }
+
+    // Buyer: paid actual + unpaid non-cancelled orders at current f0 rate
+    let unpaidBuyerCashback = 0;
+    for (const o of allOrders) {
+      if (isCancelled(o.order_status)) continue;
+      if (paidBuyerOrderIds.has(o.order_id)) continue;
+      unpaidBuyerCashback += Math.round((o.net_commission || 0) * f0Rate / 100);
+    }
+
+    // Referrer: ALL non-cancelled matched orders × F1/F2/F3 rates (mirrors data.total in _calcReferrerSummaries)
+    let totalReferrerCashback = 0;
+    for (const o of allOrders) {
+      if (isCancelled(o.order_status)) continue;
+      const nc = o.net_commission || 0;
+      if (nc <= 0) continue;
+      const chain = getChain(o.sub_id1);
+      if (chain.f1) totalReferrerCashback += Math.round(nc * f1Rate / 100);
+      if (chain.f2) totalReferrerCashback += Math.round(nc * f2Rate / 100);
+      if (chain.f3) totalReferrerCashback += Math.round(nc * f3Rate / 100);
+    }
+
+    // Custom: paid actual + unpaid non-cancelled orders at each user's custom rate
+    const userCustomRates = {};
+    for (const u of allUsers) userCustomRates[String(u.user_id)] = u.custom_rate || 0;
+
+    let unpaidCustomCashback = 0;
+    for (const o of allCustomOrders) {
+      if (isCancelled(o.order_status)) continue;
+      if (paidCustomOrderIds.has(o.order_id)) continue;
+      const customRate = userCustomRates[String(o.sub_id1)] || 0;
+      unpaidCustomCashback += Math.round((o.net_commission || 0) * customRate / 100);
+    }
+
+    return Math.round(
+      (paidBuyerTotal + unpaidBuyerCashback) +
+      totalReferrerCashback +
+      (paidCustomTotal + unpaidCustomCashback)
+    );
   },
 
 };

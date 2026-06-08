@@ -641,19 +641,21 @@ app.get('/api/zalo-user-fetch/:userId', async (req, res) => {
 
 app.get('/api/dashboard-stats', async (req, res) => {
   const rates = await commissionRatesStore.getRates();
-  const [msgStats, convertStats, orderStats, todayConvert, userCount, payoutTotalRow, adminProfitEstimate] = await Promise.all([
+  const [msgStats, convertStats, orderStats, todayConvert, userCount, payoutTotalRow, totalNetCommission, totalUserCashback] = await Promise.all([
     messageStore.getStats(),
     convertLogStore.getStats(),
     orderStore.getStats(),
     convertLogStore.getTodayStats(),
     userCache.getUserCount(),
     db.get("SELECT COALESCE(SUM(amount), 0) as total_paid FROM payouts"),
-    orderStore.getAdminProfitEstimate(rates),
+    orderStore.getTotalNetCommission(),
+    payoutStore.getTotalUserCashback(rates),
   ]);
 
-  const totalCommission = orderStats.totalEstimatedCommission || orderStats.totalCommissionNew || 0;
+  const totalCommission = orderStats.totalCommissionNew || orderStats.totalEstimatedCommission || 0;
   const totalPaidOut = Number(payoutTotalRow?.total_paid || 0);
-  const adminProfit = adminProfitEstimate;
+  const adminProfit = Math.round(totalNetCommission - totalUserCashback);
+  const profitPercent = totalNetCommission > 0 ? Math.round((adminProfit / totalNetCommission) * 10000) / 100 : 0;
 
   res.json({
     users: { total: userCount },
@@ -681,7 +683,7 @@ app.get('/api/dashboard-stats', async (req, res) => {
     admin: {
       totalPaidOut,
       adminProfit,
-      profitPercent: totalCommission > 0 ? Math.round((adminProfit / totalCommission) * 10000) / 100 : 0,
+      profitPercent,
     },
     extension: extensionStatus,
     zalo: zaloBot.getStatus(),
@@ -1084,6 +1086,48 @@ app.post('/api/payouts/create', async (req, res) => {
 
   await auditStore.log(req.admin?.username || 'system', 'CREATE_PAYOUT', 'payout', payoutId, { userId, amount: result.amount, role }, req.ip);
   res.json({ success: true, payoutId, amount: result.amount, orderCount });
+
+  // Zalo notification — fire-and-forget, không block response
+  setImmediate(async () => {
+    try {
+      if (!zaloBot.actions) return;
+
+      const db = require('./src/db');
+      const setting = await db.get("SELECT value FROM system_settings WHERE key = 'main_group_id'");
+      const mainGroupId = setting?.value?.id || null;
+
+      // 1. Group announcement
+      if (mainGroupId) {
+        const groupMsg = [
+          '🎉 THÔNG BÁO THANH TOÁN THÀNH CÔNG',
+          '',
+          `✅ Thành viên ${result.userName} đã rút tiền thành công.`,
+          '',
+          '💝 Cảm ơn bạn đã đồng hành cùng hệ thống Hoàn Tiền Shopee.',
+          '🚀 Mua sắm hoàn tiền - Giới thiệu bạn bè - Nhận thêm hoa hồng.',
+        ].join('\n');
+        await zaloBot.actions.sendText(groupMsg, mainGroupId, 1);
+      }
+
+      // 2. Private DM to user
+      const amountStr = Number(result.amount).toLocaleString('vi-VN');
+      const dmMsg = [
+        '🎉 THÔNG BÁO THANH TOÁN THÀNH CÔNG',
+        '',
+        `✅ Chúng tôi đã hoàn trả ${amountStr}đ thành công. Vui lòng kiểm tra tài khoản của bạn.`,
+        '',
+        '📩 Nếu chưa nhận được tiền hoặc cần hỗ trợ, vui lòng liên hệ Admin để được kiểm tra và xử lý nhanh nhất.',
+        '',
+        '💝 Cảm ơn bạn đã đồng hành cùng hệ thống Hoàn Tiền Shopee.',
+        '',
+        '🚀 Mua sắm hoàn tiền - Giới thiệu bạn bè - Nhận thêm hoa hồng.',
+      ].join('\n');
+      await zaloBot.actions.sendText(dmMsg, userId, 0);
+
+    } catch (err) {
+      logger.warn('Server', `Payout Zalo notify failed: ${err.message}`);
+    }
+  });
 });
 
 app.post('/api/payouts/upload-bill', billUpload.single('bill'), async (req, res) => {
