@@ -152,6 +152,7 @@ export default function ConvertLogsPage() {
     currentPage,
     setCurrentPage,
     pageSize,
+    setPageSize,
     totalCount,
     refresh,
   } = useConvertLogs();
@@ -405,6 +406,7 @@ export default function ConvertLogsPage() {
             currentPage={currentPage}
             pageSize={pageSize}
             onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
             onSearchChange={setSearch}
             searchValue={search}
           />
