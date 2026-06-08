@@ -771,36 +771,13 @@ app.get('/api/users', async (req, res) => {
 // Convert Logs API
 app.get('/api/convert-logs', async (req, res) => {
   try {
-    const { search, user_id, limit = 50, offset = 0 } = req.query;
+    const { product = '', user = '', limit = 50, offset = 0 } = req.query;
     const parsedLimit = parseInt(limit);
     const parsedOffset = parseInt(offset);
-
-    let logs = [];
-    let total = 0;
-
-    if (search) {
-      const [logsData, totalCount] = await Promise.all([
-        convertLogStore.search(search, parsedLimit, parsedOffset),
-        convertLogStore.searchCount(search),
-      ]);
-      logs = logsData;
-      total = totalCount;
-    } else if (user_id) {
-      const [logsData, totalCount] = await Promise.all([
-        convertLogStore.getByUser(user_id, parsedLimit, parsedOffset),
-        convertLogStore.getByUserCount(user_id),
-      ]);
-      logs = logsData;
-      total = totalCount;
-    } else {
-      const [logsData, totalCount] = await Promise.all([
-        convertLogStore.getRecent(parsedLimit, parsedOffset),
-        convertLogStore.getCount(),
-      ]);
-      logs = logsData;
-      total = totalCount;
-    }
-
+    const [logs, total] = await Promise.all([
+      convertLogStore.getFiltered(product, user, parsedLimit, parsedOffset),
+      convertLogStore.getFilteredCount(product, user),
+    ]);
     res.json({ logs, total });
   } catch (err) {
     logger.error('ConvertLogs', `GET /api/convert-logs failed: ${err.message}`);

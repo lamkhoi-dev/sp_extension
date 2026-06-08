@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Tooltip from '../components/ui/Tooltip';
 import {
   Link2, ExternalLink, Copy, Check, RefreshCw, CheckCircle,
-  XCircle, MousePointerClick, X, Monitor, Smartphone, Tablet, Bot,
+  XCircle, MousePointerClick, X, Monitor, Smartphone, Tablet, Bot, Search, User,
 } from 'lucide-react';
 import DataTable from '../components/ui/DataTable';
 import Badge from '../components/ui/Badge';
@@ -147,8 +147,10 @@ export default function ConvertLogsPage() {
     logs,
     stats,
     loading,
-    search,
-    setSearch,
+    productInput,
+    setProductInput,
+    userInput,
+    setUserInput,
     currentPage,
     setCurrentPage,
     pageSize,
@@ -390,6 +392,30 @@ export default function ConvertLogsPage() {
         </div>
       </div>
 
+      {/* Filter Bar */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Tìm theo sản phẩm..."
+            value={productInput}
+            onChange={e => setProductInput(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div className="relative sm:w-56">
+          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Tìm theo user..."
+            value={userInput}
+            onChange={e => setUserInput(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
+
       {/* Data Table */}
       <div className="bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4 sm:p-6">
         {loading ? (
@@ -400,15 +426,13 @@ export default function ConvertLogsPage() {
           <DataTable
             columns={columns}
             data={logs}
-            searchPlaceholder="Tìm kiếm theo user, sản phẩm, link..."
+            searchable={false}
             serverSide={true}
             totalCount={totalCount}
             currentPage={currentPage}
             pageSize={pageSize}
             onPageChange={setCurrentPage}
             onPageSizeChange={setPageSize}
-            onSearchChange={setSearch}
-            searchValue={search}
           />
         )}
       </div>

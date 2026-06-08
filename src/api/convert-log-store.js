@@ -116,6 +116,38 @@ const convertLogStore = {
     `, [todayStart.toISOString()]);
   },
 
+  async getFiltered(product = '', userName = '', limit = 50, offset = 0) {
+    const conditions = [];
+    const params = [];
+    if (product) { conditions.push('cl.product_name LIKE ?'); params.push(`%${product}%`); }
+    if (userName) { conditions.push('cl.user_name LIKE ?'); params.push(`%${userName}%`); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    return db.all(`
+      SELECT cl.*,
+             u.avatar as user_avatar,
+             r.avatar as referrer_avatar,
+             r.display_name as referrer_name_db,
+             lr.click_count
+      FROM convert_logs cl
+      LEFT JOIN users u ON cl.user_id = u.user_id
+      LEFT JOIN users r ON cl.sub_id2 = r.user_id
+      LEFT JOIN link_redirects lr ON cl.redirect_token = lr.token
+      ${where}
+      ORDER BY cl.created_at DESC
+      LIMIT ? OFFSET ?
+    `, [...params, limit, offset]);
+  },
+
+  async getFilteredCount(product = '', userName = '') {
+    const conditions = [];
+    const params = [];
+    if (product) { conditions.push('product_name LIKE ?'); params.push(`%${product}%`); }
+    if (userName) { conditions.push('user_name LIKE ?'); params.push(`%${userName}%`); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const row = await db.get(`SELECT COUNT(*) as count FROM convert_logs ${where}`, params);
+    return Number(row?.count || 0);
+  },
+
   async search(query, limit = 20, offset = 0) {
     const q = `%${query}%`;
     return db.all(`
@@ -137,8 +169,8 @@ const convertLogStore = {
   async searchCount(query) {
     const q = `%${query}%`;
     const row = await db.get(`
-      SELECT COUNT(*) as count 
-      FROM convert_logs 
+      SELECT COUNT(*) as count
+      FROM convert_logs
       WHERE user_name LIKE ? OR product_name LIKE ? OR original_link LIKE ?
     `, [q, q, q]);
     return row?.count || 0;

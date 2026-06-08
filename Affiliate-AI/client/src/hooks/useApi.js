@@ -130,21 +130,38 @@ export function useConvertLogs() {
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+
+  // Immediate input values (typed by user)
+  const [productInput, setProductInput] = useState('');
+  const [userInput, setUserInput] = useState('');
+
+  // Debounced values sent to API
+  const [product, setProduct] = useState('');
+  const [userName, setUserName] = useState('');
+
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
 
-  const fetchLogs = useCallback(async (page, size, query = '') => {
+  useEffect(() => {
+    const t = setTimeout(() => { setProduct(productInput); setCurrentPage(1); }, 400);
+    return () => clearTimeout(t);
+  }, [productInput]);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setUserName(userInput); setCurrentPage(1); }, 400);
+    return () => clearTimeout(t);
+  }, [userInput]);
+
+  const fetchLogs = useCallback(async (page, size, prod = '', usr = '') => {
     setLoading(true);
     try {
       const offset = (page - 1) * size;
-      let url = `/convert-logs?limit=${size}&offset=${offset}`;
-      if (query) {
-        url += `&search=${encodeURIComponent(query)}`;
-      }
+      const params = new URLSearchParams({ limit: String(size), offset: String(offset) });
+      if (prod) params.set('product', prod);
+      if (usr) params.set('user', usr);
       const [logsResponse, statsData] = await Promise.all([
-        apiFetch(url),
+        apiFetch(`/convert-logs?${params}`),
         apiFetch('/convert-logs/stats'),
       ]);
       setLogs(logsResponse.logs || []);
@@ -158,24 +175,23 @@ export function useConvertLogs() {
   }, []);
 
   useEffect(() => {
-    fetchLogs(currentPage, pageSize, search);
-  }, [fetchLogs, currentPage, pageSize, search]);
+    fetchLogs(currentPage, pageSize, product, userName);
+  }, [fetchLogs, currentPage, pageSize, product, userName]);
 
   return {
     logs,
     stats,
     loading,
-    search,
-    setSearch: (val) => {
-      setSearch(val);
-      setCurrentPage(1);
-    },
+    productInput,
+    setProductInput,
+    userInput,
+    setUserInput,
     currentPage,
     setCurrentPage,
     pageSize,
     setPageSize,
     totalCount,
-    refresh: () => fetchLogs(currentPage, pageSize, search),
+    refresh: () => fetchLogs(currentPage, pageSize, product, userName),
   };
 }
 
