@@ -284,7 +284,7 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
 
     ${commissionBox}
 
-    <a class="btn" href="${link}">🛒 Mua ngay trên Shopee</a>
+    <a class="btn" href="${link}">Mua ngay trên Shopee 🛍️</a>
 
     <div class="notes-wrap">
       <button class="notes-toggle" id="notesBtn" onclick="toggleNotes()">
@@ -316,7 +316,7 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
             Dù làm đúng các bước, vẫn có khoảng 10% đơn bị rớt do:<br>
             • <b>9%:</b> App bị lag, không kịp nhảy mã tiếp thị.<br>
             • <b>1%:</b> Shopee "nuốt đơn" ngẫu nhiên (lỗi hệ thống).<br><br>
-            Trường hợp này chúng ta cùng "hoan hỉ" bỏ qua cho anh Pee nhé! 😄
+            Trường hợp này chúng ta cùng "hoan hỉ" bỏ qua cho Shopee nhé! 🛍️
           </div>
         </div>
 
