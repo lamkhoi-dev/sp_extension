@@ -3,12 +3,13 @@ import Tooltip from '../components/ui/Tooltip';
 import {
   RefreshCw, ShoppingCart, CheckCircle, DollarSign, Percent,
   Download, Upload, AlertCircle, ChevronDown, ChevronRight,
-  Search, X, MousePointerClick, Package, UserPlus,
+  Search, MousePointerClick, Package, UserPlus,
 } from 'lucide-react';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import DateRangePicker from '../components/ui/DateRangePicker';
-import { useOrders, formatVND, formatShortVND, useProductImages, useUsers } from '../hooks/useApi';
+import { useOrders, formatVND, formatShortVND, useProductImages, useUserSelect } from '../hooks/useApi';
+import UserSelectDropdown from '../components/ui/UserSelectDropdown';
 
 // ─── Status Config ──────────────────────────────────────
 const STATUS_OPTIONS = ['Tất cả', 'Đang chờ xử lý', 'Đang giao hàng', 'Hoàn thành', 'Chưa thanh toán'];
@@ -190,103 +191,18 @@ function ReferralTree({ items, isUnmatched }) {
   );
 }
 
-// Searchable user dropdown component
+// User filter wrapper with label
 function SearchableUserSelect({ value, onChange }) {
-  const { users, search, setSearch, loading } = useUsers();
-  const [isOpen, setIsOpen] = useState(false);
-  const [inputText, setInputText] = useState('');
-  const wrapperRef = useRef(null);
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (!value) {
-      setInputText('');
-    } else {
-      const selectedUser = users.find(u => u.user_id === value);
-      if (selectedUser) {
-        setInputText(selectedUser.display_name || selectedUser.zalo_name || selectedUser.user_id);
-      }
-    }
-  }, [value, users]);
-
-  const handleInputChange = (e) => {
-    const text = e.target.value;
-    setInputText(text);
-    setSearch(text);
-    setIsOpen(true);
-    if (!text) {
-      onChange('');
-    }
-  };
-
-  const handleSelectUser = (user) => {
-    onChange(user.user_id);
-    setInputText(user.display_name || user.zalo_name || user.user_id);
-    setIsOpen(false);
-  };
-
-  const handleClear = () => {
-    onChange('');
-    setInputText('');
-    setSearch('');
-    setIsOpen(false);
-  };
-
+  const { users } = useUserSelect();
   return (
-    <div ref={wrapperRef} className="relative w-full">
+    <div className="w-full">
       <label className={labelCls}>User mua hàng</label>
-      <div className="relative">
-        <input
-          type="text"
-          value={inputText}
-          onChange={handleInputChange}
-          onFocus={() => setIsOpen(true)}
-          placeholder="Tìm kiếm user..."
-          className={inputCls}
-        />
-        {value ? (
-          <button
-            type="button"
-            onClick={handleClear}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        ) : (
-          <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-        )}
-      </div>
-
-      {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-          {loading && users.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-slate-400">Đang tìm...</div>
-          ) : users.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-slate-400">Không tìm thấy user nào</div>
-          ) : (
-            users.map(u => (
-              <button
-                key={u.user_id}
-                type="button"
-                onClick={() => handleSelectUser(u)}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800 last:border-0"
-              >
-                <p className="font-semibold">{u.display_name || u.zalo_name || 'Không tên'}</p>
-                <p className="text-[10px] text-slate-400 font-mono truncate">{u.user_id}</p>
-              </button>
-            ))
-          )}
-        </div>
-      )}
+      <UserSelectDropdown
+        users={users}
+        value={value}
+        onChange={onChange}
+        placeholder="Tất cả user"
+      />
     </div>
   );
 }
