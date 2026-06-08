@@ -23,3 +23,6 @@ data/
 # Frontend build output
 Affiliate-AI/client/dist/
 Building Interactive Referral Genealogy.md
+
+# UI reference files (local only)
+thamkhaoUI/
