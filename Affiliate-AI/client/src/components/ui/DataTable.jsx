@@ -15,6 +15,7 @@ export default function DataTable({
   totalCount = 0,
   currentPage = 1,
   onPageChange,
+  onPageSizeChange,
   onSearchChange,
   searchValue = '',
 }) {
