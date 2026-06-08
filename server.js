@@ -239,7 +239,7 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
   .popup-title{font-size:14px;font-weight:700;color:#c0392b;text-align:center;line-height:1.5;margin-bottom:4px}
   .popup-intro{font-size:12px;color:#666;text-align:center;margin-bottom:14px;line-height:1.5}
   .popup-sum-title{font-size:13px;font-weight:700;color:#222;margin:14px 0 8px}
-  .popup-step{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;font-size:16px;color:#333;line-height:1.5}
+  .popup-step{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;font-size:16px;color:#c0392b;font-weight:700;line-height:1.5}
   .popup-step-emoji{font-size:20px;flex-shrink:0;line-height:1.3}
   .popup-arrow{color:#ee4d2d;font-weight:700;flex-shrink:0}
   .popup-btn{display:block;width:100%;background:#ee4d2d;color:#fff;font-size:15px;font-weight:700;text-align:center;padding:13px;border-radius:8px;border:none;cursor:pointer;margin-top:16px}
@@ -298,7 +298,7 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
           <div class="note-sec-title">1. Thao tác "NHƯ NGƯỜI MUA THẬT"</div>
           <div class="note-sec-quote">Hệ thống AI Shopee rất thông minh, có thể phát hiện ra hành vi bất thường.<br>Người mua hàng bình thường không ai click link tiếp thị rồi thanh toán ngay cả!!!</div>
           <div class="note-sec-body">
-            <b>Quy trình chuẩn:</b> Bấm vào link ➡️ Lướt xem sản phẩm: Ảnh, mô tả, đánh giá ➡️ Thêm vào giỏ và tiến hành thanh toán.<br><br>
+            <b>Quy trình chuẩn:</b> Bấm vào link ➡️ Lướt xem sản phẩm: Ảnh, mô tả, đánh giá <b>(5 đến 10 giây)</b> ➡️ Thêm vào giỏ và tiến hành thanh toán.<br><br>
             <b>Nên làm:</b> Thoát hẳn app Shopee trước khi click vào nút "Mua Ngay Trên Shopee".
           </div>
         </div>
@@ -324,7 +324,7 @@ function buildLandingPage({ product_name, affiliate_link, commission_rate, commi
           <div class="note-sum-title">💡 Tóm lại:</div>
           <div class="note-sum-row"><span class="note-sum-arrow">➡️</span><span>Dọn sạch giỏ hàng + Thoát hẳn app Shopee</span></div>
           <div class="note-sum-row"><span class="note-sum-arrow">➡️</span><span>Click nút Mua Ngay Trên Shopee</span></div>
-          <div class="note-sum-row"><span class="note-sum-arrow">➡️</span><span>Lướt xem ảnh, đọc mô tả, đọc đánh giá sản phẩm</span></div>
+          <div class="note-sum-row"><span class="note-sum-arrow">➡️</span><span>Lướt xem ảnh, đọc mô tả, đọc đánh giá sản phẩm <b>(5 đến 10 giây)</b></span></div>
           <div class="note-sum-row"><span class="note-sum-arrow">➡️</span><span>Đặt hàng thường (không Live/Video)</span></div>
           <p style="font-size:13px;color:#e67e22;font-weight:700;margin-top:10px">Chúc bạn săn sale thành công! 🎉</p>
         </div>
@@ -1261,7 +1261,7 @@ app.post('/api/payouts/create', async (req, res) => {
 
       const db = require('./src/db');
       const setting = await db.get("SELECT value FROM system_settings WHERE key = 'main_group_id'");
-      const mainGroupId = setting?.value?.id || null;
+      const mainGroupId = process.env.ZALO_MAIN_GROUP_ID || setting?.value?.id || null;
 
       // 1. Group announcement
       if (mainGroupId) {
