@@ -20,7 +20,10 @@ function isChainCancelled(status) {
 
 // Calculate referrer earnings using buyer registration chain — matches payout-store logic exactly.
 // LNK earns F1 rate on buyers directly under LNK, F2 rate on buyers under LNK's F1s, etc.
-async function calcReferrerEarnings(userId, rates) {
+// `paidReferrerOrderIds` = order IDs already paid to this user as referrer (roles
+// referrer/f1/f2/f3); used to compute the "chờ trả" (completed-but-unpaid) split,
+// matching payout-store's pendingReferrerPayment.
+async function calcReferrerEarnings(userId, rates, paidReferrerOrderIds = new Set()) {
   const uid = String(userId);
   const allUsers = await db.all('SELECT user_id, referrer_id FROM users');
   const parentOf = {};
@@ -28,6 +31,7 @@ async function calcReferrerEarnings(userId, rates) {
 
   const orders = await db.all(CHAIN_ORDERS_SQL);
   let f1 = 0, f2 = 0, f3 = 0;
+  let pending = 0; // referrer earnings on completed-but-unpaid downline orders
 
   for (const o of orders) {
     if (isChainCancelled(o.order_status)) continue;
@@ -37,12 +41,17 @@ async function calcReferrerEarnings(userId, rates) {
     const p1 = parentOf[b] || null;
     const p2 = p1 ? (parentOf[p1] || null) : null;
     const p3 = p2 ? (parentOf[p2] || null) : null;
-    if (p1 === uid) f1 += Math.round(nc * rates.f1 / 100);
-    else if (p2 === uid) f2 += Math.round(nc * rates.f2 / 100);
-    else if (p3 === uid) f3 += Math.round(nc * rates.f3 / 100);
+    let earned = 0;
+    if (p1 === uid) { earned = Math.round(nc * rates.f1 / 100); f1 += earned; }
+    else if (p2 === uid) { earned = Math.round(nc * rates.f2 / 100); f2 += earned; }
+    else if (p3 === uid) { earned = Math.round(nc * rates.f3 / 100); f3 += earned; }
+    // Completed downline order not yet paid as referrer → owed to this user now
+    if (earned > 0 && COMPLETED_STATUSES.has(o.order_status) && !paidReferrerOrderIds.has(o.order_id)) {
+      pending += earned;
+    }
   }
 
-  return { totalF1Earnings: f1, totalF2Earnings: f2, totalF3Earnings: f3 };
+  return { totalF1Earnings: f1, totalF2Earnings: f2, totalF3Earnings: f3, pendingReferrerPayment: pending };
 }
 
 // SQL: Load a user's direct downline (CTVs) with their order/commission stats.
@@ -215,6 +224,7 @@ class ReportGenerator {
     // Build paid order ID sets (to separate paid vs unpaid completed orders)
     const paidBuyerOrderIds = new Set();
     const paidCustomOrderIds = new Set();
+    const paidReferrerOrderIds = new Set();
     for (const p of payouts) {
       let orders = p.paid_orders;
       if (typeof orders === 'string') { try { orders = JSON.parse(orders); } catch { orders = null; } }
@@ -223,6 +233,7 @@ class ReportGenerator {
         if (!o.orderId) continue;
         if (['f0', 'buyer'].includes(p.role)) paidBuyerOrderIds.add(o.orderId);
         if (p.role === 'custom') paidCustomOrderIds.add(o.orderId);
+        if (['referrer', 'f1', 'f2', 'f3'].includes(p.role)) paidReferrerOrderIds.add(o.orderId);
       }
     }
 
@@ -260,7 +271,7 @@ class ReportGenerator {
     // 6. Downline tree (F1 + F2 + F3) for display + correct chain-based earnings
     const downline = await loadDownlineTree(userId, rates);
     const ctvList = downline.list;
-    const referrerEarnings = await calcReferrerEarnings(userId, rates);
+    const referrerEarnings = await calcReferrerEarnings(userId, rates, paidReferrerOrderIds);
 
     // 7. Monthly revenue chart (last 6 months) — based on user's own orders only
     const monthlyRevenue = await db.all(
@@ -402,12 +413,14 @@ class ReportGenerator {
         totalF3Earnings: referrerEarnings.totalF3Earnings,
         totalReferrerEarnings,
         totalPaidAsReferrer,
+        pendingReferrerPayment: referrerEarnings.pendingReferrerPayment,
         ctvCount: ctvList.length,
 
         // Combined totals
         totalEarnings: totalBuyerCashback + totalReferrerEarnings + totalCustomCashback,
         totalPaid: totalPaidAsBuyer + totalPaidAsReferrer + totalCustomPaid,
-        totalPendingPayment: pendingBuyerPayment + pendingCustomPayment,
+        // Chờ trả = buyer + custom + referrer (completed-but-unpaid) — khớp Payouts pendingPayment
+        totalPendingPayment: pendingBuyerPayment + pendingCustomPayment + referrerEarnings.pendingReferrerPayment,
         pendingPayment: pendingBuyerPayment,
 
         // Custom orders summary

@@ -277,6 +277,7 @@ function renderReport(data) {
     formula: `<code>= cashback hoàn thành − đã trả</code>`,
     breakdown: `
       <div class="kv"><span>Buyer chờ trả</span><span>${formatVND(summary.pendingBuyerPayment)}</span></div>
+      ${summary.pendingReferrerPayment > 0 ? `<div class="kv"><span>CTV chờ trả</span><span>${formatVND(summary.pendingReferrerPayment)}</span></div>` : ''}
       ${summary.pendingCustomPayment > 0 ? `<div class="kv"><span>Custom chờ trả</span><span>${formatVND(summary.pendingCustomPayment)}</span></div>` : ''}
       <div class="kv-strong"><span>Tổng chờ</span><span>${formatVND(summary.totalPendingPayment)}</span></div>`,
   });
