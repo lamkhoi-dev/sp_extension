@@ -24,6 +24,7 @@ const { requireAuth, signToken, JWT_COOKIE } = require('./src/auth/middleware');
 const auditStore = require('./src/audit/audit-store');
 const reportGenerator = require('./src/stats/report-generator');
 const reportStore = require('./src/stats/report-store');
+const { buildThongkeMessage } = require('./src/stats/report-message');
 const { renderReport } = require('./src/stats/report-template');
 const healthMonitor = require('./src/cron/health-monitor');
 const linkRedirectStore = require('./src/api/link-redirect-store');
@@ -1184,7 +1185,10 @@ app.post('/api/reports/generate', async (req, res) => {
     const data = await reportGenerator.generateReport(userId);
     const token = await reportStore.createReport(userId, data);
     const serverUrl = process.env.SERVER_URL || `http://localhost:${PORT}`;
-    res.json({ ok: true, token, url: `${serverUrl}/s/${token}`, userId, displayName: data.user?.displayName });
+    const url = `${serverUrl}/s/${token}`;
+    // Same builder the Zalo bot uses → preview is identical to the real reply
+    const message = buildThongkeMessage(data, url);
+    res.json({ ok: true, token, url, userId, displayName: data.user?.displayName, message });
   } catch (err) {
     logger.error('Reports', `Generate report for ${userId} failed: ${err.message}`);
     res.status(500).json({ error: err.message });

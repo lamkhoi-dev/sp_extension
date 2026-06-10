@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FileText, ExternalLink, RefreshCw, Search, User } from 'lucide-react';
+import { FileText, ExternalLink, RefreshCw, Search, User, MessageSquare, Copy, Check } from 'lucide-react';
 import Card from '../components/ui/Card';
 
 const API = '/api';
@@ -12,6 +12,15 @@ export default function TestReportPage() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [history, setHistory] = useState([]); // recent generated reports
+  const [copied, setCopied] = useState(false);
+
+  const copyMessage = useCallback(() => {
+    if (!result?.message) return;
+    navigator.clipboard.writeText(result.message).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [result]);
 
   useEffect(() => {
     fetch(`${API}/users/select`, { credentials: 'include' })
@@ -51,7 +60,7 @@ export default function TestReportPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Test /thongke</h1>
         <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-          Tạo báo cáo thống kê cho bất kỳ user — link có hiệu lực 24 giờ.
+          Tạo báo cáo thống kê cho bất kỳ user — xem trước đúng tin nhắn bot sẽ trả lời + link hiệu lực 24 giờ.
         </p>
       </div>
 
@@ -155,6 +164,30 @@ export default function TestReportPage() {
               </a>
             </div>
             <p className="text-[10px] text-slate-400">Link hết hạn sau 24 giờ · Token: {result.token}</p>
+          </div>
+        )}
+
+        {/* Real bot reply preview */}
+        {result?.message && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                <MessageSquare className="w-4 h-4 text-blue-500" />
+                Tin nhắn bot trả lời (giống hệt khi user gõ /thongke)
+              </div>
+              <button
+                onClick={copyMessage}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                {copied
+                  ? <><Check className="w-3 h-3 text-emerald-500" /> Đã copy</>
+                  : <><Copy className="w-3 h-3" /> Copy</>
+                }
+              </button>
+            </div>
+            <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed font-sans text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+{result.message}
+            </pre>
           </div>
         )}
       </Card>
