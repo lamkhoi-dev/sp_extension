@@ -522,12 +522,20 @@ const payoutStore = {
         }
 
         const rate = level === '1' ? rates.f1 : level === '2' ? rates.f2 : rates.f3;
-        let unpaid = 0;
+        // Rate-safe total: đơn ĐÃ TRẢ khóa theo số tiền trả thật (rate lịch sử),
+        // đơn hoàn thành CHƯA trả + đơn đang xử lý tính theo rate hiện tại.
+        // → đổi rate không làm sai phần đã thanh toán.
+        let unpaid = 0;       // completed & chưa trả (rate hiện tại)
+        let processing = 0;   // đang xử lý / chưa hoàn thành (rate hiện tại)
         for (const o of data.orders) {
-          if (COMPLETED_STATUSES.has(o.order_status) && !allPaidIds.has(o.order_id)) {
-            unpaid += Math.round((o.net_commission || 0) * rate / 100);
+          const amt = Math.round((o.net_commission || 0) * rate / 100);
+          if (COMPLETED_STATUSES.has(o.order_status)) {
+            if (!allPaidIds.has(o.order_id)) unpaid += amt;
+          } else {
+            processing += amt;
           }
         }
+        const totalCashback = totalPaidAmount + unpaid + processing;
 
         summaries.push({
           userId,
@@ -539,7 +547,7 @@ const payoutStore = {
           commissionMode: refUser?.commission_mode || 'normal',
           fLevel: level,
           rate,
-          totalCashback: data.total,
+          totalCashback,
           pendingPayment: unpaid,
           orderCount: data.orders.length,
           totalPaid: totalPaidAmount,

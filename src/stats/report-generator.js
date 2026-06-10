@@ -20,18 +20,19 @@ function isChainCancelled(status) {
 
 // Calculate referrer earnings using buyer registration chain — matches payout-store logic exactly.
 // LNK earns F1 rate on buyers directly under LNK, F2 rate on buyers under LNK's F1s, etc.
-// `paidReferrerOrderIds` = order IDs already paid to this user as referrer (roles
-// referrer/f1/f2/f3); used to compute the "chờ trả" (completed-but-unpaid) split,
-// matching payout-store's pendingReferrerPayment.
-async function calcReferrerEarnings(userId, rates, paidReferrerOrderIds = new Set()) {
+// Rate-safe per level (mirror payout-store): mỗi cấp F1/F2/F3 =
+//   đã trả thật (rate lịch sử, `paidByLevel`) + completed chưa trả × rate + đang xử lý × rate.
+// `paidReferrerOrderIds` = đơn đã trả referrer (để loại khỏi "chưa trả").
+async function calcReferrerEarnings(userId, rates, paidReferrerOrderIds = new Set(), paidByLevel = { 1: 0, 2: 0, 3: 0 }) {
   const uid = String(userId);
   const allUsers = await db.all('SELECT user_id, referrer_id FROM users');
   const parentOf = {};
   for (const u of allUsers) parentOf[String(u.user_id)] = u.referrer_id ? String(u.referrer_id) : null;
 
   const orders = await db.all(CHAIN_ORDERS_SQL);
-  let f1 = 0, f2 = 0, f3 = 0;
-  let pending = 0; // referrer earnings on completed-but-unpaid downline orders
+  const rateOf = { 1: rates.f1, 2: rates.f2, 3: rates.f3 };
+  const unpaid = { 1: 0, 2: 0, 3: 0 };      // completed & chưa trả × rate
+  const processing = { 1: 0, 2: 0, 3: 0 };  // đang xử lý × rate
 
   for (const o of orders) {
     if (isChainCancelled(o.order_status)) continue;
@@ -41,15 +42,21 @@ async function calcReferrerEarnings(userId, rates, paidReferrerOrderIds = new Se
     const p1 = parentOf[b] || null;
     const p2 = p1 ? (parentOf[p1] || null) : null;
     const p3 = p2 ? (parentOf[p2] || null) : null;
-    let earned = 0;
-    if (p1 === uid) { earned = Math.round(nc * rates.f1 / 100); f1 += earned; }
-    else if (p2 === uid) { earned = Math.round(nc * rates.f2 / 100); f2 += earned; }
-    else if (p3 === uid) { earned = Math.round(nc * rates.f3 / 100); f3 += earned; }
-    // Completed downline order not yet paid as referrer → owed to this user now
-    if (earned > 0 && COMPLETED_STATUSES.has(o.order_status) && !paidReferrerOrderIds.has(o.order_id)) {
-      pending += earned;
+    const level = p1 === uid ? 1 : p2 === uid ? 2 : p3 === uid ? 3 : 0;
+    if (!level) continue;
+    const amt = Math.round(nc * rateOf[level] / 100);
+    if (COMPLETED_STATUSES.has(o.order_status)) {
+      if (!paidReferrerOrderIds.has(o.order_id)) unpaid[level] += amt;
+    } else {
+      processing[level] += amt;
     }
   }
+
+  // Rate-safe total per level = đã trả (lịch sử) + chưa trả × rate + đang xử lý × rate
+  const f1 = (paidByLevel[1] || 0) + unpaid[1] + processing[1];
+  const f2 = (paidByLevel[2] || 0) + unpaid[2] + processing[2];
+  const f3 = (paidByLevel[3] || 0) + unpaid[3] + processing[3];
+  const pending = unpaid[1] + unpaid[2] + unpaid[3];
 
   return { totalF1Earnings: f1, totalF2Earnings: f2, totalF3Earnings: f3, pendingReferrerPayment: pending };
 }
@@ -127,7 +134,18 @@ function mapDownlineRow(r) {
  * Stops at depth 3 (F1 → F2 → F3) — matches the system's F-tier cap.
  * If a node is in 'custom' mode, the chain breaks below it (no F2/F3 from that branch).
  */
-async function loadDownlineTree(userId, rates) {
+async function loadDownlineTree(userId, rates, paidRefByBuyer = {}) {
+  // Rate-safe per-node earnings: completed orders đã trả khóa theo cashback lịch sử,
+  // phần còn lại × rate hiện tại. → đổi rate không làm sai đơn đã thanh toán.
+  const setNodeEarnings = (node, rate) => {
+    const paid = paidRefByBuyer[String(node.userId)] || { cashback: 0, nc: 0 };
+    const completedUnpaidNc = Math.max(0, node.completedCommission - paid.nc);
+    node.completedEarnings = Math.round(completedUnpaidNc * rate / 100) + paid.cashback;
+    const pendingNc = Math.max(0, node.totalCommission - node.completedCommission);
+    node.pendingEarnings = Math.round(pendingNc * rate / 100);
+    node.earnings = node.completedEarnings + node.pendingEarnings;
+  };
+
   const f1Rows = await db.all(DOWNLINE_SQL, [userId]);
   const f1List = [];
   let totalF1Earnings = 0;
@@ -136,9 +154,7 @@ async function loadDownlineTree(userId, rates) {
 
   for (const r of f1Rows) {
     const f1 = mapDownlineRow(r);
-    f1.earnings = Math.round(f1.totalCommission * rates.f1 / 100);
-    f1.completedEarnings = Math.round(f1.completedCommission * rates.f1 / 100);
-    f1.pendingEarnings = Math.max(0, f1.earnings - f1.completedEarnings);
+    setNodeEarnings(f1, rates.f1);
     totalF1Earnings += f1.earnings;
 
     // If F1 is custom mode, the user doesn't earn F2/F3 from this branch
@@ -153,9 +169,7 @@ async function loadDownlineTree(userId, rates) {
     const subCtvs = [];
     for (const r2 of f2Rows) {
       const f2 = mapDownlineRow(r2);
-      f2.earnings = Math.round(f2.totalCommission * rates.f2 / 100);
-      f2.completedEarnings = Math.round(f2.completedCommission * rates.f2 / 100);
-      f2.pendingEarnings = Math.max(0, f2.earnings - f2.completedEarnings);
+      setNodeEarnings(f2, rates.f2);
       totalF2Earnings += f2.earnings;
 
       if (f2.commissionMode === 'custom') {
@@ -168,9 +182,7 @@ async function loadDownlineTree(userId, rates) {
       const f3Rows = await db.all(DOWNLINE_SQL, [f2.userId]);
       const f3SubCtvs = f3Rows.map(r3 => {
         const f3 = mapDownlineRow(r3);
-        f3.earnings = Math.round(f3.totalCommission * rates.f3 / 100);
-        f3.completedEarnings = Math.round(f3.completedCommission * rates.f3 / 100);
-        f3.pendingEarnings = Math.max(0, f3.earnings - f3.completedEarnings);
+        setNodeEarnings(f3, rates.f3);
         totalF3Earnings += f3.earnings;
         return f3;
       });
@@ -225,15 +237,28 @@ class ReportGenerator {
     const paidBuyerOrderIds = new Set();
     const paidCustomOrderIds = new Set();
     const paidReferrerOrderIds = new Set();
+    // Rate-safe referrer: số tiền ĐÃ TRẢ thật (rate lịch sử), theo cấp + theo người mua.
+    const paidByLevel = { 1: 0, 2: 0, 3: 0 };           // lump đã trả mỗi cấp
+    const paidRefByBuyer = {};                           // buyerId → { cashback, nc } đã trả (cho cây CTV)
     for (const p of payouts) {
       let orders = p.paid_orders;
       if (typeof orders === 'string') { try { orders = JSON.parse(orders); } catch { orders = null; } }
+      const refLevel = (p.role === 'f1' || p.role === 'referrer') ? 1 : p.role === 'f2' ? 2 : p.role === 'f3' ? 3 : 0;
+      if (refLevel) paidByLevel[refLevel] += Number(p.amount) || 0;
       if (!Array.isArray(orders)) continue;
       for (const o of orders) {
         if (!o.orderId) continue;
         if (['f0', 'buyer'].includes(p.role)) paidBuyerOrderIds.add(o.orderId);
         if (p.role === 'custom') paidCustomOrderIds.add(o.orderId);
-        if (['referrer', 'f1', 'f2', 'f3'].includes(p.role)) paidReferrerOrderIds.add(o.orderId);
+        if (['referrer', 'f1', 'f2', 'f3'].includes(p.role)) {
+          paidReferrerOrderIds.add(o.orderId);
+          const b = String(o.buyerId || '');
+          if (b) {
+            if (!paidRefByBuyer[b]) paidRefByBuyer[b] = { cashback: 0, nc: 0 };
+            paidRefByBuyer[b].cashback += Number(o.cashback) || 0;
+            paidRefByBuyer[b].nc += Number(o.netCommission) || 0;
+          }
+        }
       }
     }
 
@@ -269,9 +294,9 @@ class ReportGenerator {
     }
 
     // 6. Downline tree (F1 + F2 + F3) for display + correct chain-based earnings
-    const downline = await loadDownlineTree(userId, rates);
+    const downline = await loadDownlineTree(userId, rates, paidRefByBuyer);
     const ctvList = downline.list;
-    const referrerEarnings = await calcReferrerEarnings(userId, rates, paidReferrerOrderIds);
+    const referrerEarnings = await calcReferrerEarnings(userId, rates, paidReferrerOrderIds, paidByLevel);
 
     // 7. Monthly revenue chart (last 6 months) — based on user's own orders only
     const monthlyRevenue = await db.all(
