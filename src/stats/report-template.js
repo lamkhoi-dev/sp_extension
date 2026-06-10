@@ -727,6 +727,7 @@ function renderReport(data) {
     }
     .ctv-header-name { flex: 1; }
     .ctv-header-val { min-width: 80px; text-align: right; }
+    .ctv-header-note { display: block; font-size: 8px; font-weight: 500; color: var(--text-dim); text-transform: none; letter-spacing: 0; margin-top: 2px; opacity: 0.75; }
 
     .ctv-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--glass-border); flex-shrink: 0; }
     .ctv-avatar-placeholder {
@@ -948,8 +949,8 @@ function renderReport(data) {
         </div>
         <div class="ctv-header">
           <div class="ctv-header-name">Thành viên</div>
-          <div class="ctv-header-val">Đã nhận</div>
-          <div class="ctv-header-val">Đang xử lý</div>
+          <div class="ctv-header-val">Đã nhận<span class="ctv-header-note">các đơn đã hoàn thành</span></div>
+          <div class="ctv-header-val">Đang xử lý<span class="ctv-header-note">các đơn đang xử lý</span></div>
         </div>
         <div class="ctv-tree">
           ${ctvList.map(node => renderCtvNode(node, 1, rates)).join('')}
