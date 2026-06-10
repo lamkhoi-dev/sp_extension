@@ -27,6 +27,7 @@ const reportStore = require('./src/stats/report-store');
 const { buildThongkeMessage } = require('./src/stats/report-message');
 const { renderReport } = require('./src/stats/report-template');
 const healthMonitor = require('./src/cron/health-monitor');
+const dbBackup = require('./src/cron/db-backup');
 const linkRedirectStore = require('./src/api/link-redirect-store');
 const commissionRatesStore = require('./src/api/commission-rates-store');
 const withdrawalStore = require('./src/api/withdrawal-store');
@@ -1974,6 +1975,7 @@ async function start() {
     }, 30000);
     
     healthMonitor.startMonitor();
+    dbBackup.startBackupScheduler();
   });
 }
 
