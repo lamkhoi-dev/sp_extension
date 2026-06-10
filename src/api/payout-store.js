@@ -1179,6 +1179,9 @@ const payoutStore = {
     const paidCustomOrderIds = new Set();
     let paidBuyerTotal = 0;
     let paidCustomTotal = 0;
+    // Referrer paid: lump total + per-(user:level) order sets (rate-safe, like getSummary)
+    let paidReferrerTotal = 0;
+    const paidRefSet = {}; // `${userId}:${level}` → Set<orderId>
 
     for (const p of allPayouts) {
       let orders = p.paid_orders;
@@ -1190,6 +1193,14 @@ const payoutStore = {
       } else if (p.role === 'custom') {
         for (const id of ids) paidCustomOrderIds.add(id);
         paidCustomTotal += Number(p.amount || 0);
+      } else {
+        const lvl = (p.role === 'f1' || p.role === 'referrer') ? 1 : p.role === 'f2' ? 2 : p.role === 'f3' ? 3 : 0;
+        if (lvl) {
+          paidReferrerTotal += Number(p.amount || 0);
+          const key = `${p.user_id}:${lvl}`;
+          if (!paidRefSet[key]) paidRefSet[key] = new Set();
+          for (const id of ids) paidRefSet[key].add(id);
+        }
       }
     }
 
@@ -1201,17 +1212,29 @@ const payoutStore = {
       unpaidBuyerCashback += Math.round((o.net_commission || 0) * f0Rate / 100);
     }
 
-    // Referrer: ALL non-cancelled matched orders × F1/F2/F3 rates (mirrors data.total in _calcReferrerSummaries)
-    let totalReferrerCashback = 0;
+    // Referrer (rate-safe, mirrors _calcReferrerSummaries): paid orders locked at
+    // actual paid amount (historical rate); completed-unpaid + processing at current rate.
+    let unpaidReferrer = 0;     // completed & chưa trả × rate hiện tại
+    let processingReferrer = 0; // đang xử lý × rate hiện tại
     for (const o of allOrders) {
       if (isCancelled(o.order_status)) continue;
       const nc = o.net_commission || 0;
       if (nc <= 0) continue;
       const chain = getChain(o.sub_id1);
-      if (chain.f1) totalReferrerCashback += Math.round(nc * f1Rate / 100);
-      if (chain.f2) totalReferrerCashback += Math.round(nc * f2Rate / 100);
-      if (chain.f3) totalReferrerCashback += Math.round(nc * f3Rate / 100);
+      const levels = [[chain.f1, 1, f1Rate], [chain.f2, 2, f2Rate], [chain.f3, 3, f3Rate]];
+      const completed = COMPLETED_STATUSES.has(o.order_status);
+      for (const [uid, lvl, rate] of levels) {
+        if (!uid) continue;
+        const amt = Math.round(nc * rate / 100);
+        if (completed) {
+          const paid = paidRefSet[`${uid}:${lvl}`];
+          if (!(paid && paid.has(o.order_id))) unpaidReferrer += amt;
+        } else {
+          processingReferrer += amt;
+        }
+      }
     }
+    const totalReferrerCashback = paidReferrerTotal + unpaidReferrer + processingReferrer;
 
     // Custom: paid actual + unpaid non-cancelled orders at each user's custom rate
     const userCustomRates = {};
