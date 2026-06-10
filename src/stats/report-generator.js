@@ -9,6 +9,9 @@ const payoutStore = require('../api/payout-store');
 // DISTINCT — undercounting commission vs the order-level match used for payouts.
 const CHAIN_ORDERS_SQL = payoutStore._MATCHED_ORDERS_SQL;
 
+// Mirror payout-store's exact completed-status set (no fuzzy matching).
+const COMPLETED_STATUSES = new Set(['Hoàn thành', 'Completed']);
+
 function isChainCancelled(status) {
   if (!status) return false;
   const s = status.toLowerCase();
@@ -194,26 +197,12 @@ class ReportGenerator {
       [userId]
     );
 
-    // 3. Matched orders ONLY (standard buyer/referrer flow, exclude from_custom)
-    const matchedOrders = await db.all(
-      `SELECT DISTINCT o.order_id, o.item_name, o.shop_name, o.price, o.quantity,
-              o.order_status, o.order_time, o.complete_time,
-              o.net_commission, o.total_product_commission, o.total_product_commission_new,
-              o.order_value, o.refund_amount, o.sub_id1, o.sub_id2
-       FROM orders o
-       INNER JOIN convert_logs cl ON (
-         (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-         OR
-         (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-       )
-       WHERE cl.user_id = ? AND cl.status = 'success'
-         AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
-         AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
-         AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
-         AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
-       ORDER BY o.order_time DESC`,
-      [userId]
-    );
+    // 3. Matched orders (standard buyer flow) — reuse payout-store's canonical
+    //    order set (order-level match by o.sub_id1, per-item rows) so buyer
+    //    cashback equals the Payouts page. Cancelled (incl. "chưa thanh toán")
+    //    are filtered in JS below, matching payout-store's isCancelled.
+    const matchedOrdersRaw = await db.all(payoutStore._MATCHED_ORDERS_BY_USER_SQL, [userId]);
+    const matchedOrders = matchedOrdersRaw.filter(o => !isChainCancelled(o.order_status));
 
     // 4. Payout history
     const payouts = await db.all(
@@ -237,8 +226,9 @@ class ReportGenerator {
       }
     }
 
-    // 4b. Custom orders — F1 gửi link cho F2 (sub_id4 = from_custom)
-    const customOrders = await db.all(
+    // 4b. Custom orders — F1 gửi link cho F2 (sub_id4 = from_custom).
+    //     Cancelled (incl. "chưa thanh toán") filtered in JS to match payout-store.
+    const customOrdersRaw = await db.all(
       `SELECT o.order_id, o.item_name, o.shop_name, o.price, o.quantity,
               o.order_status, o.order_time, o.complete_time,
               o.net_commission, o.order_value, o.refund_amount,
@@ -246,12 +236,10 @@ class ReportGenerator {
        FROM orders o
        WHERE o.sub_id1 = ?
          AND o.sub_id4 IN ('from_custom', 'custom')
-         AND COALESCE(o.order_status,'') NOT LIKE '%hủy%'
-         AND COALESCE(o.order_status,'') NOT LIKE '%huỷ%'
-         AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
        ORDER BY o.order_time DESC`,
       [userId]
     );
+    const customOrders = customOrdersRaw.filter(o => !isChainCancelled(o.order_status));
 
     // 5. Referrer info (ai mời user này vào)
     let referrer = null;
@@ -320,10 +308,8 @@ class ReportGenerator {
     const f0Rate = rates.f0;
     const hasReferrer = !!(user.referrer_id && user.referrer_id !== '');
 
-    const isCompleted = (o) =>
-      o.order_status?.toLowerCase().includes('hoàn thành') ||
-      o.order_status?.toLowerCase().includes('completed') ||
-      o.order_status?.toLowerCase().includes('settled');
+    // Match payout-store exactly: completed = exact status, not fuzzy includes.
+    const isCompleted = (o) => COMPLETED_STATUSES.has(o.order_status);
 
     const completedOrders = matchedOrders.filter(isCompleted);
     const pendingOrders = matchedOrders.filter(o => !isCompleted(o));
