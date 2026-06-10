@@ -66,28 +66,34 @@ const DOWNLINE_SQL = `
              AND COALESCE(o.order_status,'') NOT LIKE '%Cancel%'
          ), 0) AS order_count,
          COALESCE((
-           SELECT SUM(o2.net_commission)
-           FROM orders o2
-           INNER JOIN convert_logs cl3 ON (
-             (o2.item_id != '' AND o2.item_id = cl3.item_id AND o2.sub_id1 = cl3.sub_id1)
-             OR
-             (cl3.item_id = '' AND o2.item_name != '' AND o2.item_name = cl3.product_name AND o2.sub_id1 = cl3.sub_id1)
-           )
-           WHERE cl3.user_id = u.user_id AND cl3.status = 'success'
-             AND COALESCE(o2.order_status,'') NOT LIKE '%hủy%'
-             AND COALESCE(o2.order_status,'') NOT LIKE '%huỷ%'
-             AND COALESCE(o2.order_status,'') NOT LIKE '%Cancel%'
+           -- DISTINCT order_id: an order may match multiple convert_logs (multi-item /
+           -- duplicate links) — without dedup, SUM double-counts net_commission.
+           SELECT SUM(t.nc) FROM (
+             SELECT DISTINCT o2.order_id, o2.net_commission AS nc
+             FROM orders o2
+             INNER JOIN convert_logs cl3 ON (
+               (o2.item_id != '' AND o2.item_id = cl3.item_id AND o2.sub_id1 = cl3.sub_id1)
+               OR
+               (cl3.item_id = '' AND o2.item_name != '' AND o2.item_name = cl3.product_name AND o2.sub_id1 = cl3.sub_id1)
+             )
+             WHERE cl3.user_id = u.user_id AND cl3.status = 'success'
+               AND COALESCE(o2.order_status,'') NOT LIKE '%hủy%'
+               AND COALESCE(o2.order_status,'') NOT LIKE '%huỷ%'
+               AND COALESCE(o2.order_status,'') NOT LIKE '%Cancel%'
+           ) t
          ), 0) AS total_commission,
          COALESCE((
-           SELECT SUM(o3.net_commission)
-           FROM orders o3
-           INNER JOIN convert_logs cl4 ON (
-             (o3.item_id != '' AND o3.item_id = cl4.item_id AND o3.sub_id1 = cl4.sub_id1)
-             OR
-             (cl4.item_id = '' AND o3.item_name != '' AND o3.item_name = cl4.product_name AND o3.sub_id1 = cl4.sub_id1)
-           )
-           WHERE cl4.user_id = u.user_id AND cl4.status = 'success'
-             AND (COALESCE(o3.order_status,'') LIKE '%hoàn thành%' OR COALESCE(o3.order_status,'') LIKE '%completed%' OR COALESCE(o3.order_status,'') LIKE '%settled%')
+           SELECT SUM(t.nc) FROM (
+             SELECT DISTINCT o3.order_id, o3.net_commission AS nc
+             FROM orders o3
+             INNER JOIN convert_logs cl4 ON (
+               (o3.item_id != '' AND o3.item_id = cl4.item_id AND o3.sub_id1 = cl4.sub_id1)
+               OR
+               (cl4.item_id = '' AND o3.item_name != '' AND o3.item_name = cl4.product_name AND o3.sub_id1 = cl4.sub_id1)
+             )
+             WHERE cl4.user_id = u.user_id AND cl4.status = 'success'
+               AND (COALESCE(o3.order_status,'') LIKE '%hoàn thành%' OR COALESCE(o3.order_status,'') LIKE '%completed%' OR COALESCE(o3.order_status,'') LIKE '%settled%')
+           ) t
          ), 0) AS completed_commission
   FROM users u
   WHERE u.referrer_id = $1
