@@ -1,18 +1,13 @@
 const db = require('../db');
 const logger = require('../logger');
 const commissionRatesStore = require('../api/commission-rates-store');
+const payoutStore = require('../api/payout-store');
 
-// All matched orders (non-custom) — same pattern as payout-store MATCHED_ORDERS_SQL
-const CHAIN_ORDERS_SQL = `
-  SELECT DISTINCT o.order_id, o.sub_id1, o.order_status, o.net_commission
-  FROM orders o
-  INNER JOIN convert_logs cl ON (
-    (o.item_id != '' AND o.item_id = cl.item_id AND o.sub_id1 = cl.sub_id1)
-    OR
-    (cl.item_id = '' AND o.item_name != '' AND o.item_name = cl.product_name AND o.sub_id1 = cl.sub_id1)
-  )
-  WHERE cl.status = 'success' AND COALESCE(o.sub_id4, '') NOT IN ('from_custom', 'custom')
-`;
+// Reuse payout-store's canonical order set so referrer earnings here are
+// byte-for-byte identical to the Payouts page. The old local query matched at
+// item-level and collapsed multi-item rows sharing the same net_commission via
+// DISTINCT — undercounting commission vs the order-level match used for payouts.
+const CHAIN_ORDERS_SQL = payoutStore._MATCHED_ORDERS_SQL;
 
 function isChainCancelled(status) {
   if (!status) return false;
@@ -69,7 +64,9 @@ const DOWNLINE_SQL = `
            -- DISTINCT order_id: an order may match multiple convert_logs (multi-item /
            -- duplicate links) — without dedup, SUM double-counts net_commission.
            SELECT SUM(t.nc) FROM (
-             SELECT DISTINCT o2.order_id, o2.net_commission AS nc
+             -- dedup key = (order_id, item_id): collapse convert_logs-join dupes
+             -- but KEEP distinct items of a multi-item order (they may share nc).
+             SELECT DISTINCT o2.order_id, o2.item_id, o2.net_commission AS nc
              FROM orders o2
              INNER JOIN convert_logs cl3 ON (
                (o2.item_id != '' AND o2.item_id = cl3.item_id AND o2.sub_id1 = cl3.sub_id1)
@@ -84,7 +81,7 @@ const DOWNLINE_SQL = `
          ), 0) AS total_commission,
          COALESCE((
            SELECT SUM(t.nc) FROM (
-             SELECT DISTINCT o3.order_id, o3.net_commission AS nc
+             SELECT DISTINCT o3.order_id, o3.item_id, o3.net_commission AS nc
              FROM orders o3
              INNER JOIN convert_logs cl4 ON (
                (o3.item_id != '' AND o3.item_id = cl4.item_id AND o3.sub_id1 = cl4.sub_id1)

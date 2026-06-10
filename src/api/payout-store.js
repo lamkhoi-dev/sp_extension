@@ -1227,3 +1227,8 @@ const payoutStore = {
 };
 
 module.exports = payoutStore;
+// Canonical order-matching SQL — exported so report-generator reuses the exact
+// same order set (order-level match, per-item rows) and never diverges from the
+// money figures shown on the Payouts page.
+module.exports._MATCHED_ORDERS_SQL = MATCHED_ORDERS_SQL;
+module.exports._MATCHED_ORDERS_BY_USER_SQL = MATCHED_ORDERS_BY_USER_SQL;
