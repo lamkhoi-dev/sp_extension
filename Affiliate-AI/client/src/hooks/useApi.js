@@ -110,7 +110,7 @@ export function useUsers() {
   const fetch_ = useCallback(async (query = '') => {
     setLoading(true);
     try {
-      const params = query ? `?search=${encodeURIComponent(query)}&limit=100` : '?limit=100';
+      const params = query ? `?search=${encodeURIComponent(query)}&limit=500` : '?limit=500';
       const data = await apiFetch(`/users${params}`);
       setUsers(data);
     } catch (err) {
