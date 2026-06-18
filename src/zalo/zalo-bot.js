@@ -153,16 +153,23 @@ class ZaloBot {
       logger.info('ZaloBot', `📩 ${isGroup ? 'Group' : 'DM'} [${message.threadId}] from ${senderUid}: ${contentPreview}`);
 
       // Save to message store FIRST
-      const msgId = await messageStore.save(message, { isGroup });
+      let msgId;
+      try {
+        msgId = await messageStore.save(message, { isGroup });
+      } catch (err) {
+        logger.error('ZaloBot', `MessageStore.save failed: ${err.message}`);
+      }
 
       // Record user (non-blocking profile fetch)
       const senderName = message.data?.dName || '';
-      await userCache.recordMessage(senderUid, senderName);
+      userCache.recordMessage(senderUid, senderName).catch(() => {});
       userCache.fetchAndSave(senderUid).catch(() => {}); // async, non-blocking
 
       // Emit for dashboard
-      const entry = await messageStore.getById(msgId);
-      if (entry) this._emitMessage(entry);
+      if (msgId) {
+        const entry = await messageStore.getById(msgId).catch(() => null);
+        if (entry) this._emitMessage(entry);
+      }
 
       // Process via concurrent handler — parallel across threads, sequential within same thread
       this.concurrentHandler.process(message.threadId, async () => {
