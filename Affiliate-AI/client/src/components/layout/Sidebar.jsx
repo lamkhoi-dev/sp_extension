@@ -15,7 +15,8 @@ import {
   Menu,
   X,
   FlaskConical,
-  FileSearch
+  FileSearch,
+  CircleDollarSign
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -25,6 +26,7 @@ const menuItems = [
   { path: '/convert-logs', icon: Link2, label: 'Lịch sử Convert' },
   { path: '/orders', icon: ShoppingCart, label: 'Đơn hàng' },
   { path: '/payouts', icon: Wallet, label: 'Hoàn tiền' },
+  { path: '/cash-flow', icon: CircleDollarSign, label: 'Thu Chi' },
   { path: '/reports', icon: BarChart3, label: 'Báo cáo' },
   { path: '/system-history', icon: History, label: 'Lịch sử hệ thống' },
   { path: '/settings', icon: Settings, label: 'Cài đặt' },

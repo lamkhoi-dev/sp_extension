@@ -13,6 +13,7 @@ import SettingsPage from './pages/Settings';
 import SystemHistoryPage from './pages/SystemHistory';
 import SimulateOrderPage from './pages/SimulateOrder';
 import TestReportPage from './pages/TestReport';
+import CashFlowPage from './pages/CashFlow';
 
 function ProtectedRoute({ children }) {
   const { admin, loading } = useAuth();
@@ -54,6 +55,7 @@ function App() {
               <Route path="/system-history" element={<SystemHistoryPage />} />
               <Route path="/simulate" element={<SimulateOrderPage />} />
               <Route path="/test-report" element={<TestReportPage />} />
+              <Route path="/cash-flow" element={<CashFlowPage />} />
             </Route>
           </Routes>
         </BrowserRouter>
