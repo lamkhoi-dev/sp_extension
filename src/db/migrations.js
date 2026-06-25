@@ -261,6 +261,38 @@ const SQLITE_SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_clicks_token ON link_click_events(token);
   CREATE INDEX IF NOT EXISTS idx_clicks_time ON link_click_events(clicked_at DESC);
+
+  -- Cash Flow: transaction categories (per type)
+  CREATE TABLE IF NOT EXISTS cashflow_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    color TEXT DEFAULT '#6b7280',
+    type TEXT DEFAULT 'expense' CHECK(type IN ('income','cashback','expense')),
+    is_active INTEGER DEFAULT 1,
+    created_by TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    UNIQUE(name, type)
+  );
+  CREATE INDEX IF NOT EXISTS idx_cashflow_cat_type ON cashflow_categories(type);
+
+  -- Cash Flow: fund ledger (income / cashback / expense)
+  CREATE TABLE IF NOT EXISTS cashflow_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL CHECK(type IN ('income','cashback','expense')),
+    amount REAL NOT NULL,
+    category_id INTEGER DEFAULT NULL,
+    description TEXT DEFAULT '',
+    counterparty TEXT DEFAULT '',
+    user_id TEXT DEFAULT '',
+    reference_payout_id INTEGER UNIQUE DEFAULT NULL,
+    receipt_image TEXT DEFAULT '',
+    occurred_at TEXT DEFAULT (datetime('now','localtime')),
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_cashflow_tx_type ON cashflow_transactions(type);
+  CREATE INDEX IF NOT EXISTS idx_cashflow_tx_occurred ON cashflow_transactions(occurred_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_cashflow_tx_payout ON cashflow_transactions(reference_payout_id);
 `;
 
 const PG_SCHEMA = `
@@ -522,6 +554,38 @@ const PG_SCHEMA = `
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     updated_by TEXT DEFAULT ''
   );
+
+  -- Cash Flow: transaction categories (per type)
+  CREATE TABLE IF NOT EXISTS cashflow_categories (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    color TEXT DEFAULT '#6b7280',
+    type TEXT DEFAULT 'expense' CHECK(type IN ('income','cashback','expense')),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_by TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(name, type)
+  );
+  CREATE INDEX IF NOT EXISTS idx_cashflow_cat_type ON cashflow_categories(type);
+
+  -- Cash Flow: fund ledger (income / cashback / expense)
+  CREATE TABLE IF NOT EXISTS cashflow_transactions (
+    id SERIAL PRIMARY KEY,
+    type TEXT NOT NULL CHECK(type IN ('income','cashback','expense')),
+    amount REAL NOT NULL,
+    category_id INTEGER DEFAULT NULL,
+    description TEXT DEFAULT '',
+    counterparty TEXT DEFAULT '',
+    user_id TEXT DEFAULT '',
+    reference_payout_id INTEGER UNIQUE DEFAULT NULL,
+    receipt_image TEXT DEFAULT '',
+    occurred_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_cashflow_tx_type ON cashflow_transactions(type);
+  CREATE INDEX IF NOT EXISTS idx_cashflow_tx_occurred ON cashflow_transactions(occurred_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_cashflow_tx_payout ON cashflow_transactions(reference_payout_id);
 `;
 
 async function runMigrations(db) {
@@ -763,6 +827,34 @@ async function runMigrations(db) {
         await db.exec(`SELECT setval('${table}_id_seq', COALESCE((SELECT MAX(id) FROM ${table}), 0) + 1, false)`);
       } catch (e) { /* sequence may not exist for all tables */ }
     }
+  }
+
+  // Safe migration: seed default cashflow categories (idempotent)
+  try {
+    const defaultCats = [
+      ['Hoa hồng Shopee', '#10b981', 'income'],
+      ['Hoàn tiền', '#f59e0b', 'cashback'],
+      ['Vận hành', '#ef4444', 'expense'],
+      ['Marketing', '#8b5cf6', 'expense'],
+      ['Khác', '#6b7280', 'expense'],
+    ];
+    for (const [name, color, type] of defaultCats) {
+      if (db.type === 'postgres') {
+        await db.run(
+          `INSERT INTO cashflow_categories (name, color, type, created_by)
+           VALUES ($1, $2, $3, 'system') ON CONFLICT (name, type) DO NOTHING`,
+          [name, color, type]
+        );
+      } else {
+        await db.run(
+          `INSERT OR IGNORE INTO cashflow_categories (name, color, type, created_by)
+           VALUES (?, ?, ?, 'system')`,
+          [name, color, type]
+        );
+      }
+    }
+  } catch (err) {
+    logger.warn('Migrations', `Failed to seed cashflow categories: ${err.message}`);
   }
 
   logger.info('Migrations', `Schema initialized (${db.type})`);

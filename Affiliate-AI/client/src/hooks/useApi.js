@@ -433,6 +433,119 @@ export function usePayouts() {
   return { summary, history, withdrawalRequests, loading, refresh, getUserDetail, createPayout, uploadBill, markWithdrawalDone };
 }
 
+// Cash Flow (Quản Lý Quỹ)
+const CASHFLOW_PER_PAGE = 10;
+export function useCashFlow() {
+  const [summary, setSummary] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [categories, setCategories] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ type: 'all', from: '', to: '', q: '', page: 1 });
+
+  const loadTransactions = useCallback(async (f) => {
+    const qs = new URLSearchParams();
+    if (f.type && f.type !== 'all') qs.append('type', f.type);
+    if (f.from) qs.append('from', f.from);
+    if (f.to) qs.append('to', f.to);
+    if (f.q) qs.append('q', f.q);
+    qs.append('limit', String(CASHFLOW_PER_PAGE));
+    qs.append('offset', String((f.page - 1) * CASHFLOW_PER_PAGE));
+    const data = await apiFetch(`/cashflow/transactions?${qs.toString()}`);
+    setTransactions(data.transactions || []);
+    setTotal(data.total || 0);
+  }, []);
+
+  const loadMeta = useCallback(async () => {
+    const [sum, cats, sug] = await Promise.all([
+      apiFetch('/cashflow/summary'),
+      apiFetch('/cashflow/categories'),
+      apiFetch('/cashflow/cashback-suggestions'),
+    ]);
+    setSummary(sum);
+    setCategories(cats.categories || []);
+    setSuggestions(sug.suggestions || []);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    loadTransactions(filters)
+      .catch((err) => console.error('CashFlow tx error:', err))
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [filters, loadTransactions]);
+
+  useEffect(() => {
+    loadMeta().catch((err) => console.error('CashFlow meta error:', err));
+  }, [loadMeta]);
+
+  const reloadAll = useCallback(async () => {
+    await Promise.all([loadMeta(), loadTransactions(filters)]);
+  }, [loadMeta, loadTransactions, filters]);
+
+  const createTransaction = useCallback(async (data) => {
+    const r = await apiFetch('/cashflow/transactions', { method: 'POST', body: JSON.stringify(data) });
+    await reloadAll();
+    return r;
+  }, [reloadAll]);
+
+  const updateTransaction = useCallback(async (id, data) => {
+    const r = await apiFetch(`/cashflow/transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    await reloadAll();
+    return r;
+  }, [reloadAll]);
+
+  const deleteTransaction = useCallback(async (id) => {
+    const r = await apiFetch(`/cashflow/transactions/${id}`, { method: 'DELETE' });
+    await reloadAll();
+    return r;
+  }, [reloadAll]);
+
+  const confirmCashback = useCallback(async ({ payoutId, categoryId, description, receiptImage }) => {
+    const r = await apiFetch('/cashflow/transactions', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'cashback', payoutId, categoryId, description, receiptImage }),
+    });
+    await reloadAll();
+    return r;
+  }, [reloadAll]);
+
+  const createCategory = useCallback(async (data) => {
+    const r = await apiFetch('/cashflow/categories', { method: 'POST', body: JSON.stringify(data) });
+    await loadMeta();
+    return r;
+  }, [loadMeta]);
+
+  const updateCategory = useCallback(async (id, data) => {
+    const r = await apiFetch(`/cashflow/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    await loadMeta();
+    return r;
+  }, [loadMeta]);
+
+  const deleteCategory = useCallback(async (id) => {
+    const r = await apiFetch(`/cashflow/categories/${id}`, { method: 'DELETE' });
+    await loadMeta();
+    return r;
+  }, [loadMeta]);
+
+  const uploadReceipt = useCallback(async (file) => {
+    const formData = new FormData();
+    formData.append('receipt', file);
+    const res = await fetch(`${API_BASE}/cashflow/upload-receipt`, { method: 'POST', body: formData, credentials: 'include' });
+    return res.json();
+  }, []);
+
+  return {
+    summary, transactions, total, categories, suggestions, loading,
+    filters, setFilters, perPage: CASHFLOW_PER_PAGE,
+    reloadAll,
+    createTransaction, updateTransaction, deleteTransaction, confirmCashback,
+    createCategory, updateCategory, deleteCategory, uploadReceipt,
+  };
+}
+
 // Update user cashback rates
 export async function updateUserCashbackRates(userId, buyerRate, referrerEarnRate, customRate) {
   return apiFetch(`/users/${userId}/cashback-rates`, {

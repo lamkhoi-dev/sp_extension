@@ -31,6 +31,7 @@ const dbBackup = require('./src/cron/db-backup');
 const linkRedirectStore = require('./src/api/link-redirect-store');
 const commissionRatesStore = require('./src/api/commission-rates-store');
 const withdrawalStore = require('./src/api/withdrawal-store');
+const cashflowStore = require('./src/api/cashflow-store');
 const ShopeeAPI = require('./src/shopee-api');
 
 
@@ -1310,6 +1311,130 @@ app.post('/api/payouts/upload-bill', billUpload.single('bill'), async (req, res)
     await auditStore.log(req.admin?.username || 'system', 'UPDATE_BILL', 'payout', payoutId, { filename: req.file.filename }, req.ip);
   }
   res.json({ success: true, filename: req.file.filename, path: `/api/payouts/bills/${req.file.filename}` });
+});
+
+// ─── Cash Flow API (Quản Lý Quỹ) ────────────────────────
+
+const receiptUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(__dirname, 'data/receipts');
+      fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.png';
+      cb(null, `receipt-${Date.now()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+app.use('/api/cashflow/receipts', express.static(path.join(__dirname, 'data/receipts')));
+
+app.get('/api/cashflow/summary', async (req, res) => {
+  try {
+    res.json(await cashflowStore.getSummary());
+  } catch (err) {
+    logger.error('CashflowAPI', `summary failed: ${err.message}`);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/cashflow/categories', async (req, res) => {
+  res.json({ categories: await cashflowStore.listCategories() });
+});
+
+app.post('/api/cashflow/categories', async (req, res) => {
+  const { name, color, type } = req.body;
+  if (!name || !type) return res.status(400).json({ error: 'name và type là bắt buộc' });
+  if (!['income', 'cashback', 'expense'].includes(type)) return res.status(400).json({ error: 'type không hợp lệ' });
+  const result = await cashflowStore.createCategory({ name: String(name).trim(), color, type, createdBy: req.admin?.username });
+  if (result.error) return res.status(400).json({ error: result.error });
+  await auditStore.log(req.admin?.username || 'system', 'CREATE_CASHFLOW_CATEGORY', 'cashflow_category', String(result.id), { name, type }, req.ip);
+  res.json({ success: true, id: result.id });
+});
+
+app.put('/api/cashflow/categories/:id', async (req, res) => {
+  const { name, color } = req.body;
+  const ok = await cashflowStore.updateCategory(Number(req.params.id), { name, color });
+  if (!ok) return res.status(500).json({ error: 'Cập nhật thất bại' });
+  await auditStore.log(req.admin?.username || 'system', 'UPDATE_CASHFLOW_CATEGORY', 'cashflow_category', req.params.id, { name, color }, req.ip);
+  res.json({ success: true });
+});
+
+app.delete('/api/cashflow/categories/:id', async (req, res) => {
+  const ok = await cashflowStore.deleteCategory(Number(req.params.id));
+  if (!ok) return res.status(500).json({ error: 'Xóa thất bại' });
+  await auditStore.log(req.admin?.username || 'system', 'DELETE_CASHFLOW_CATEGORY', 'cashflow_category', req.params.id, {}, req.ip);
+  res.json({ success: true });
+});
+
+app.get('/api/cashflow/cashback-suggestions', async (req, res) => {
+  res.json({ suggestions: await cashflowStore.getCashbackSuggestions() });
+});
+
+app.get('/api/cashflow/transactions', async (req, res) => {
+  const { type, from, to, q, limit = 20, offset = 0 } = req.query;
+  const result = await cashflowStore.listTransactions({
+    type, from, to, q,
+    limit: Math.min(parseInt(limit) || 20, 200),
+    offset: parseInt(offset) || 0,
+  });
+  res.json(result);
+});
+
+app.post('/api/cashflow/transactions', async (req, res) => {
+  const { type, amount, categoryId, description, counterparty, userId, receiptImage, occurredAt, payoutId } = req.body;
+
+  // Cashback is confirmed from an existing payout (never free-form) → no double counting
+  if (type === 'cashback') {
+    if (!payoutId) return res.status(400).json({ error: 'Hoàn tiền cần payoutId để xác nhận' });
+    const result = await cashflowStore.confirmCashback({ payoutId, categoryId, description, receiptImage, createdBy: req.admin?.username });
+    if (result.error) return res.status(400).json({ error: result.error });
+    await auditStore.log(req.admin?.username || 'system', 'CONFIRM_CASHFLOW_CASHBACK', 'cashflow_transaction', String(result.id), { payoutId, amount: result.amount }, req.ip);
+    return res.json({ success: true, id: result.id, amount: result.amount });
+  }
+
+  // Manual income / expense
+  if (!['income', 'expense'].includes(type)) return res.status(400).json({ error: 'type không hợp lệ' });
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'Số tiền phải lớn hơn 0' });
+
+  const result = await cashflowStore.createTransaction({
+    type, amount: amt, categoryId, description, counterparty, userId, receiptImage, occurredAt,
+    createdBy: req.admin?.username,
+  });
+  if (result.error) return res.status(400).json({ error: result.error });
+  await auditStore.log(req.admin?.username || 'system', 'CREATE_CASHFLOW_TRANSACTION', 'cashflow_transaction', String(result.id), { type, amount: amt }, req.ip);
+  res.json({ success: true, id: result.id });
+});
+
+app.put('/api/cashflow/transactions/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const existing = await cashflowStore.getTransaction(id);
+  if (!existing) return res.status(404).json({ error: 'Không tìm thấy giao dịch' });
+  if (existing.type === 'cashback') return res.status(400).json({ error: 'Giao dịch hoàn tiền lấy từ trang Payouts, không sửa ở đây' });
+  const { amount, categoryId, description, counterparty, occurredAt, receiptImage } = req.body;
+  const ok = await cashflowStore.updateTransaction(id, { amount, categoryId, description, counterparty, occurredAt, receiptImage });
+  if (!ok) return res.status(500).json({ error: 'Cập nhật thất bại' });
+  await auditStore.log(req.admin?.username || 'system', 'UPDATE_CASHFLOW_TRANSACTION', 'cashflow_transaction', String(id), { amount }, req.ip);
+  res.json({ success: true });
+});
+
+app.delete('/api/cashflow/transactions/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const existing = await cashflowStore.getTransaction(id);
+  if (!existing) return res.status(404).json({ error: 'Không tìm thấy giao dịch' });
+  const ok = await cashflowStore.deleteTransaction(id);
+  if (!ok) return res.status(500).json({ error: 'Xóa thất bại' });
+  await auditStore.log(req.admin?.username || 'system', 'DELETE_CASHFLOW_TRANSACTION', 'cashflow_transaction', String(id), { type: existing.type, amount: existing.amount, refPayout: existing.reference_payout_id }, req.ip);
+  res.json({ success: true });
+});
+
+app.post('/api/cashflow/upload-receipt', receiptUpload.single('receipt'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  res.json({ success: true, filename: req.file.filename, path: `/api/cashflow/receipts/${req.file.filename}` });
 });
 
 app.patch('/api/users/:userId/cashback-rates', async (req, res) => {
