@@ -85,35 +85,6 @@ async function createTransaction({ type, amount, categoryId, description, counte
   }
 }
 
-/** Edit a transaction (income/expense fields). Null fields are kept unchanged. */
-async function updateTransaction(id, { amount, categoryId, description, counterparty, occurredAt, receiptImage }) {
-  try {
-    await db.run(
-      `UPDATE cashflow_transactions
-       SET amount = COALESCE(?, amount),
-           category_id = COALESCE(?, category_id),
-           description = COALESCE(?, description),
-           counterparty = COALESCE(?, counterparty),
-           occurred_at = COALESCE(?, occurred_at),
-           receipt_image = COALESCE(?, receipt_image)
-       WHERE id = ?`,
-      [
-        amount === undefined ? null : Number(amount),
-        categoryId ?? null,
-        description ?? null,
-        counterparty ?? null,
-        occurredAt ?? null,
-        receiptImage ?? null,
-        id,
-      ]
-    );
-    return true;
-  } catch (err) {
-    logger.error('CashflowStore', `updateTransaction(${id}) failed: ${err.message}`);
-    return false;
-  }
-}
-
 async function deleteTransaction(id) {
   try {
     const result = await db.run('DELETE FROM cashflow_transactions WHERE id = ?', [id]);
@@ -297,7 +268,6 @@ module.exports = {
   listTransactions,
   getTransaction,
   createTransaction,
-  updateTransaction,
   deleteTransaction,
   getCashbackSuggestions,
   confirmCashback,

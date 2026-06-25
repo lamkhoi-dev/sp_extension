@@ -53,12 +53,11 @@ export default function CashFlow() {
   const {
     summary, transactions, total, categories, suggestions, loading,
     filters, setFilters, perPage,
-    createTransaction, updateTransaction, deleteTransaction, confirmCashback,
+    createTransaction, deleteTransaction, confirmCashback,
     createCategory, updateCategory, deleteCategory, uploadReceipt,
   } = useCashFlow();
 
   const [showTxModal, setShowTxModal] = useState(false);
-  const [editingTx, setEditingTx] = useState(null);
   const [confirmTarget, setConfirmTarget] = useState(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showDatePanel, setShowDatePanel] = useState(false);
@@ -77,8 +76,7 @@ export default function CashFlow() {
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const debtPct = debt.total > 0 ? (debt.paid / debt.total) * 100 : 0;
 
-  const openCreate = () => { setEditingTx(null); setShowTxModal(true); };
-  const openEdit = (tx) => { setEditingTx(tx); setShowTxModal(true); };
+  const openCreate = () => setShowTxModal(true);
 
   const handleDelete = async (tx) => {
     if (!window.confirm(`Xóa giao dịch "${tx.description || typeLabels[tx.type]}" (${formatVND(tx.amount)})?`)) return;
@@ -261,9 +259,9 @@ export default function CashFlow() {
                           <span className="text-slate-900 dark:text-white">{formatDateShort(tx.occurred_at)}</span>
                           <span className="text-slate-400 ml-1">{formatTimeShort(tx.occurred_at)}</span>
                         </td>
-                        <td className="px-3 py-2">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${config.bg} ${config.color}`}>
-                            <Icon className="w-3 h-3" />
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${config.bg} ${config.color}`}>
+                            <Icon className="w-3 h-3 shrink-0" />
                             {config.label}
                           </span>
                         </td>
@@ -288,12 +286,6 @@ export default function CashFlow() {
                           <span className="text-slate-500 dark:text-slate-400 truncate block" title={tx.description}>{tx.description}</span>
                         </td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">
-                          {tx.type !== 'cashback' && (
-                            <button onClick={() => openEdit(tx)} title="Sửa"
-                              className="p-1 text-slate-400 hover:text-blue-600">
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                          )}
                           <button onClick={() => handleDelete(tx)} title="Xóa"
                             className="p-1 text-slate-400 hover:text-red-600">
                             <Trash2 className="w-3.5 h-3.5" />
@@ -415,11 +407,9 @@ export default function CashFlow() {
 
       {showTxModal && (
         <TransactionModal
-          onClose={() => { setShowTxModal(false); setEditingTx(null); }}
+          onClose={() => setShowTxModal(false)}
           categories={categories}
-          editingTx={editingTx}
           onCreate={createTransaction}
-          onUpdate={updateTransaction}
           uploadReceipt={uploadReceipt}
         />
       )}
@@ -448,15 +438,14 @@ export default function CashFlow() {
 }
 
 // ─── Create / Edit Transaction (income & expense only) ───
-function TransactionModal({ onClose, categories, editingTx, onCreate, onUpdate, uploadReceipt }) {
-  const isEdit = !!editingTx;
-  const [txType, setTxType] = useState(editingTx?.type === 'income' ? 'income' : 'expense');
-  const [amount, setAmount] = useState(editingTx ? formatAmountInput(editingTx.amount) : '');
-  const [categoryId, setCategoryId] = useState(editingTx?.category_id ? String(editingTx.category_id) : '');
-  const [counterparty, setCounterparty] = useState(editingTx?.counterparty || '');
-  const [occurredAt, setOccurredAt] = useState(editingTx ? toDateInput(editingTx.occurred_at) : todayInput());
-  const [description, setDescription] = useState(editingTx?.description || '');
-  const [receiptImage, setReceiptImage] = useState(editingTx?.receipt_image || '');
+function TransactionModal({ onClose, categories, onCreate, uploadReceipt }) {
+  const [txType, setTxType] = useState('expense');
+  const [amount, setAmount] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [counterparty, setCounterparty] = useState('');
+  const [occurredAt, setOccurredAt] = useState(todayInput());
+  const [description, setDescription] = useState('');
+  const [receiptImage, setReceiptImage] = useState('');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -487,8 +476,7 @@ function TransactionModal({ onClose, categories, editingTx, onCreate, onUpdate, 
         description: description.trim(),
         receiptImage,
       };
-      if (isEdit) await onUpdate(editingTx.id, payload);
-      else await onCreate(payload);
+      await onCreate(payload);
       onClose();
     } catch (err) { alert('Lỗi: ' + err.message); }
     finally { setSaving(false); }
@@ -499,7 +487,7 @@ function TransactionModal({ onClose, categories, editingTx, onCreate, onUpdate, 
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose}></div>
       <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{isEdit ? 'Sửa giao dịch' : 'Tạo giao dịch mới'}</h2>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Tạo giao dịch mới</h2>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-6 space-y-4">
@@ -511,8 +499,7 @@ function TransactionModal({ onClose, categories, editingTx, onCreate, onUpdate, 
                 const Icon = cfg.icon;
                 return (
                   <button key={key} onClick={() => { setTxType(key); setCategoryId(''); }}
-                    disabled={isEdit}
-                    className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-colors ${txType === key ? `${cfg.border} ${cfg.bg}` : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'} ${isEdit ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                    className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-colors ${txType === key ? `${cfg.border} ${cfg.bg}` : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'}`}>
                     <Icon className={`w-5 h-5 ${txType === key ? cfg.color : 'text-slate-400'}`} />
                     <span className={`text-xs font-medium ${txType === key ? cfg.color : 'text-slate-500'}`}>{cfg.label}</span>
                   </button>
@@ -584,7 +571,7 @@ function TransactionModal({ onClose, categories, editingTx, onCreate, onUpdate, 
           <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl">Hủy</button>
           <button onClick={handleSave} disabled={saving || uploading}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl shadow-lg shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed">
-            {saving ? 'Đang lưu...' : isEdit ? 'Cập nhật' : 'Lưu giao dịch'}
+            {saving ? 'Đang lưu...' : 'Lưu giao dịch'}
           </button>
         </div>
       </div>

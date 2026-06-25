@@ -1410,18 +1410,6 @@ app.post('/api/cashflow/transactions', async (req, res) => {
   res.json({ success: true, id: result.id });
 });
 
-app.put('/api/cashflow/transactions/:id', async (req, res) => {
-  const id = Number(req.params.id);
-  const existing = await cashflowStore.getTransaction(id);
-  if (!existing) return res.status(404).json({ error: 'Không tìm thấy giao dịch' });
-  if (existing.type === 'cashback') return res.status(400).json({ error: 'Giao dịch hoàn tiền lấy từ trang Payouts, không sửa ở đây' });
-  const { amount, categoryId, description, counterparty, occurredAt, receiptImage } = req.body;
-  const ok = await cashflowStore.updateTransaction(id, { amount, categoryId, description, counterparty, occurredAt, receiptImage });
-  if (!ok) return res.status(500).json({ error: 'Cập nhật thất bại' });
-  await auditStore.log(req.admin?.username || 'system', 'UPDATE_CASHFLOW_TRANSACTION', 'cashflow_transaction', String(id), { amount }, req.ip);
-  res.json({ success: true });
-});
-
 app.delete('/api/cashflow/transactions/:id', async (req, res) => {
   const id = Number(req.params.id);
   const existing = await cashflowStore.getTransaction(id);

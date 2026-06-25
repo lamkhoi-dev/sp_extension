@@ -491,12 +491,6 @@ export function useCashFlow() {
     return r;
   }, [reloadAll]);
 
-  const updateTransaction = useCallback(async (id, data) => {
-    const r = await apiFetch(`/cashflow/transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-    await reloadAll();
-    return r;
-  }, [reloadAll]);
-
   const deleteTransaction = useCallback(async (id) => {
     const r = await apiFetch(`/cashflow/transactions/${id}`, { method: 'DELETE' });
     await reloadAll();
@@ -541,7 +535,7 @@ export function useCashFlow() {
     summary, transactions, total, categories, suggestions, loading,
     filters, setFilters, perPage: CASHFLOW_PER_PAGE,
     reloadAll,
-    createTransaction, updateTransaction, deleteTransaction, confirmCashback,
+    createTransaction, deleteTransaction, confirmCashback,
     createCategory, updateCategory, deleteCategory, uploadReceipt,
   };
 }
