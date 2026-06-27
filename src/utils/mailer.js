@@ -2,6 +2,10 @@ const nodemailer = require('nodemailer');
 
 let transporter = null;
 
+// Instance label so alert emails show which server they came from
+// (pm2 sets `name` = app name: shopee-bot / shopee-staging).
+const INSTANCE = process.env.name || process.env.NODE_ENV || 'local';
+
 function getTransporter() {
   if (!transporter && process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
     transporter = nodemailer.createTransport({
@@ -32,7 +36,7 @@ async function sendMail(to, subject, text) {
 
   try {
     const info = await transport.sendMail({
-      from: `"Shopee Ext Bot" <${process.env.GMAIL_USER}>`,
+      from: `"Shopee Ext Bot [${INSTANCE}]" <${process.env.GMAIL_USER}>`,
       to,
       subject,
       text,
