@@ -8,6 +8,7 @@ const cookieParser = require('cookie-parser');
 const logger = require('./src/logger');
 const { handleCommand, getWelcome } = require('./src/commands');
 const ZaloBot = require('./src/zalo/zalo-bot');
+const { isTransientNetworkError } = require('./src/utils/is-transient-error');
 const messageStore = require('./src/zalo/message-store');
 const userCache = require('./src/zalo/user-cache');
 const convertLogStore = require('./src/api/convert-log-store');
@@ -2110,6 +2111,12 @@ process.on('unhandledRejection', (reason) => {
   const stack = reason instanceof Error ? reason.stack : '';
   logger.error('FATAL', `Unhandled Rejection: ${msg}`);
   console.error('[FATAL] Unhandled Rejection:', reason);
+  // Transient network blips (Zalo "fetch failed", socket resets, DNS) are
+  // expected — log only, don't spam alert mail. Server keeps running either way.
+  if (isTransientNetworkError(reason)) {
+    logger.warn('FATAL', 'Lỗi mạng tạm thời (unhandledRejection) — chỉ ghi log, bỏ qua gửi mail.');
+    return;
+  }
   // Don't exit — just log and notify so the server keeps running
   const { sendMail } = require('./src/utils/mailer');
   sendMail(

@@ -4,6 +4,7 @@ const convertLogStore = require('../api/convert-log-store');
 const reportGenerator = require('../stats/report-generator');
 const reportStore = require('../stats/report-store');
 const { sendMail } = require('../utils/mailer');
+const { isTransientNetworkError } = require('../utils/is-transient-error');
 const linkRedirectStore = require('../api/link-redirect-store');
 const withdrawalStore = require('../api/withdrawal-store');
 const commissionRatesStore = require('../api/commission-rates-store');
@@ -185,20 +186,39 @@ class ZaloCommands {
       if (msgId && this.messageStore) {
         await this.messageStore.markFailed(msgId, err.message, elapsed);
       }
-      // Send error log to administrator emails via sendMail
+
+      // Zalo-side restriction (NOT a bug): the recipient hasn't friended the
+      // bot account (or blocked it) — Zalo caps how many messages a stranger
+      // can receive before requiring a reply/friend-add. Sending the fallback
+      // "quá tải" text below would fail with the exact same error, so skip it.
+      const senderUid = message.data?.fromUid || message.data?.uidFrom || 'Unknown';
+      const isRecipientBlocked = /không thể nhận tin nhắn/i.test(err.message || '');
+
+      // Send error log to administrator emails via sendMail.
+      // Skip transient network blips (Zalo "fetch failed") — log only, don't spam mail.
       const emails = process.env.NOTIFY_EMAILS;
-      if (emails) {
-        const subject = `[Lỗi Hệ Thống] Bot Shopee Affiliate - ${message.data?.fromUid || message.data?.uidFrom || 'Unknown'}`;
+      if (emails && isTransientNetworkError(err)) {
+        logger.warn('ZaloCommands', `Lỗi mạng tạm thời khi xử lý tin nhắn — chỉ log, bỏ qua mail: ${err.message}`);
+      } else if (emails) {
+        const subject = `[Lỗi Hệ Thống] Bot Shopee Affiliate - ${senderUid}`;
+        const explainer = isRecipientBlocked
+          ? '\n\n(Đây là giới hạn từ Zalo: user chưa kết bạn với bot hoặc đã chặn bot, nên bot không gửi được tin nhắn tới user này — không phải lỗi hệ thống.)'
+          : '';
         const mailBody = `Thông tin lỗi xử lý tin nhắn:
-- User ID: ${message.data?.fromUid || message.data?.uidFrom || 'Unknown'}
+- User ID: ${senderUid}
 - Nội dung tin nhắn: ${text || 'N/A'}
 - Lỗi chi tiết: ${err.stack || err.message}
-- Thời gian: ${new Date().toLocaleString('vi-VN')}`;
+- Thời gian: ${new Date().toLocaleString('vi-VN')}${explainer}`;
         sendMail(emails, subject, mailBody).catch(e => logger.error(`[Mailer] Error notifying error: ${e.message}`));
       }
-      try {
-        await this.actions.sendText(`Hệ thống hiện tại đang quá tải, vui lòng thử lại sau ít phút`, message.threadId, message.type);
-      } catch {}
+
+      if (isRecipientBlocked) {
+        logger.warn('ZaloCommands', `Bỏ qua gửi tin nhắn dự phòng — Zalo đang chặn gửi tới ${senderUid} (chưa kết bạn / đã chặn bot).`);
+      } else {
+        try {
+          await this.actions.sendText(`Hệ thống hiện tại đang quá tải, vui lòng thử lại sau ít phút`, message.threadId, message.type);
+        } catch {}
+      }
     }
   }
 

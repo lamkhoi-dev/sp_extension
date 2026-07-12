@@ -113,16 +113,21 @@ class ZaloBot {
       // Setup listeners
       this.listener = this.api.listener;
       this._setupListeners(ThreadType);
-      this.listener.start();
+      // retryOnClose → zca-js tự kết nối lại (có backoff + xoay endpoint) khi
+      // WebSocket rớt vì mạng chập chờn, thay vì chết luôn cho tới lần restart.
+      this.listener.start({ retryOnClose: true });
 
       // Replay unprocessed messages from last session
       this._replayUnprocessed();
 
-      // Keep-alive ping every 5 minutes
+      // Keep-alive ping every 5 minutes.
+      // keepAlive() is ASYNC — a sync try/catch can't catch its promise
+      // rejection, so a transient "fetch failed" used to bubble up as an
+      // unhandledRejection (and spam alert mail). Catch the promise instead.
       this._keepAliveInterval = setInterval(() => {
-        try { this.api.keepAlive?.(); } catch (err) {
-          logger.warn('ZaloBot', `keepAlive failed: ${err.message}`);
-        }
+        Promise.resolve(this.api?.keepAlive?.()).catch((err) => {
+          logger.warn('ZaloBot', `keepAlive failed (ignored, transient): ${err.message}`);
+        });
       }, 5 * 60 * 1000);
 
       logger.info('ZaloBot', '👂 Listener đang lắng nghe tin nhắn...');
@@ -136,6 +141,34 @@ class ZaloBot {
   }
 
   _setupListeners(ThreadType) {
+    // ─── Connection lifecycle ──────────────────────
+    // Zalo's WebSocket drops on flaky networks. Reconnect is handled by
+    // start({ retryOnClose: true }); here we just log + reflect status.
+    // The 'error' listener is MANDATORY: an EventEmitter with no 'error'
+    // handler THROWS when 'error' is emitted → would crash the whole process
+    // on a transient blip. We swallow transient WS errors (they auto-retry).
+    this.listener.on('connected', () => {
+      if (this.status !== 'online') {
+        this.status = 'online';
+        this._emitStatus();
+      }
+      logger.info('ZaloBot', '🔌 Listener connected');
+    });
+    this.listener.on('disconnected', (code, reason) => {
+      logger.warn('ZaloBot', `🔌 Listener disconnected (code=${code}${reason ? ' ' + reason : ''}) — đang tự kết nối lại...`);
+    });
+    this.listener.on('closed', (code, reason) => {
+      this.status = 'error';
+      this._emitStatus();
+      logger.error('ZaloBot', `🔌 Listener đóng hẳn (code=${code}${reason ? ' ' + reason : ''}) — có thể cần quét lại QR.`);
+    });
+    this.listener.on('error', (err) => {
+      let msg;
+      try { msg = err?.message || err?.error?.message || JSON.stringify(err).slice(0, 200); }
+      catch { msg = String(err); }
+      logger.warn('ZaloBot', `🔌 Listener error (bỏ qua, sẽ tự retry): ${msg}`);
+    });
+
     // ─── Message listener ──────────────────────────
     this.listener.on('message', async (message) => {
       if (message.isSelf) return;
