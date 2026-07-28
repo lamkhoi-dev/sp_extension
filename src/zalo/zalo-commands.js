@@ -656,7 +656,7 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
         commissionLine = `💰 Hoa hồng đơn hàng: ${userRate}%`;
       }
 
-      const zaloGroupLink = process.env.ZALO_GROUP_LINK || 'https://zalo.me/g/3othppdezfzvxqthz7sg';
+      const zaloGroupLink = process.env.ZALO_GROUP_LINK || 'https://zalo.me/g/bz1ccd2b8xhtnerxb2zq';
 
       const msg = `${mentionTag} ✅ Em gửi link ạ!\n\n` +
         `${commissionLine}\n\n` +
