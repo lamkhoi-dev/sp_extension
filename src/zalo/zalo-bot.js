@@ -6,6 +6,7 @@ const ZaloCommands = require('./zalo-commands');
 const ConcurrentHandler = require('./concurrent-handler');
 const messageStore = require('./message-store');
 const userCache = require('./user-cache');
+const { sendMail } = require('../utils/mailer');
 
 const SESSION_PATH = process.env.ZALO_SESSION_PATH
   ? path.resolve(process.env.ZALO_SESSION_PATH)
@@ -26,6 +27,7 @@ class ZaloBot {
     this.messageListeners = []; // for dashboard real-time
     this._keepAliveInterval = null;
     this._broadcastTimeout = null;
+    this._closedAlertSent = false;
   }
 
   // Subscribe to status changes (for dashboard broadcasting)
@@ -152,6 +154,7 @@ class ZaloBot {
         this.status = 'online';
         this._emitStatus();
       }
+      this._closedAlertSent = false; // allow a fresh alert if it dies again later
       logger.info('ZaloBot', '🔌 Listener connected');
     });
     this.listener.on('disconnected', (code, reason) => {
@@ -161,6 +164,30 @@ class ZaloBot {
       this.status = 'error';
       this._emitStatus();
       logger.error('ZaloBot', `🔌 Listener đóng hẳn (code=${code}${reason ? ' ' + reason : ''}) — có thể cần quét lại QR.`);
+
+      // Unlike transient blips (handled elsewhere), this is TERMINAL — zca-js's
+      // own retry budget for this close code is exhausted and it will NEVER
+      // retry again on its own (retry counters are per-Listener-instance and
+      // never reset). The bot silently stops receiving/replying to all Zalo
+      // messages from this point on. Alert ONCE (not on every event, only
+      // reset when a reconnect actually succeeds) so this doesn't go unnoticed
+      // until a customer complains or a scheduled broadcast silently skips.
+      if (!this._closedAlertSent) {
+        this._closedAlertSent = true;
+        const emails = process.env.NOTIFY_EMAILS;
+        if (emails) {
+          sendMail(
+            emails,
+            '🔴 [Shopee Ext] Zalo Bot mất kết nối — cần xử lý thủ công',
+            `Kết nối Zalo Bot đã đóng hẳn và KHÔNG tự phục hồi được (đã hết lượt tự thử lại).\n\n` +
+            `Mã đóng kết nối: ${code}${reason ? ` (${reason})` : ''}\n\n` +
+            `Ảnh hưởng: bot sẽ KHÔNG nhận/trả lời tin nhắn Zalo (bao gồm /thongke, /ruttien) và bỏ qua thông báo 20h ` +
+            `cho tới khi được khởi động lại.\n\n` +
+            `Cách xử lý: vào Dashboard bấm "Khởi động lại Zalo Bot" (hoặc gọi /api/zalo-restart), có thể cần quét lại mã QR.\n\n` +
+            `Thời gian: ${new Date().toLocaleString('vi-VN')}`
+          ).catch((e) => logger.error('ZaloBot', `Alert email failed: ${e.message}`));
+        }
+      }
     });
     this.listener.on('error', (err) => {
       let msg;
