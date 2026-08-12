@@ -565,9 +565,12 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
           subId1: senderUid, subId2: enrichedSubIds.sub2,
         });
 
-        // Send error log to administrator emails via sendMail
+        // Send error log to administrator emails via sendMail.
+        // Skip transient network/DB blips (fetch failed, DB connection timeout) — log only.
         const emails = process.env.NOTIFY_EMAILS;
-        if (emails) {
+        if (emails && isTransientNetworkError(result.error)) {
+          logger.warn('ZaloCommands', `Lỗi tạm thời khi convert link — chỉ log, bỏ qua mail: ${result.error}`);
+        } else if (emails) {
           const subject = `[Lỗi Hệ Thống] Bot Shopee Affiliate - ${senderName || senderUid}`;
           const mailBody = `Thông tin lỗi convert link Shopee:
 - User: ${senderName} (ID: ${senderUid})
@@ -692,9 +695,12 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
         subId1: senderUid,
       }).catch(e => logger.error(`[DB] Error saving error log: ${e.message}`));
 
-      // Send error log to administrator emails via sendMail
+      // Send error log to administrator emails via sendMail.
+      // Skip transient network/DB blips (fetch failed, DB connection timeout) — log only.
       const emails = process.env.NOTIFY_EMAILS;
-      if (emails) {
+      if (emails && isTransientNetworkError(err)) {
+        logger.warn('ZaloCommands', `Lỗi tạm thời khi convert link — chỉ log, bỏ qua mail: ${err.message}`);
+      } else if (emails) {
         const subject = `[Lỗi Hệ Thống] Bot Shopee Affiliate - ${senderName || senderUid}`;
         const mailBody = `Thông tin lỗi convert link Shopee (Exception):
 - User: ${senderName} (ID: ${senderUid})
