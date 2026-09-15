@@ -295,13 +295,25 @@ class ZaloCommands {
     }
 
     try {
-      // ─── Check existing pending request ──────────────
+      // ─── Check existing pending request vs. current withdrawable amount ─
+      // Money owed can keep growing while a request sits unpaid (more orders
+      // complete after the request was filed). The old request's stored
+      // `amount` is a snapshot from creation time and never updates itself,
+      // so we must recompute the live total every time and, if it moved,
+      // retire the stale request and file a fresh one for the current max —
+      // never let /ruttien echo back a number that's gone out of date.
       const existing = await withdrawalStore.getActivePendingByUser(senderUid);
+      const freshPending = await withdrawalStore.computeUserPending(senderUid);
+
+      let supersededNote = '';
       if (existing) {
-        const requestedAt = existing.requested_at
-          ? new Date(existing.requested_at).toLocaleString('vi-VN')
-          : '--';
-        const existsText = `⏳ Bạn đã có yêu cầu rút tiền đang chờ xử lý:
+        const sameAmount = Math.round(Number(existing.amount) || 0) === Math.round(freshPending.total);
+        if (sameAmount) {
+          // Nothing changed since the last request — show it as-is, don't spam duplicates
+          const requestedAt = existing.requested_at
+            ? new Date(existing.requested_at).toLocaleString('vi-VN')
+            : '--';
+          const existsText = `⏳ Bạn đã có yêu cầu rút tiền đang chờ xử lý:
 
 💰 Số tiền: ${formatVND(existing.amount)}
 🏦 ${withdrawalStore.bankDisplayName(existing.bank_name)} • ${existing.bank_account}
@@ -309,8 +321,29 @@ class ZaloCommands {
 📅 Gửi lúc: ${requestedAt}
 
 Hệ thống sẽ thanh toán trong thời gian sớm nhất. Vui lòng đợi nhé!`;
-        await this.actions.humanReply(message, existsText, { react: false });
-        return existsText;
+          await this.actions.humanReply(message, existsText, { react: false });
+          return existsText;
+        }
+
+        // Balance moved (usually grew, from newly-completed orders) → the old
+        // request no longer reflects reality. Retire it and let the code below
+        // file a brand-new request for the current max withdrawable amount.
+        await withdrawalStore.markProcessed(existing.id, {
+          status: 'cancelled',
+          adminNote: `Tự động huỷ — số dư thay đổi (${formatVND(existing.amount)} → ${formatVND(freshPending.total)}), thay bằng yêu cầu mới do user gửi lại /ruttien.`,
+          processedBy: 'system',
+        });
+        logger.info('ZaloCommands', `Withdrawal request #${existing.id} auto-cancelled (superseded) for ${senderUid}: ${existing.amount}đ -> ${freshPending.total}đ`);
+        supersededNote = `\n\n🔄 Yêu cầu cũ (${formatVND(existing.amount)}) đã được thay bằng yêu cầu mới theo số dư hiện tại.`;
+
+        const supersedeNotifyEmails = process.env.NOTIFY_EMAILS;
+        if (supersedeNotifyEmails) {
+          const supersedeSubject = `[Rút tiền] Yêu cầu #${existing.id} của ${senderName} đã được thay thế`;
+          const supersedeBody = `Yêu cầu rút tiền cũ #${existing.id} (${formatVND(existing.amount)}) của ${senderName} (${senderUid}) đã tự động bị huỷ do user gửi lại /ruttien với số dư hiện tại là ${formatVND(freshPending.total)}.
+
+${freshPending.total > 0 ? 'Một yêu cầu mới đã được tạo — xem trong danh sách chờ xử lý trên trang Payouts.' : 'User hiện không còn số dư nào để rút (có thể do đơn liên quan đã bị huỷ/hoàn tiền).'}`;
+          sendMail(supersedeNotifyEmails, supersedeSubject, supersedeBody).catch(e => logger.error('Mailer', `Withdrawal supersede notify failed: ${e.message}`));
+        }
       }
 
       // ─── Resolve bank info (from args or stored) ─────
@@ -338,8 +371,8 @@ Hệ thống sẽ thanh toán trong thời gian sớm nhất. Vui lòng đợi n
         bankInfoSource = 'stored';
       }
 
-      // ─── Compute withdrawable amount ─────────────────
-      const pending = await withdrawalStore.computeUserPending(senderUid);
+      // ─── Use the withdrawable amount already computed above ──
+      const pending = freshPending;
       if (pending.total <= 0) {
         const updateNote = bankInfoSource === 'new'
           ? '\n\n✅ Đã cập nhật thông tin tài khoản của bạn.'
@@ -350,7 +383,7 @@ Có thể do:
 • Chưa có đơn nào "Hoàn thành"
 • Hoặc đã thanh toán hết
 
-Gửi /thongke để xem chi tiết.${updateNote}`;
+Gửi /thongke để xem chi tiết.${updateNote}${supersededNote}`;
         await this.actions.humanReply(message, noAmountText, { react: false });
         return noAmountText;
       }
@@ -417,7 +450,7 @@ ${breakdownBlock}
 🏦 ${withdrawalStore.bankDisplayName(bankCode)} • ${accountNumber}
 👤 ${accountHolder}
 
-⏳ Hệ thống sẽ thanh toán trong thời gian sớm nhất.${pendingNote}${updateNote}
+⏳ Hệ thống sẽ thanh toán trong thời gian sớm nhất.${pendingNote}${updateNote}${supersededNote}
 
 💡 Gửi /thongke để xem lịch sử chi tiết.`;
 
