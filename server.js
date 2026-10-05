@@ -444,7 +444,11 @@ async function resolveShopeeUrl(url) {
       try {
         const resp = await fetch(
           `https://data.addlivetag.com/product-data/product-data.php?item_id=${itemId}`,
-          { method: 'GET', signal: AbortSignal.timeout(8000) }
+          {
+            method: 'GET',
+            headers: process.env.ADDLIVETAG_API_KEY ? { 'X-API-Key': process.env.ADDLIVETAG_API_KEY } : {},
+            signal: AbortSignal.timeout(8000),
+          }
         );
         const data = await resp.json();
         // productLink contains canonical shopee.vn/product/{shopId}/{itemId}

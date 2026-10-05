@@ -139,11 +139,13 @@ class ShopeeDirectLink {
     if (!itemId) return { found: false };
 
     try {
+      const headers = { 'User-Agent': 'Mozilla/5.0' };
+      if (process.env.ADDLIVETAG_API_KEY) headers['X-API-Key'] = process.env.ADDLIVETAG_API_KEY;
       const resp = await fetch(
         `https://data.addlivetag.com/product-data/product-data.php?item_id=${itemId}`,
         {
           method: 'GET',
-          headers: { 'User-Agent': 'Mozilla/5.0' },
+          headers,
           signal: AbortSignal.timeout(10000),
         },
       );
