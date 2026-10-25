@@ -18,6 +18,10 @@ function formatVND(val) {
   return new Intl.NumberFormat('vi-VN').format(Math.round(val)) + 'đ';
 }
 
+// Shown instead of "0%" when addlivetag couldn't be reached (outage), so we
+// don't tell a customer their order earns nothing when we simply don't know.
+const UNKNOWN_RATE_TEXT = 'chưa xác định (3-10%)';
+
 const HELP_TEXT = `🤖 Shopee Affiliate Bot
 
 Chào mừng bạn đến với hệ thống quản lý Affiliate!
@@ -684,7 +688,9 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
       // comes back 0. Never show a misleading "0%" alongside a real amount —
       // show the amount alone (it's taken directly from the API, always valid).
       let commissionLine;
-      if (userRate > 0 && amountFmt) {
+      if (result.commissionUnknown) {
+        commissionLine = `💰 Hoa hồng đơn hàng: ${UNKNOWN_RATE_TEXT}`;
+      } else if (userRate > 0 && amountFmt) {
         commissionLine = `💰 Hoa hồng đơn hàng: ${userRate}% (${amountFmt})`;
       } else if (amountFmt) {
         commissionLine = `💰 Hoa hồng đơn hàng: ${amountFmt}`;
@@ -879,7 +885,9 @@ VCB (Vietcombank) · ICB (VietinBank) · BIDV · VBA (Agribank) · TCB (Techcomb
         ? `~${new Intl.NumberFormat('vi-VN').format(result.commissionAmount)}đ`
         : '';
       let commissionText;
-      if (result.commission > 0 && customAmountFmt) {
+      if (result.commissionUnknown) {
+        commissionText = UNKNOWN_RATE_TEXT;
+      } else if (result.commission > 0 && customAmountFmt) {
         commissionText = `${result.commission}% (${customAmountFmt})`;
       } else if (customAmountFmt) {
         commissionText = customAmountFmt;

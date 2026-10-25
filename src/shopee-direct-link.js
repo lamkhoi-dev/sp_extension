@@ -1,5 +1,17 @@
 const logger = require('./logger');
 
+// addlivetag sometimes answers HTTP 200 with a JSON error body (its own DB
+// being down, etc.) on EVERY link during an outage — throttle that one log
+// line so an outage doesn't flood the log file.
+let lastUnreachableWarnAt = 0;
+function logUnreachableOnce(message) {
+  const now = Date.now();
+  if (now - lastUnreachableWarnAt > 10 * 60 * 1000) {
+    lastUnreachableWarnAt = now;
+    logger.warn('ShopeeDirectLink', message);
+  }
+}
+
 // Tracking params to strip from product URLs before generating affiliate links
 const TRACKING_PARAMS = [
   'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
@@ -150,9 +162,18 @@ class ShopeeDirectLink {
         },
       );
 
-      if (!resp.ok) return { found: false, error: `HTTP ${resp.status}` };
+      if (!resp.ok) return { found: false, reachable: false, error: `HTTP ${resp.status}` };
 
       const data = await resp.json();
+
+      // 200 OK but the body itself says error (addlivetag's own outage) —
+      // this is "couldn't reach the service", NOT "product has no
+      // commission". Must not be read the same as a legitimate 0%.
+      if (data.status === 'error') {
+        logUnreachableOnce(`addlivetag trả status=error: ${data.message || '(không có message)'}`);
+        return { found: false, reachable: false, error: `addlivetag: ${data.message || 'status=error'}` };
+      }
+
       if (data.status === 'success' && data.productInfo?.commission > 0) {
         const info = data.productInfo;
         // `price` is the CURRENT price and is 0 when the product is out of
@@ -176,10 +197,10 @@ class ShopeeDirectLink {
         };
       }
 
-      return { found: false };
+      return { found: false, reachable: true };
     } catch (err) {
       logger.warn('ShopeeDirectLink', `Commission check failed: ${err.message}`);
-      return { found: false, error: err.message };
+      return { found: false, reachable: false, error: err.message };
     }
   }
 
@@ -252,6 +273,9 @@ class ShopeeDirectLink {
         itemId: parsed.itemId || '',
         shopId: parsed.shopId || '',
         source: 'direct',
+        // addlivetag was unreachable (not: "this product genuinely has 0%
+        // commission") — callers should show "chưa xác định", not "0%".
+        commissionUnknown: commissionData.reachable === false,
       };
     }
 
