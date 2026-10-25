@@ -65,8 +65,6 @@ class ZaloBot {
       const { Zalo, ThreadType, Reactions } = await import('zca-js');
 
       logger.info('ZaloBot', '🚀 Khởi tạo Zalo Bot...');
-      this.status = 'qr_pending';
-      this._emitStatus();
 
       const zalo = new Zalo({
         selfListen: false,
@@ -74,9 +72,18 @@ class ZaloBot {
         logging: true,
       });
 
-      logger.info('ZaloBot', '📱 Đang tạo mã QR... Vui lòng quét bằng Zalo trên điện thoại.');
+      // Try resuming the previous session (cookie + imei + userAgent) before
+      // falling back to a QR scan. Only announce 'qr_pending' once we know a
+      // QR scan is actually needed — a resumed login should never flash that
+      // status.
+      this.api = await this._resumeSession(zalo);
 
-      this.api = await zalo.loginQR({ qrPath: QR_PATH });
+      if (!this.api) {
+        this.status = 'qr_pending';
+        this._emitStatus();
+        logger.info('ZaloBot', '📱 Đang tạo mã QR... Vui lòng quét bằng Zalo trên điện thoại.');
+        this.api = await zalo.loginQR({ qrPath: QR_PATH });
+      }
 
       // Get own account info
       try {
@@ -93,16 +100,7 @@ class ZaloBot {
       this._emitStatus();
       this.startDailyBroadcast();
 
-      // Save session cookie
-      try {
-        const cookie = await this.api.getCookie();
-        if (cookie) {
-          fs.writeFileSync(SESSION_PATH, JSON.stringify(cookie, null, 2));
-          logger.info('ZaloBot', '💾 Session đã lưu vào zalo-session.json');
-        }
-      } catch (err) {
-        logger.warn('ZaloBot', `Could not save session: ${err.message}`);
-      }
+      this._saveSession();
 
       // Setup actions & commands with stores
       this.actions = new ZaloActions(this.api, ThreadType, Reactions);
@@ -139,6 +137,62 @@ class ZaloBot {
       logger.error('ZaloBot', `❌ Lỗi khởi tạo: ${err.message}`);
       this._emitStatus();
       throw err;
+    }
+  }
+
+  // Try logging back in with the saved cookie/imei/userAgent instead of
+  // scanning a QR code. Returns the logged-in API instance, or null if there
+  // is no usable saved session (never resuming → caller falls back to QR).
+  //
+  // zca-js ties the imei to the device Zalo already trusts for this account
+  // — NEVER generate a fresh one here, only reuse the one saved at the last
+  // successful login (loginQR() is what generates it in the first place).
+  async _resumeSession(zalo) {
+    let saved;
+    try {
+      saved = JSON.parse(fs.readFileSync(SESSION_PATH, 'utf8'));
+    } catch {
+      return null; // no session file yet — first run
+    }
+
+    // Session files saved before this feature only contain the raw cookie
+    // jar (no imei/userAgent) and can't be resumed with — fall back to QR.
+    if (!saved?.imei || !saved?.userAgent || !saved?.cookie) {
+      logger.info('ZaloBot', '📄 File session cũ không đủ imei/userAgent (định dạng cũ) — cần quét QR.');
+      return null;
+    }
+
+    try {
+      const api = await zalo.login({
+        cookie: saved.cookie,
+        imei: saved.imei,
+        userAgent: saved.userAgent,
+        language: saved.language || 'vi',
+      });
+      logger.info('ZaloBot', '🔁 Đăng nhập lại bằng session cũ thành công — không cần quét QR.');
+      return api;
+    } catch (err) {
+      logger.warn('ZaloBot', `Đăng nhập lại bằng session cũ thất bại (${err.message}) — chuyển sang quét QR.`);
+      return null;
+    }
+  }
+
+  // Save cookie + imei + userAgent so the next start() can resume without a
+  // QR scan. All three must come from the SAME logged-in context — imei and
+  // userAgent alone (hardcoded) would not match the cookie's session.
+  _saveSession() {
+    try {
+      const ctx = this.api.getContext();
+      const sessionData = {
+        imei: ctx.imei,
+        userAgent: ctx.userAgent,
+        language: ctx.language,
+        cookie: ctx.cookie.toJSON(),
+      };
+      fs.writeFileSync(SESSION_PATH, JSON.stringify(sessionData, null, 2));
+      logger.info('ZaloBot', '💾 Session đã lưu (imei/userAgent/cookie) vào zalo-session.json');
+    } catch (err) {
+      logger.warn('ZaloBot', `Could not save session: ${err.message}`);
     }
   }
 
